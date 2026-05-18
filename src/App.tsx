@@ -1,3 +1,4 @@
+import QRs from '@/pages/QRs'
 import RegistrosHH from '@/pages/RegistrosHH'
 import OTMs from '@/pages/OTMs'
 import Trabajadores from '@/pages/Trabajadores'
@@ -22,7 +23,7 @@ export default function App() {
             <Route path="supervisores" element={<Placeholder title="Supervisores" desc="Gestión y seguimiento de supervisores de campo." icon="🦺" />} />
             <Route path="trabajadores" element={<Trabajadores />} />
             <Route path="importar" element={<Placeholder title="Importar Personal" desc="Carga masiva de trabajadores desde Excel." icon="📥" />} />
-            <Route path="qrs" element={<Placeholder title="QRs" desc="Galería de códigos QR por trabajador." icon="📷" />} />
+            <Route path="qrs" element={<QRs />} />
             <Route path="impresion-qr" element={<Placeholder title="Impresión QR Avanzada" desc="PDF paginado listo para imprimir en obra." icon="🖨️" />} />
             <Route path="registros" element={<RegistrosHH />} />
             <Route path="reportes" element={<Placeholder title="Reportes y Analytics" desc="Gráficos de HH por OTM, supervisor y semana." icon="📊" />} />
