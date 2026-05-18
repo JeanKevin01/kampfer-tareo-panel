@@ -1,3 +1,4 @@
+import OTMs from '@/pages/OTMs'
 import Trabajadores from '@/pages/Trabajadores'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -24,7 +25,7 @@ export default function App() {
             <Route path="impresion-qr" element={<Placeholder title="Impresión QR Avanzada" desc="PDF paginado listo para imprimir en obra." icon="🖨️" />} />
             <Route path="registros" element={<Placeholder title="Registros y HH" desc="Ver, filtrar, editar y exportar el tareo diario." icon="📋" />} />
             <Route path="reportes" element={<Placeholder title="Reportes y Analytics" desc="Gráficos de HH por OTM, supervisor y semana." icon="📊" />} />
-            <Route path="otms" element={<Placeholder title="OTMs" desc="Gestión de órdenes de trabajo misceláneas." icon="📝" />} />
+            <Route path="otms" element={<OTMs />} />
             <Route path="presupuesto" element={<Placeholder title="Presupuesto por OTM" desc="Control de HH plan vs real por partida." icon="💰" />} />
             <Route path="inventario" element={<Placeholder title="Inventario y Materiales" desc="Registro de facturas y control de compras." icon="📦" />} />
             <Route path="valorizacion" element={<Placeholder title="Valorización" desc="Consolidado mensual para presentar a SMCV." icon="🧾" />} />
