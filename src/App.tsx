@@ -1,3 +1,4 @@
+import ImpresionQR from '@/pages/ImpresionQR'
 import ImportarPersonal from '@/pages/ImportarPersonal'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -28,7 +29,7 @@ export default function App() {
             <Route path="trabajadores" element={<Trabajadores />} />
             <Route path="importar"     element={<ImportarPersonal />} />
             <Route path="qrs"          element={<QRs />} />
-            <Route path="impresion-qr" element={<Placeholder title="Impresión QR Avanzada" desc="PDF paginado listo para imprimir en obra."             icon="🖨️" />} />
+            <Route path="impresion-qr" element={<ImpresionQR />} />
             <Route path="registros"    element={<RegistrosHH />} />
             <Route path="reportes"     element={<Reportes />} />
             <Route path="otms"         element={<OTMs />} />
