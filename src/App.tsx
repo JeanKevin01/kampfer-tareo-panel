@@ -1,3 +1,4 @@
+import Supervisores from '@/pages/Supervisores'
 import Monitor from '@/pages/Monitor'
 import Reportes from '@/pages/Reportes'
 import QRs from '@/pages/QRs'
@@ -22,8 +23,7 @@ export default function App() {
           <Route path="/" element={<Layout />}>
             <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="dashboard" element={<Dashboard />} />
-            <Route path="supervisores" element={<Placeholder title="Supervisores" desc="Gestión y seguimiento de supervisores de campo." icon="🦺" />} />
-            <Route path="trabajadores" element={<Trabajadores />} />
+            <Route path="supervisores" element={<Supervisores />} />
             <Route path="importar" element={<Placeholder title="Importar Personal" desc="Carga masiva de trabajadores desde Excel." icon="📥" />} />
             <Route path="qrs" element={<QRs />} />
             <Route path="impresion-qr" element={<Placeholder title="Impresión QR Avanzada" desc="PDF paginado listo para imprimir en obra." icon="🖨️" />} />
