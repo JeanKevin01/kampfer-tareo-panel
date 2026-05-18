@@ -25,7 +25,6 @@ export default function Supervisores() {
 
   const isLoading = loadSup || loadReg
 
-  // Stats por supervisor para la fecha seleccionada
   const statsPorSup = supervisores.map(s => {
     const regs = registros.filter(r => r.supervisor_id === s.id)
     const trabUnicos = new Set(regs.map(r => r.trab_id)).size
@@ -34,15 +33,14 @@ export default function Supervisores() {
     return { ...s, regs: regs.length, trabUnicos, otmsUnicos, hhTotal, reporto: regs.length > 0 }
   })
 
-  const reportaron  = statsPorSup.filter(s => s.reporto).length
-  const pendientes  = statsPorSup.filter(s => !s.reporto).length
-  const totalRegs   = registros.length
-  const totalHH     = registros.reduce((s, r) => s + (r.hh ?? 0), 0).toFixed(1)
+  const reportaron = statsPorSup.filter(s => s.reporto).length
+  const pendientes = statsPorSup.filter(s => !s.reporto).length
+  const totalRegs  = registros.length
+  const totalHH    = registros.reduce((s, r) => s + (r.hh ?? 0), 0).toFixed(1)
 
   return (
     <div className="space-y-5">
 
-      {/* Header con fecha */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <p className="text-k-text2 text-sm">Estado de reporte por supervisor</p>
         <div className="relative">
@@ -52,13 +50,12 @@ export default function Supervisores() {
         </div>
       </div>
 
-      {/* Stats del día */}
       <div className="grid grid-cols-4 gap-4">
         {[
-          { label: 'Reportaron',     value: reportaron,  color: 'text-k-green' },
-          { label: 'Pendientes',     value: pendientes,  color: pendientes > 0 ? 'text-k-red' : 'text-k-text3' },
-          { label: 'Registros total', value: totalRegs,  color: 'text-k-blue'  },
-          { label: 'HH del día',     value: totalHH + ' HH', color: 'text-k-amber' },
+          { label: 'Reportaron',      value: reportaron,       color: 'text-k-green' },
+          { label: 'Pendientes',      value: pendientes,       color: pendientes > 0 ? 'text-k-red' : 'text-k-text3' },
+          { label: 'Registros total', value: totalRegs,        color: 'text-k-blue'  },
+          { label: 'HH del día',      value: totalHH + ' HH', color: 'text-k-amber' },
         ].map(s => (
           <div key={s.label} className="bg-k-surface border border-k-border rounded-xl p-4">
             <div className={`font-mono text-2xl font-medium ${s.color} mb-1`}>
@@ -69,7 +66,6 @@ export default function Supervisores() {
         ))}
       </div>
 
-      {/* Cards de supervisores */}
       {isLoading ? (
         <div className="flex items-center justify-center py-16 text-k-text3">
           <Loader2 size={18} className="animate-spin mr-2" /> Cargando…
@@ -82,8 +78,6 @@ export default function Supervisores() {
                 s.reporto ? 'border-green-500/20' : 'border-k-border'
               }`}>
               <div className="p-5 flex items-center gap-5 flex-wrap">
-
-                {/* Estado */}
                 <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${
                   s.reporto ? 'bg-green-500/10' : 'bg-k-raised'}`}>
                   {s.reporto
@@ -91,8 +85,6 @@ export default function Supervisores() {
                     : <XCircle    size={22} className="text-k-text3" />
                   }
                 </div>
-
-                {/* Info */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-3 flex-wrap mb-1">
                     <span className="font-bold text-base text-k-text">{s.nombre}</span>
@@ -115,15 +107,13 @@ export default function Supervisores() {
                     )}
                   </div>
                 </div>
-
-                {/* Métricas del día */}
                 {s.reporto ? (
                   <div className="flex gap-6">
                     {[
-                      { label: 'Registros',    value: s.regs,                            color: 'text-k-blue'  },
-                      { label: 'Trabajadores', value: s.trabUnicos,                      color: 'text-k-text'  },
-                      { label: 'OTMs',         value: s.otmsUnicos,                      color: 'text-k-amber' },
-                      { label: 'HH',           value: s.hhTotal > 0 ? s.hhTotal.toFixed(1) : '—', color: 'text-k-green' },
+                      { label: 'Registros',    value: s.regs,       color: 'text-k-blue'  },
+                      { label: 'Trabajadores', value: s.trabUnicos, color: 'text-k-text'  },
+                      { label: 'OTMs',         value: s.otmsUnicos, color: 'text-k-amber' },
+                      { label: 'HH', value: s.hhTotal > 0 ? s.hhTotal.toFixed(1) : '—', color: 'text-k-green' },
                     ].map(m => (
                       <div key={m.label} className="text-center">
                         <div className={`font-mono text-xl font-medium ${m.color}`}>{m.value}</div>
@@ -143,13 +133,17 @@ export default function Supervisores() {
         </div>
       )}
 
-      {/* Nota */}
       <div className="bg-k-raised border border-k-border rounded-xl p-4">
         <p className="text-[11px] text-k-text3 leading-relaxed">
-          <span className="text-k-amber font-bold">ℹ️ Para agregar nuevos supervisores:</span>
-          {' '}accede a Adminer en{' '}
+          <span className="text-k-amber font-bold">ℹ️ Para agregar nuevos supervisores: </span>
+          accede a{' '}
           <a href="https://adminer.apps1.astraera.space" target="_blank" rel="noopener noreferrer"
-            className="text-k-blue hover:underline">adminer.apps1.astraera.space</a>
+            className="text-k-blue hover:underline">Adminer</a>
           {' '}→ tabla <span className="font-mono text-k-text">supervisores</span> → Nuevo registro.
           Formato ID: <span className="font-mono text-k-text">SUP-006</span>.
         </p>
+      </div>
+
+    </div>
+  )
+}
