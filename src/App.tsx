@@ -1,3 +1,4 @@
+import RegistrosHH from '@/pages/RegistrosHH'
 import OTMs from '@/pages/OTMs'
 import Trabajadores from '@/pages/Trabajadores'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
@@ -23,7 +24,7 @@ export default function App() {
             <Route path="importar" element={<Placeholder title="Importar Personal" desc="Carga masiva de trabajadores desde Excel." icon="📥" />} />
             <Route path="qrs" element={<Placeholder title="QRs" desc="Galería de códigos QR por trabajador." icon="📷" />} />
             <Route path="impresion-qr" element={<Placeholder title="Impresión QR Avanzada" desc="PDF paginado listo para imprimir en obra." icon="🖨️" />} />
-            <Route path="registros" element={<Placeholder title="Registros y HH" desc="Ver, filtrar, editar y exportar el tareo diario." icon="📋" />} />
+            <Route path="registros" element={<RegistrosHH />} />
             <Route path="reportes" element={<Placeholder title="Reportes y Analytics" desc="Gráficos de HH por OTM, supervisor y semana." icon="📊" />} />
             <Route path="otms" element={<OTMs />} />
             <Route path="presupuesto" element={<Placeholder title="Presupuesto por OTM" desc="Control de HH plan vs real por partida." icon="💰" />} />
