@@ -138,9 +138,9 @@ export default function Bitacora() {
       {/* Stats */}
       <div className="grid grid-cols-3 gap-4">
         {[
-          { label: 'Registros en el período', value: loading ? '…' : totalRegistros,             color: 'text-k-blue',  Icon: Users      },
-          { label: 'Días con actividad',       value: loading ? '…' : diasConActividad,           color: 'text-k-green', Icon: Calendar   },
-          { label: 'HH acumuladas',            value: loading ? '…' : totalHH.toFixed(1) + ' HH', color: 'text-k-amber', Icon: TrendingUp },
+          { label: 'Registros en el período', value: isLoading ? '…' : totalRegistros,              color: 'text-k-blue',  Icon: Users      },
+          { label: 'Días con actividad',       value: isLoading ? '…' : diasConActividad,            color: 'text-k-green', Icon: Calendar   },
+          { label: 'HH acumuladas',            value: isLoading ? '…' : totalHH.toFixed(1) + ' HH', color: 'text-k-amber', Icon: TrendingUp },
         ].map(s => (
           <div key={s.label} className="bg-k-surface border border-k-border rounded-xl p-5 flex items-center gap-4">
             <div className="w-10 h-10 rounded-xl bg-k-raised flex items-center justify-center flex-shrink-0">
