@@ -1,3 +1,4 @@
+import Reportes from '@/pages/Reportes'
 import QRs from '@/pages/QRs'
 import RegistrosHH from '@/pages/RegistrosHH'
 import OTMs from '@/pages/OTMs'
@@ -26,8 +27,7 @@ export default function App() {
             <Route path="qrs" element={<QRs />} />
             <Route path="impresion-qr" element={<Placeholder title="Impresión QR Avanzada" desc="PDF paginado listo para imprimir en obra." icon="🖨️" />} />
             <Route path="registros" element={<RegistrosHH />} />
-            <Route path="reportes" element={<Placeholder title="Reportes y Analytics" desc="Gráficos de HH por OTM, supervisor y semana." icon="📊" />} />
-            <Route path="otms" element={<OTMs />} />
+            <Route path="reportes" element={<Reportes />} />
             <Route path="presupuesto" element={<Placeholder title="Presupuesto por OTM" desc="Control de HH plan vs real por partida." icon="💰" />} />
             <Route path="inventario" element={<Placeholder title="Inventario y Materiales" desc="Registro de facturas y control de compras." icon="📦" />} />
             <Route path="valorizacion" element={<Placeholder title="Valorización" desc="Consolidado mensual para presentar a SMCV." icon="🧾" />} />
