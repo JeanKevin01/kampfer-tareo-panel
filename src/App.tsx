@@ -1,3 +1,4 @@
+import EdicionDatos from '@/pages/EdicionDatos'
 import ImpresionQR from '@/pages/ImpresionQR'
 import ImportarPersonal from '@/pages/ImportarPersonal'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
@@ -37,7 +38,7 @@ export default function App() {
             <Route path="inventario"   element={<Placeholder title="Inventario y Materiales" desc="Registro de facturas y control de compras."          icon="📦" />} />
             <Route path="valorizacion" element={<Placeholder title="Valorización"           desc="Consolidado mensual para presentar a SMCV."           icon="🧾" />} />
             <Route path="rentabilidad" element={<Placeholder title="Rentabilidad"           desc="Margen real vs contractual por OTM."                  icon="📈" />} />
-            <Route path="edicion"      element={<Placeholder title="Edición de Datos"       desc="CRUD completo de trabajadores, OTMs y supervisores."  icon="✏️" />} />
+            <Route path="edicion" element={<EdicionDatos />} />
             <Route path="monitor"      element={<Monitor />} />
             <Route path="bitacora"     element={<Placeholder title="Bitácora"               desc="Log de acciones e importaciones del panel."           icon="📜" />} />
           </Route>
