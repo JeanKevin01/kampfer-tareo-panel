@@ -1,3 +1,4 @@
+import Bitacora from '@/pages/Bitacora'
 import EdicionDatos from '@/pages/EdicionDatos'
 import ImpresionQR from '@/pages/ImpresionQR'
 import ImportarPersonal from '@/pages/ImportarPersonal'
@@ -40,7 +41,7 @@ export default function App() {
             <Route path="rentabilidad" element={<Placeholder title="Rentabilidad"           desc="Margen real vs contractual por OTM."                  icon="📈" />} />
             <Route path="edicion" element={<EdicionDatos />} />
             <Route path="monitor"      element={<Monitor />} />
-            <Route path="bitacora"     element={<Placeholder title="Bitácora"               desc="Log de acciones e importaciones del panel."           icon="📜" />} />
+            <Route path="bitacora" element={<Bitacora />} />
           </Route>
         </Routes>
       </BrowserRouter>
