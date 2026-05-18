@@ -1,20 +1,24 @@
-import { useState, useMemo } from 'react'
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Calendar, Clock, Users, TrendingUp, Loader2, ChevronDown, ChevronUp, CalendarRange } from 'lucide-react'
+import { Calendar, Clock, Users, TrendingUp, Loader2, ChevronDown, ChevronUp } from 'lucide-react'
 
 const API = 'https://api.apps1.astraera.space'
 
 interface Registro {
   id: number; trab_id: string; otm_id: string
-  supervisor_id: string; fecha: string; hora: string; hh: number | null
+  supervisor_id: string; hora: string; hh: number | null
 }
 interface Supervisor { id: string; nombre: string }
+interface DiaData { fecha: string; regs: Registro[] }
 
-function hoy()   { return new Date().toISOString().split('T')[0] }
-function hace(n: number) {
-  const d = new Date(); d.setDate(d.getDate() - (n - 1))
+function hoy() { return new Date().toISOString().split('T')[0] }
+
+function haceDias(n: number) {
+  const d = new Date()
+  d.setDate(d.getDate() - (n - 1))
   return d.toISOString().split('T')[0]
 }
+
 function getDatesInRange(desde: string, hasta: string): string[] {
   const dates: string[] = []
   const cur = new Date(desde + 'T12:00:00')
@@ -25,57 +29,62 @@ function getDatesInRange(desde: string, hasta: string): string[] {
   }
   return dates
 }
+
 function formatFecha(fecha: string) {
   return new Date(fecha + 'T12:00:00').toLocaleDateString('es-PE', {
-    weekday: 'long', day: 'numeric', month: 'long'
+    weekday: 'long', day: 'numeric', month: 'long',
   })
 }
 
 type Modo = '7' | '14' | '30' | 'custom'
 
 export default function Bitacora() {
-  const [modo, setModo]           = useState<Modo>('7')
-  const [desde, setDesde]         = useState(hace(7))
-  const [hasta, setHasta]         = useState(hoy())
-  const [expandidos, setExpandidos] = useState<Set<string>>(new Set())
+  const [modo, setModo]               = useState<Modo>('7')
+  const [desdeCustom, setDesdeCustom] = useState(haceDias(7))
+  const [hastaCustom, setHastaCustom] = useState(hoy())
+  const [expandidos, setExpandidos]   = useState<Set<string>>(new Set())
 
-  // Rango efectivo según modo
-  const rangoDesde = modo === 'custom' ? desde : hace(Number(modo))
-  const rangoHasta = modo === 'custom' ? hasta : hoy()
-
-  const fechas = useMemo(() => getDatesInRange(rangoDesde, rangoHasta), [rangoDesde, rangoHasta])
+  const rangoDesde = modo === 'custom' ? desdeCustom : haceDias(parseInt(modo))
+  const rangoHasta = modo === 'custom' ? hastaCustom : hoy()
 
   const { data: supervisores = [] } = useQuery<Supervisor[]>({
     queryKey: ['supervisores'],
     queryFn: () => fetch(API + '/api/supervisores').then(r => r.json()),
-    staleTime: 5 * 60 * 1000,
+    staleTime: 10 * 60 * 1000,
   })
-  const supMap = useMemo(() =>
-    Object.fromEntries(supervisores.map(s => [s.id, s.nombre])), [supervisores])
 
-  // UN SOLO useQuery que fetches todas las fechas en paralelo
-  const { data: diasData = [], isLoading } = useQuery({
+  const { data: diasData = [], isLoading } = useQuery<DiaData[]>({
     queryKey: ['bitacora', rangoDesde, rangoHasta],
     queryFn: async () => {
-      const results = await Promise.all(
+      const fechas = getDatesInRange(rangoDesde, rangoHasta)
+      const resultados = await Promise.all(
         fechas.map(f =>
           fetch(`${API}/api/registros/${f}`)
             .then(r => r.json())
-            .catch(() => [] as Registro[])
+            .then(data => ({ fecha: f, regs: Array.isArray(data) ? data : [] }))
+            .catch(() => ({ fecha: f, regs: [] }))
         )
       )
-      return fechas
-        .map((fecha, i) => ({ fecha, regs: (results[i] as Registro[]) || [] }))
+      return resultados
         .filter(d => d.regs.length > 0)
-        .reverse() // más reciente primero
+        .reverse()
     },
     staleTime: 2 * 60 * 1000,
   })
 
-  const totalRegistros    = diasData.reduce((s, d) => s + d.regs.length, 0)
-  const diasConActividad  = diasData.length
-  const totalHH           = diasData.reduce((s, d) =>
+  const supMap: Record<string, string> = Object.fromEntries(
+    supervisores.map(s => [s.id, s.nombre])
+  )
+
+  const totalRegistros   = diasData.reduce((s, d) => s + d.regs.length, 0)
+  const diasConActividad = diasData.length
+  const totalHH          = diasData.reduce((s, d) =>
     s + d.regs.reduce((ss, r) => ss + (r.hh ?? 0), 0), 0)
+
+  function cambiarModo(m: Modo) {
+    setModo(m)
+    setExpandidos(new Set())
+  }
 
   function toggleDia(fecha: string) {
     setExpandidos(prev => {
@@ -85,52 +94,43 @@ export default function Bitacora() {
     })
   }
 
-  function aplicarModo(m: Modo) {
-    setModo(m)
-    setExpandidos(new Set())
-  }
+  const OPCIONES: [Modo, string][] = [['7','7 días'],['14','2 semanas'],['30','30 días'],['custom','Rango']]
 
   return (
     <div className="space-y-5">
 
-      {/* Controles de rango */}
+      {/* Selector de rango */}
       <div className="flex items-center gap-3 flex-wrap">
-        <div className="flex gap-1.5 bg-k-raised border border-k-border rounded-xl p-1">
-          {([['7','7 días'],['14','2 semanas'],['30','30 días']] as [Modo,string][]).map(([m, label]) => (
-            <button key={m} onClick={() => aplicarModo(m)}
-              className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${
+        <div className="flex gap-1 bg-k-raised border border-k-border rounded-xl p-1">
+          {OPCIONES.map(([m, label]) => (
+            <button key={m} onClick={() => cambiarModo(m)}
+              className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold transition-colors ${
                 modo === m ? 'bg-k-amber text-black' : 'text-k-text2 hover:text-k-text'
               }`}>
+              {m === 'custom' && <Calendar size={11} />}
               {label}
             </button>
           ))}
-          <button onClick={() => aplicarModo('custom')}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold transition-colors ${
-              modo === 'custom' ? 'bg-k-amber text-black' : 'text-k-text2 hover:text-k-text'
-            }`}>
-            <CalendarRange size={12} /> Rango
-          </button>
         </div>
 
-        {/* Selectores de fecha custom */}
         {modo === 'custom' && (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <div className="relative">
               <Calendar size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-k-text3 pointer-events-none" />
-              <input type="date" value={desde}
-                max={hasta}
-                onChange={e => { setDesde(e.target.value); setExpandidos(new Set()) }}
+              <input type="date" value={desdeCustom} max={hastaCustom}
+                onChange={e => { setDesdeCustom(e.target.value); setExpandidos(new Set()) }}
                 className="bg-k-raised border border-k-border rounded-lg pl-8 pr-3 py-2 text-sm text-k-text outline-none focus:border-k-amber transition-colors" />
             </div>
-            <span className="text-k-text3 text-sm">→</span>
+            <span className="text-k-text3">→</span>
             <div className="relative">
               <Calendar size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-k-text3 pointer-events-none" />
-              <input type="date" value={hasta}
-                min={desde} max={hoy()}
-                onChange={e => { setHasta(e.target.value); setExpandidos(new Set()) }}
+              <input type="date" value={hastaCustom} min={desdeCustom} max={hoy()}
+                onChange={e => { setHastaCustom(e.target.value); setExpandidos(new Set()) }}
                 className="bg-k-raised border border-k-border rounded-lg pl-8 pr-3 py-2 text-sm text-k-text outline-none focus:border-k-amber transition-colors" />
             </div>
-            <span className="text-[11px] text-k-text3">{fechas.length} días</span>
+            <span className="text-[11px] text-k-text3 bg-k-raised border border-k-border px-3 py-2 rounded-lg">
+              {getDatesInRange(desdeCustom, hastaCustom).length} días
+            </span>
           </div>
         )}
       </div>
@@ -138,9 +138,9 @@ export default function Bitacora() {
       {/* Stats */}
       <div className="grid grid-cols-3 gap-4">
         {[
-          { label: 'Registros en el período', value: loading ? '…' : totalRegistros,                    color: 'text-k-blue',  Icon: Users       },
-          { label: 'Días con actividad',       value: loading ? '…' : diasConActividad,                 color: 'text-k-green', Icon: Calendar    },
-          { label: 'HH acumuladas',            value: loading ? '…' : totalHH.toFixed(1) + ' HH',      color: 'text-k-amber', Icon: TrendingUp  },
+          { label: 'Registros en el período', value: loading ? '…' : totalRegistros,             color: 'text-k-blue',  Icon: Users      },
+          { label: 'Días con actividad',       value: loading ? '…' : diasConActividad,           color: 'text-k-green', Icon: Calendar   },
+          { label: 'HH acumuladas',            value: loading ? '…' : totalHH.toFixed(1) + ' HH', color: 'text-k-amber', Icon: TrendingUp },
         ].map(s => (
           <div key={s.label} className="bg-k-surface border border-k-border rounded-xl p-5 flex items-center gap-4">
             <div className="w-10 h-10 rounded-xl bg-k-raised flex items-center justify-center flex-shrink-0">
@@ -156,9 +156,9 @@ export default function Bitacora() {
 
       {/* Loading */}
       {isLoading && (
-        <div className="flex items-center justify-center py-16 text-k-text3">
-          <Loader2 size={18} className="animate-spin mr-2" />
-          Cargando historial de {fechas.length} días…
+        <div className="flex flex-col items-center justify-center py-20 gap-3 text-k-text3">
+          <Loader2 size={24} className="animate-spin text-k-amber" />
+          <p className="text-sm">Cargando historial…</p>
         </div>
       )}
 
@@ -171,7 +171,7 @@ export default function Bitacora() {
       )}
 
       {/* Timeline */}
-      {!isLoading && (
+      {!isLoading && diasData.length > 0 && (
         <div className="space-y-3">
           {diasData.map(dia => {
             const expanded   = expandidos.has(dia.fecha)
@@ -180,14 +180,18 @@ export default function Bitacora() {
             const supsUnicos = new Set(dia.regs.map(r => r.supervisor_id)).size
             const totalHHDia = dia.regs.reduce((s, r) => s + (r.hh ?? 0), 0)
 
-            // Agrupar por supervisor + OTM
-            const grupos: Record<string, { supId: string; otm: string; count: number; hora: string; hh: number }> = {}
+            const grupos: Record<string, {
+              supId: string; otm: string; count: number; hora: string; hh: number
+            }> = {}
             dia.regs.forEach(r => {
-              const key = `${r.supervisor_id}__${r.otm_id}`
-              if (!grupos[key]) grupos[key] = { supId: r.supervisor_id, otm: r.otm_id, count: 0, hora: r.hora, hh: 0 }
-              grupos[key].count++
-              grupos[key].hh += r.hh ?? 0
-              if (r.hora < grupos[key].hora) grupos[key].hora = r.hora
+              const k = `${r.supervisor_id}|${r.otm_id}`
+              if (!grupos[k]) grupos[k] = {
+                supId: r.supervisor_id, otm: r.otm_id,
+                count: 0, hora: r.hora, hh: 0,
+              }
+              grupos[k].count++
+              grupos[k].hh += r.hh ?? 0
+              if (r.hora < grupos[k].hora) grupos[k].hora = r.hora
             })
 
             return (
@@ -204,7 +208,7 @@ export default function Bitacora() {
                   <div className="flex items-center gap-4 flex-shrink-0">
                     <div className="text-right">
                       <div className="font-mono text-sm font-bold text-k-green">{totalHHDia.toFixed(1)} HH</div>
-                      <div className="text-[9px] text-k-text3 uppercase">Total día</div>
+                      <div className="text-[9px] text-k-text3 uppercase">Total</div>
                     </div>
                     {expanded
                       ? <ChevronUp   size={14} className="text-k-text3" />
@@ -217,30 +221,33 @@ export default function Bitacora() {
                     {Object.values(grupos)
                       .sort((a, b) => a.hora.localeCompare(b.hora))
                       .map((g, i) => (
-                      <div key={i} className="flex items-center gap-4 px-5 py-3 border-b border-k-border last:border-0 hover:bg-k-raised/30 transition-colors">
-                        <div className="flex items-center gap-2 flex-shrink-0">
-                          <Clock size={12} className="text-k-text3" />
-                          <span className="font-mono text-xs text-k-text2">{g.hora}</span>
-                        </div>
-                        <div className="flex items-center gap-2 flex-1 min-w-0">
-                          <span className="text-xs text-k-text truncate">{supMap[g.supId] ?? g.supId}</span>
-                          <span className="text-k-text3 text-xs">→</span>
-                          <span className="font-mono text-xs font-bold text-k-amber flex-shrink-0">{g.otm}</span>
-                        </div>
-                        <div className="flex items-center gap-4 flex-shrink-0">
-                          <div className="flex items-center gap-1.5">
-                            <Users size={11} className="text-k-text3" />
-                            <span className="text-xs text-k-text2">{g.count} trabajadores</span>
+                        <div key={i}
+                          className="flex items-center gap-4 px-5 py-3 border-b border-k-border last:border-0 hover:bg-k-raised/30 transition-colors">
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            <Clock size={12} className="text-k-text3" />
+                            <span className="font-mono text-xs text-k-text2">{g.hora}</span>
                           </div>
-                          {g.hh > 0 && (
+                          <div className="flex items-center gap-2 flex-1 min-w-0">
+                            <span className="text-xs text-k-text truncate">
+                              {supMap[g.supId] ?? g.supId}
+                            </span>
+                            <span className="text-k-text3 text-xs flex-shrink-0">→</span>
+                            <span className="font-mono text-xs font-bold text-k-amber flex-shrink-0">{g.otm}</span>
+                          </div>
+                          <div className="flex items-center gap-4 flex-shrink-0">
                             <div className="flex items-center gap-1.5">
-                              <TrendingUp size={11} className="text-k-green" />
-                              <span className="text-xs font-mono text-k-green">{g.hh.toFixed(1)} HH</span>
+                              <Users size={11} className="text-k-text3" />
+                              <span className="text-xs text-k-text2">{g.count} trabajadores</span>
                             </div>
-                          )}
+                            {g.hh > 0 && (
+                              <div className="flex items-center gap-1.5">
+                                <TrendingUp size={11} className="text-k-green" />
+                                <span className="text-xs font-mono text-k-green">{g.hh.toFixed(1)} HH</span>
+                              </div>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      ))}
                   </div>
                 )}
               </div>
