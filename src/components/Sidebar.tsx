@@ -3,10 +3,11 @@ import {
   LayoutDashboard, UserCheck, Users, Upload, QrCode, Printer,
   Table2, BarChart3, ClipboardList, FileSpreadsheet, Package,
   Receipt, TrendingUp, PenLine, Activity, History, ChevronRight,
+  FileText,
   type LucideIcon,
 } from 'lucide-react'
 
-interface NavItem { path: string; label: string; icon: LucideIcon }
+interface NavItem  { path: string; label: string; icon: LucideIcon }
 interface NavGroup { label: string; items: NavItem[] }
 
 const NAV: NavGroup[] = [
@@ -37,6 +38,7 @@ const NAV: NavGroup[] = [
     label: 'Control',
     items: [
       { path: '/otms',         label: 'OTMs',           icon: ClipboardList },
+      { path: '/rdc',          label: 'Generar RDC',    icon: FileText },
       { path: '/presupuesto',  label: 'Presupuesto',    icon: FileSpreadsheet },
       { path: '/inventario',   label: 'Inventario',     icon: Package },
       { path: '/valorizacion', label: 'Valorización',   icon: Receipt },
