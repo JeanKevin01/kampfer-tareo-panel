@@ -14,8 +14,8 @@ import {
   Plus, Pencil, Trash2, X, Save, Loader2, TrendingUp, Clock, Gauge,
   Upload, Link2,
 } from 'lucide-react'
-import ImportarPartidas from '@/components/ev/ImportarPartidas'
-import AsignarHH from '@/components/ev/AsignarHH'
+import ImportarPartidas from '@/pages/ImportarPartidas'
+import AsignarHH from '@/pages/AsignarHH'
 
 const API = 'https://api.apps1.astraera.space'
 
