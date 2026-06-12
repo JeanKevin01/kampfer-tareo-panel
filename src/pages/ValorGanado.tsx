@@ -12,7 +12,10 @@ import {
 import {
   Target, BarChart3, ClipboardList, PenLine, Settings2,
   Plus, Pencil, Trash2, X, Save, Loader2, TrendingUp, Clock, Gauge,
+  Upload, Link2,
 } from 'lucide-react'
+import ImportarPartidas from '@/components/ev/ImportarPartidas'
+import AsignarHH from '@/components/ev/AsignarHH'
 
 const API = 'https://api.apps1.astraera.space'
 
@@ -32,13 +35,13 @@ interface Hito {
   peso: number; es_principal: boolean
 }
 interface Partida {
-  id: number; codigo: string; fase: string; sub_fase: string | null
+  id: number; codigo: string; otm_id: string | null; fase: string; sub_fase: string | null
   descripcion: string; unidad: string; sistema: string | null
   metrado_presup: number; metrado_proyec: number | null; hh_presup: number
   hitos: Hito[]
 }
 interface PartidaInput {
-  codigo: string; fase: string; sub_fase: string | null
+  codigo: string; otm_id: string | null; fase: string; sub_fase: string | null
   descripcion: string; unidad: string; sistema: string | null
   metrado_presup: number; metrado_proyec: number | null; hh_presup: number
   hitos: Omit<Hito, 'id'>[]
@@ -48,11 +51,11 @@ interface CapturaHito {
   es_principal: boolean; cant_anterior: number; cant_actual: number
 }
 interface CapturaPartida {
-  partida_id: number; codigo: string; descripcion: string; unidad: string
-  metrado_proyec: number; hh_semana: number; hitos: CapturaHito[]
+  partida_id: number; codigo: string; otm_id: string | null; descripcion: string; unidad: string
+  metrado_proyec: number; hh_tareo: number; hh_semana: number; hitos: CapturaHito[]
 }
 interface ReporteFila {
-  partida_id: number; codigo: string; fase: string; sistema: string | null
+  partida_id: number; codigo: string; otm_id: string | null; fase: string; sistema: string | null
   descripcion: string; unidad: string
   metrado_proyec: number; cantidad_instalada: number; pct_avance: number
   hh_presup: number; hh_proyec: number
@@ -128,7 +131,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 // ============================================================
 // Componente principal
 // ============================================================
-type Tab = 'resumen' | 'partidas' | 'registro' | 'config'
+type Tab = 'resumen' | 'partidas' | 'registro' | 'tareo' | 'config' | 'importar'
 
 export default function ValorGanado() {
   const [tab, setTab] = useState<Tab>('resumen')
@@ -151,7 +154,9 @@ export default function ValorGanado() {
     { id: 'resumen',  label: 'Resumen',          icon: BarChart3 },
     { id: 'partidas', label: 'Partidas',         icon: ClipboardList },
     { id: 'registro', label: 'Registro semanal', icon: PenLine },
+    { id: 'tareo',    label: 'HH Tareo',         icon: Link2 },
     { id: 'config',   label: 'Configuración',    icon: Settings2 },
+    { id: 'importar', label: 'Importar',         icon: Upload },
   ]
 
   return (
@@ -200,7 +205,9 @@ export default function ValorGanado() {
       {tab === 'resumen'  && <TabResumen semana={semana} />}
       {tab === 'partidas' && <TabPartidas semana={semana} />}
       {tab === 'registro' && <TabRegistro semana={semana} />}
+      {tab === 'tareo'    && <AsignarHH />}
       {tab === 'config'   && <TabConfig />}
+      {tab === 'importar' && <ImportarPartidas />}
     </div>
   )
 }
@@ -519,8 +526,13 @@ function TabRegistro({ semana }: { semana: number }) {
               </span>
             </div>
             <div className="flex items-center gap-2">
+              {p.hh_tareo > 0 && (
+                <span className="font-mono text-[11px] font-bold px-2 py-1 rounded border text-k-green bg-green-500/10 border-green-500/20">
+                  Tareo: {fmt(p.hh_tareo)} HH (auto)
+                </span>
+              )}
               <span className="text-[11px] font-bold text-k-text3 uppercase tracking-wider">
-                HH gastadas sem {semana}
+                HH {p.hh_tareo > 0 ? 'adicionales' : 'gastadas'} sem {semana}
               </span>
               <input type="number" step="0.5" min="0"
                 value={hh[p.partida_id] ?? ''}
@@ -576,7 +588,7 @@ function TabRegistro({ semana }: { semana: number }) {
 // TAB 4: Configuración (hoja Fases: WBS + hitos ponderados)
 // ============================================================
 const PARTIDA_VACIA: PartidaInput = {
-  codigo: '', fase: '', sub_fase: null, descripcion: '', unidad: '',
+  codigo: '', otm_id: null, fase: '', sub_fase: null, descripcion: '', unidad: '',
   sistema: null, metrado_presup: 0, metrado_proyec: null, hh_presup: 0,
   hitos: [{ numero: 1, descripcion: '', peso: 1, es_principal: true }],
 }
@@ -617,7 +629,7 @@ function TabConfig() {
     setEditando(p.id)
     setErrMsg('')
     setForm({
-      codigo: p.codigo, fase: p.fase, sub_fase: p.sub_fase,
+      codigo: p.codigo, otm_id: p.otm_id, fase: p.fase, sub_fase: p.sub_fase,
       descripcion: p.descripcion, unidad: p.unidad, sistema: p.sistema,
       metrado_presup: Number(p.metrado_presup),
       metrado_proyec: p.metrado_proyec !== null ? Number(p.metrado_proyec) : null,
@@ -651,6 +663,7 @@ function TabConfig() {
           <table className="w-full whitespace-nowrap">
             <thead>
               <tr className="border-b border-k-border bg-k-raised/50">
+                <th className={TH}>OTM</th>
                 <th className={TH}>Código</th>
                 <th className={TH}>Descripción</th>
                 <th className={TH}>Und</th>
@@ -665,6 +678,7 @@ function TabConfig() {
             <tbody>
               {partidas.map(p => (
                 <tr key={p.id} className="border-b border-k-border last:border-0 hover:bg-k-raised/40 transition-colors">
+                  <td className={`${TD} text-[11px]`}>{p.otm_id ?? '—'}</td>
                   <td className={`${TD} font-mono text-[11px] text-k-amber`}>{p.codigo}</td>
                   <td className={`${TD} max-w-[280px] truncate`} title={p.descripcion}>{p.descripcion}</td>
                   <td className={TD}>{p.unidad}</td>
@@ -697,7 +711,7 @@ function TabConfig() {
                 </tr>
               ))}
               {partidas.length === 0 && (
-                <tr><td colSpan={9} className="py-8 text-center text-k-text3 text-sm">
+                <tr><td colSpan={10} className="py-8 text-center text-k-text3 text-sm">
                   Sin partidas. Crea la primera con el botón "Nueva partida".
                 </td></tr>
               )}
@@ -763,6 +777,11 @@ function ModalPartida({ form, setForm, editando, errMsg, guardando, onGuardar, o
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+          <div>
+            <label className={LABEL}>OTM</label>
+            <input type="text" placeholder="OTM-014" value={form.otm_id ?? ''}
+              onChange={e => setForm({ ...form, otm_id: e.target.value || null })} className={INPUT} />
+          </div>
           <div>
             <label className={LABEL}>Código *</label>
             <input type="text" placeholder="40,01,01" value={form.codigo}
