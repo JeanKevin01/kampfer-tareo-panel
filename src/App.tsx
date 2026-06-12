@@ -3,6 +3,7 @@ import EdicionDatos from '@/pages/EdicionDatos'
 import ImpresionQR from '@/pages/ImpresionQR'
 import ImportarPersonal from '@/pages/ImportarPersonal'
 import GenerarRDC from '@/pages/GenerarRDC'
+import ValorGanado from '@/pages/ValorGanado'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import Layout from '@/components/Layout'
@@ -37,6 +38,7 @@ export default function App() {
             <Route path="reportes"     element={<Reportes />} />
             <Route path="otms"         element={<OTMs />} />
             <Route path="rdc"          element={<GenerarRDC />} />
+            <Route path="valor-ganado" element={<ValorGanado />} />
             <Route path="presupuesto"  element={<Placeholder title="Presupuesto por OTM"    desc="Control de HH plan vs real por partida."    icon="💰" />} />
             <Route path="inventario"   element={<Placeholder title="Inventario y Materiales" desc="Registro de facturas y control de compras."  icon="📦" />} />
             <Route path="valorizacion" element={<Placeholder title="Valorización"            desc="Consolidado mensual para presentar a SMCV." icon="🧾" />} />

@@ -2,7 +2,7 @@ import { NavLink } from 'react-router-dom'
 import {
   LayoutDashboard, UserCheck, Users, Upload, QrCode, Printer,
   Table2, BarChart3, ClipboardList, FileSpreadsheet, Package,
-  Receipt, TrendingUp, PenLine, Activity, History, ChevronRight,
+  Receipt, TrendingUp, PenLine, Activity, History, ChevronRight, Target,
   FileText,
   type LucideIcon,
 } from 'lucide-react'
@@ -39,6 +39,7 @@ const NAV: NavGroup[] = [
     items: [
       { path: '/otms',         label: 'OTMs',           icon: ClipboardList },
       { path: '/rdc',          label: 'Generar RDC',    icon: FileText },
+      { path: '/valor-ganado', label: 'Valor Ganado',   icon: Target },
       { path: '/presupuesto',  label: 'Presupuesto',    icon: FileSpreadsheet },
       { path: '/inventario',   label: 'Inventario',     icon: Package },
       { path: '/valorizacion', label: 'Valorización',   icon: Receipt },
