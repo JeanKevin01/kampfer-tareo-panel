@@ -36,11 +36,13 @@ function otmDeFilename(name: string): string {
 interface PartidaPreview {
   otm_id: string
   codigo: string
-  fase: string
+  fase: string | null        // null para nodos padre del WBS
   descripcion: string
-  unidad: string
+  unidad: string | null      // null para nodos padre
   hh_presup: number
   tipo: string
+  nivel: number
+  parent_codigo: string | null
   ok: boolean
   error?: string
 }
@@ -60,28 +62,31 @@ function parseOTMFile(file: File): Promise<PartidaPreview[]> {
         for (let i = 1; i < rows.length; i++) {
           const row = rows[i]
           const codigo = String(row[0] || '').trim()       // Col A: Item
-          const fase   = String(row[1] || '').trim()       // Col B: Fase
+          const fase   = String(row[1] || '').trim() || null  // Col B: Fase (null = nodo padre)
           const desc   = String(row[2] || '').trim()       // Col C: Descripción
-          const unidad = String(row[3] || '').trim() || 'glb' // Col D: Und.
-          const hhRaw  = row[7]                             // Col H: Horas Hombre
+          const unidad = String(row[3] || '').trim() || null   // Col D: Und.
+          const hhRaw  = row[7]                             // Col H: HH presupuestadas
           
-          if (!fase) continue // Solo importar filas con Fase definida
           if (!codigo || !desc) continue
+          // Ambos: nodos hoja (con Fase) y nodos padre (sin Fase pero con HH)
           
           const hh = typeof hhRaw === 'number' ? hhRaw : parseFloat(String(hhRaw || '0').replace(',', '.'))
+          // Calcular nivel y parent_codigo desde el código item
+          const sep = codigo.includes('.') ? '.' : ','
+          const nivel = codigo.split(sep).length
+          const parent_codigo = nivel > 1 ? codigo.split(sep).slice(0, -1).join(sep) : null
           
           const ok = !isNaN(hh) && hh > 0 && !!otm_id
+          const esPadre = !fase
           partidas.push({
             otm_id: otm_id || '—',
-            codigo,
-            fase,
-            descripcion: desc,
-            unidad,
+            codigo, fase, descripcion: desc, unidad,
             hh_presup: isNaN(hh) ? 0 : Math.round(hh * 100) / 100,
-            tipo: guessTipo(desc),
-            ok,
+            tipo: esPadre ? 'PADRE' : guessTipo(desc),
+            nivel, parent_codigo,
+            ok: esPadre ? (!!otm_id && !isNaN(hh) && hh > 0) : ok,
             error: !otm_id ? 'OTM no detectada en el nombre del archivo'
-                 : isNaN(hh) || hh <= 0 ? 'HH inválidas o cero'
+                 : (isNaN(hh) || hh <= 0) && !esPadre ? 'HH inválidas'
                  : undefined
           })
         }
@@ -243,9 +248,15 @@ export default function ImportarOTM() {
                       <td className="px-3 py-2 font-mono text-k-amber">{p.otm_id}</td>
                       <td className="px-3 py-2 font-mono text-k-text3">{p.codigo}</td>
                       <td className="px-3 py-2">
-                        <span className="bg-amber-500/10 border border-amber-500/20 text-k-amber px-1.5 py-0.5 rounded font-bold">
-                          {p.fase}
-                        </span>
+                        {p.fase ? (
+                          <span className="bg-amber-500/10 border border-amber-500/20 text-k-amber px-1.5 py-0.5 rounded font-bold text-[10px]">
+                            {p.fase}
+                          </span>
+                        ) : (
+                          <span className="bg-k-raised border border-k-border text-k-text3 px-1.5 py-0.5 rounded text-[10px] italic">
+                            padre WBS
+                          </span>
+                        )}
                       </td>
                       <td className="px-3 py-2 text-k-text max-w-[220px] truncate" title={p.descripcion}>
                         {p.descripcion}
@@ -289,7 +300,7 @@ export default function ImportarOTM() {
               >
                 {importMutation.isPending
                   ? <><Loader2 size={16} className="animate-spin" /> Importando...</>
-                  : <><Upload size={16} /> Importar {validas.length} partidas ({validas.reduce((s,p)=>s+p.hh_presup,0).toFixed(0)} HH)</>}
+                  : <><Upload size={16} /> Importar {validas.filter(p=>p.fase).length} hojas + {validas.filter(p=>!p.fase).length} padres ({validas.reduce((s,p)=>s+p.hh_presup,0).toFixed(0)} HH total)</>}
               </button>
             )}
           </div>

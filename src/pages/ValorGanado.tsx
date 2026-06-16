@@ -1,3 +1,4 @@
+import WBSArbol from './WBSArbol'
 import ImportarOTM from './ImportarOTM'
 // ============================================================
 // src/pages/ValorGanado.tsx
@@ -138,7 +139,15 @@ type Tab = 'resumen' | 'partidas' | 'registro' | 'tareo' | 'config' | 'importar'
 
 export default function ValorGanado() {
   const [tab, setTab] = useState<Tab>('resumen')
+  const [selectedOtm, setSelectedOtm] = useState<string>('')
   const [semana, setSemana] = useState<number | null>(null)
+
+  // OTMs que tienen partidas en el módulo EV
+  const { data: otmsEV = [] } = useQuery<{otm_id: string; partidas: number}[]>({
+    queryKey: ['ev-otms'],
+    queryFn: () => req('/ev/otms'),
+    staleTime: 30_000,
+  })
 
   interface SemanaAuto { semana: number; inicio: string; fin: string; hh: number; activa: boolean; label: string }
   const { data: semanasAuto = [] } = useQuery<SemanaAuto[]>({
@@ -184,18 +193,30 @@ export default function ValorGanado() {
         </div>
         <div className="flex items-center gap-2">
           <span className="text-[11px] font-bold text-k-text3 uppercase tracking-wider">Semana de corte</span>
-          <select
-            value={semana}
-            onChange={e => setSemana(Number(e.target.value))}
-            className="bg-k-raised border border-k-border rounded-lg px-3 py-2 text-sm text-k-text outline-none focus:border-k-amber transition-colors min-w-[280px]"
-          >
-            {semanasAuto.map(s => (
-              <option key={s.semana} value={s.semana} style={{ color: s.activa ? undefined : '#4e5a72' }}>
-                {s.label}
-              </option>
-            ))}
-            {!semanas.includes(semana) && <option value={semana}>Sem {semana}</option>}
-          </select>
+          <div className="flex items-center gap-3">
+            <select
+              value={selectedOtm}
+              onChange={e => setSelectedOtm(e.target.value)}
+              className="bg-k-raised border border-k-border rounded-lg px-3 py-2 text-sm text-k-text outline-none focus:border-k-amber transition-colors"
+            >
+              <option value="">Todas las OTMs</option>
+              {otmsEV.map(o => (
+                <option key={o.otm_id} value={o.otm_id}>{o.otm_id} ({o.partidas})</option>
+              ))}
+            </select>
+            <select
+              value={semana}
+              onChange={e => setSemana(Number(e.target.value))}
+              className="bg-k-raised border border-k-border rounded-lg px-3 py-2 text-sm text-k-text outline-none focus:border-k-amber transition-colors min-w-[240px]"
+            >
+              {semanasAuto.map(s => (
+                <option key={s.semana} value={s.semana} style={{ color: s.activa ? undefined : '#4e5a72' }}>
+                  {s.label}
+                </option>
+              ))}
+              {!semanas.includes(semana) && <option value={semana}>Sem {semana}</option>}
+            </select>
+          </div>
           <button onClick={() => { setSemana(semana + 1); setTab('registro') }} className={BTN_AMBER}
             title="Avanzar al registro de la siguiente semana">
             <Plus size={14} /> Nueva semana ({semana + 1})
@@ -218,7 +239,7 @@ export default function ValorGanado() {
       </div>
 
       {tab === 'resumen'  && <TabResumen semana={semana} />}
-      {tab === 'partidas' && <TabPartidas semana={semana} />}
+      {tab === 'partidas' && <WBSArbol otm={selectedOtm} semana={semana} />}
       {tab === 'registro' && <TabRegistro semana={semana} />}
       {tab === 'tareo'    && <AsignarHH />}
       {tab === 'config'   && <TabConfig />}
@@ -230,7 +251,7 @@ export default function ValorGanado() {
 // ============================================================
 // TAB 1: Resumen
 // ============================================================
-function TabResumen({ semana }: { semana: number }) {
+function TabResumen({ semana, otm }: { semana: number; otm?: string }) {
   const { data: rep, isLoading } = useQuery<Reporte>({
     queryKey: ['ev-reporte', semana],
     queryFn: () => req(`/ev/reporte?semana=${semana}`),
@@ -546,12 +567,14 @@ function TabPartidas({ semana }: { semana: number }) {
 // ============================================================
 // TAB 3: Registro semanal (reemplaza los 11 pasos del ISP)
 // ============================================================
-function TabRegistro({ semana }: { semana: number }) {
+function TabRegistro({ semana, otm }: { semana: number; otm?: string }) {
   const qc = useQueryClient()
-  const { data: captura = [], isLoading } = useQuery<CapturaPartida[]>({
-    queryKey: ['ev-captura', semana],
-    queryFn: () => req(`/ev/captura?semana=${semana}`),
+  const { data: todasCaptura = [], isLoading } = useQuery<CapturaPartida[]>({
+    queryKey: ['ev-captura', semana, otm],
+    queryFn: () => req(`/ev/captura?semana=${semana}${otm ? `&otm=${otm}` : ''}`),
   })
+  // Solo nodos hoja (los que tienen hitos) — los padres no tienen entrada de avance
+  const captura = todasCaptura.filter(p => p.hitos && p.hitos.length > 0)
 
   const [avances, setAvances] = useState<Record<number, string>>({})
   const [hh, setHh] = useState<Record<number, string>>({})

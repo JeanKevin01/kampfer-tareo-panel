@@ -15,10 +15,10 @@ const API = 'https://api.apps1.astraera.space'
 interface Plantilla { tipo_actividad: string; hitos: unknown[] }
 
 interface FilaPartida {
-  codigo: string; otm_id: string | null; fase: string; sub_fase: string | null
-  descripcion: string; unidad: string; sistema: string | null
+  codigo: string; otm_id: string | null; fase: string | null; sub_fase: string | null
+  descripcion: string; unidad: string | null; sistema: string | null
   metrado_presup: number; metrado_proyec: number | null; hh_presup: number
-  tipo_actividad: string | null
+  tipo_actividad: string | null; nivel: number; parent_codigo: string | null
   _fila: number; _error: string | null
 }
 interface FilaAvance {
@@ -106,29 +106,33 @@ export default function ImportarPartidas() {
     const fp: FilaPartida[] = rowsP.map((row, i) => {
       const n = norm(row)
       const codigo = n['CODIGO'] || ''
-      const tipo = (n['TIPO_ACTIVIDAD'] || n['TIPO'] || '').toUpperCase() || null
+      const tipo = null
+      const fase  = n['FASE'] || null   // null para nodos padre del WBS
+      const unidad = n['UNIDAD'] || null
       let _error: string | null = null
       if (!codigo) _error = 'CODIGO vacío'
       else if (codigos.has(codigo)) _error = 'CODIGO duplicado en el archivo'
       else if (!n['DESCRIPCION']) _error = 'DESCRIPCION vacía'
-      else if (!n['UNIDAD']) _error = 'UNIDAD vacía'
-      else if (!n['FASE']) _error = 'FASE vacía'
-      else if (num(n['METRADO_PRESUP']) === null) _error = 'METRADO_PRESUP inválido'
-      else if (num(n['HH_PRESUP']) === null) _error = 'HH_PRESUP inválido'
-      else if (tipo && !tipos.has(tipo)) _error = `TIPO_ACTIVIDAD '${tipo}' no existe en el catálogo`
+      // Solo validar unidad si es nodo hoja (tiene Fase)
+      else if (fase && !unidad) _error = 'UNIDAD vacía (requerida para nodos con Fase)'
       codigos.add(codigo)
+      // Calcular nivel y parent_codigo desde el código
+      const sep = codigo.includes('.') ? '.' : ','
+      const nivel = codigo ? codigo.split(sep).length : 1
+      const parent_codigo = nivel > 1 ? codigo.split(sep).slice(0, -1).join(sep) : null
       return {
         codigo,
         otm_id: n['OTM'] || n['OTM_ID'] || null,
-        fase: n['FASE'] || '',
+        fase: fase,
         sub_fase: n['SUB_FASE'] || n['SUBFASE'] || null,
         descripcion: n['DESCRIPCION'] || '',
-        unidad: n['UNIDAD'] || '',
+        unidad: unidad,
         sistema: n['SISTEMA'] || null,
         metrado_presup: num(n['METRADO_PRESUP']) ?? 0,
         metrado_proyec: num(n['METRADO_PROYEC']),
         hh_presup: num(n['HH_PRESUP']) ?? 0,
         tipo_actividad: tipo,
+        nivel, parent_codigo,
         _fila: i + 2, _error,
       }
     })
@@ -259,9 +263,11 @@ export default function ImportarPartidas() {
     return (
       <div className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3 text-sm">
+          <div className="flex items-center gap-3 text-sm flex-wrap">
             <span className="text-k-green font-bold flex items-center gap-1">
-              <CheckCircle size={14} /> {pOk.length} partidas
+              <CheckCircle size={14} />
+              {pOk.filter(p=>p.fase).length} nodos hoja +{' '}
+              {pOk.filter(p=>!p.fase).length} nodos padre
               {aOk.length > 0 && ` · ${aOk.length} avances`}
               {hOk.length > 0 && ` · ${hOk.length} HH`}
             </span>
@@ -270,6 +276,9 @@ export default function ImportarPartidas() {
                 <XCircle size={14} /> {totalErr} con error (no se importarán)
               </span>
             )}
+            <span className="text-k-text3 text-[11px]">
+              · filas padre/resumen omitidas automáticamente
+            </span>
           </div>
           <div className="flex gap-2">
             <button onClick={reset}
@@ -291,7 +300,7 @@ export default function ImportarPartidas() {
             <table className="w-full whitespace-nowrap">
               <thead>
                 <tr className="border-b border-k-border">
-                  {['Fila', 'OTM', 'Código', 'Fase', 'Descripción', 'Und', 'Tipo actividad', 'Sistema', 'Metrado', 'HH Ppto', 'Estado'].map(h => (
+                  {['Fila', 'OTM', 'Código', 'Fase', 'Sub-Fase', 'Descripción', 'Und', 'Metrado', 'HH Ppto', 'Estado'].map(h => (
                     <th key={h} className="py-2 px-3 text-[10px] font-bold text-k-text3 uppercase tracking-wider text-left">{h}</th>
                   ))}
                 </tr>
@@ -302,11 +311,10 @@ export default function ImportarPartidas() {
                     <td className="py-1.5 px-3 text-[11px] text-k-text3 font-mono">{f._fila}</td>
                     <td className="py-1.5 px-3 text-sm text-k-text2">{f.otm_id ?? '—'}</td>
                     <td className="py-1.5 px-3 text-[11px] font-mono text-k-amber">{f.codigo}</td>
-                    <td className="py-1.5 px-3 text-sm text-k-text2">{f.fase}</td>
-                    <td className="py-1.5 px-3 text-sm text-k-text2 max-w-[220px] truncate">{f.descripcion}</td>
+                    <td className="py-1.5 px-3 text-[11px] font-bold" style={{color: f.fase ? '#3B82F6' : '#888'}}>{f.fase ?? <span style={{color:'#888',fontStyle:'italic'}}>padre WBS</span>}</td>
+                    <td className="py-1.5 px-3 text-[11px] text-k-text3 font-mono">{f.sub_fase ?? '—'}</td>
+                    <td className="py-1.5 px-3 text-sm text-k-text2 max-w-[200px] truncate">{f.descripcion}</td>
                     <td className="py-1.5 px-3 text-sm text-k-text2">{f.unidad}</td>
-                    <td className="py-1.5 px-3 text-sm text-k-text2">{f.tipo_actividad ?? 'GENERICO'}</td>
-                    <td className="py-1.5 px-3 text-sm text-k-text2">{f.sistema ?? '—'}</td>
                     <td className="py-1.5 px-3 text-sm font-mono text-k-text2 text-right">{f.metrado_presup}</td>
                     <td className="py-1.5 px-3 text-sm font-mono text-k-text2 text-right">{f.hh_presup}</td>
                     <td className="py-1.5 px-3 text-[11px]">
