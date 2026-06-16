@@ -79,6 +79,8 @@ interface Reporte {
   }
   por_fase: ReporteGrupo[]; por_sistema: ReporteGrupo[]; partidas: ReporteFila[]
 }
+interface PuntoCurvaFase { semana: number; [key: string]: number | null }
+
 interface PuntoCurva {
   semana: number; hh_ganadas_acum: number; hh_gastadas_acum: number
   pf_acum: number | null; pf_sem: number | null
@@ -309,6 +311,8 @@ function TabResumen({ semana }: { semana: number }) {
         <TablaGrupos titulo="Avance por fase / disciplina" grupos={rep.por_fase} />
         <TablaGrupos titulo="Avance por sistema" grupos={rep.por_sistema} />
       </div>
+
+      <CurvasFase semana={semana} />
     </div>
   )
 }
@@ -345,6 +349,90 @@ function TablaGrupos({ titulo, grupos }: { titulo: string; grupos: ReporteGrupo[
             )}
           </tbody>
         </table>
+      </div>
+    </div>
+  )
+}
+
+
+// ============================================================
+// CURVAS POR FASE
+// ============================================================
+const FASE_COLORS: Record<string, string> = {
+  'SX-EW': '#3b82f6', 'Mina': '#10b981', 'C2 Area Seca': '#f59e0b',
+  'C2 Área Seca': '#f59e0b', 'Lixviacion': '#a78bfa', 'Lixviación': '#a78bfa',
+  'Aguas': '#22d3ee', 'GSC': '#94a3b8',
+}
+const COLOR_LIST = ['#3b82f6','#10b981','#f59e0b','#a78bfa','#22d3ee','#94a3b8','#ef4444','#ec4899']
+
+function CurvasFase({ semana }: { semana: number }) {
+  const { data, isLoading } = useQuery<{ fases: string[]; serie: PuntoCurvaFase[] }>({
+    queryKey: ['ev-curva-fase', semana],
+    queryFn: () => req(`/ev/curva-fase?hasta=${semana}`),
+    enabled: semana > 0,
+  })
+
+  if (isLoading) return (
+    <p className="text-k-text3 text-sm flex items-center gap-2">
+      <Loader2 size={14} className="animate-spin" /> Cargando curvas...
+    </p>
+  )
+  if (!data?.serie?.length) return (
+    <div className="bg-k-raised border border-k-border rounded-xl p-8 text-center text-k-text3 text-sm">
+      Sin datos de avance por fase aún — registra avances semanales primero
+    </div>
+  )
+
+  const { fases, serie } = data
+  return (
+    <div className={CARD}>
+      <h3 className="text-[11px] font-bold text-k-text3 uppercase tracking-widest mb-1">
+        PF acumulado por fase / disciplina
+      </h3>
+      <p className="text-[11px] text-k-text3 mb-4">
+        Línea punteada = meta PF 1.00. Cada fase muestra su propio Factor de Productividad acumulado semana a semana.
+      </p>
+      <div className="h-80">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={serie} margin={{ top: 4, right: 16, bottom: 0, left: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#252f45" />
+            <XAxis dataKey="semana" tick={{ fill: '#8a96ad', fontSize: 11 }} tickFormatter={s => `S${s}`} />
+            <YAxis tick={{ fill: '#8a96ad', fontSize: 11 }} domain={[0, 'auto']}
+                   tickFormatter={v => v.toFixed(2)} />
+            <Tooltip
+              contentStyle={{ background: '#1c2436', border: '1px solid #252f45', borderRadius: 8, fontSize: 12 }}
+              formatter={(v: any, name: string) => [Number(v).toFixed(3), name.replace('pf_', '')]}
+              labelFormatter={l => `Semana ${l}`}
+            />
+            <Legend wrapperStyle={{ fontSize: 11 }}
+                    formatter={(val: string) => val.replace('pf_', '')} />
+            <ReferenceLine y={1} stroke="#f59e0b" strokeDasharray="5 5" strokeWidth={1.5} />
+            {fases.map((f, i) => (
+              <Line key={f} type="monotone" dataKey={`pf_${f}`}
+                    name={`pf_${f}`}
+                    stroke={FASE_COLORS[f] ?? COLOR_LIST[i % COLOR_LIST.length]}
+                    strokeWidth={2} dot={false} connectNulls />
+            ))}
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-3">
+        {fases.map((f, i) => {
+          const ultimo = [...serie].reverse().find(p => p[`pf_${f}`] != null)
+          const pf = ultimo ? (ultimo[`pf_${f}`] as number) : null
+          const color = FASE_COLORS[f] ?? COLOR_LIST[i % COLOR_LIST.length]
+          return (
+            <div key={f} className="flex items-center gap-2 bg-k-raised border border-k-border rounded-lg px-3 py-2">
+              <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: color }} />
+              <span className="text-[11px] font-bold text-k-text">{f}</span>
+              {pf != null && (
+                <span className={`font-mono text-[11px] font-bold ml-1 ${
+                  pf >= 1 ? 'text-k-green' : pf >= 0.85 ? 'text-k-amber' : 'text-k-red'
+                }`}>PF {pf.toFixed(2)}</span>
+              )}
+            </div>
+          )
+        })}
       </div>
     </div>
   )
