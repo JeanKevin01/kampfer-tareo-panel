@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Calendar, Download, Calculator, Loader2 } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { Calendar, Download, Loader2 } from 'lucide-react'
 
 const API = 'https://api.apps1.astraera.space'
 
@@ -8,10 +8,12 @@ interface Registro { id: number; trab_id: string; otm_id: string; supervisor_id:
 interface Trabajador { id: string; nombre: string; cargo: string }
 interface Supervisor { id: string; nombre: string }
 
-const hoy = () => new Date().toISOString().split('T')[0]
+const hoy = () => {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+}
 
 export default function RegistrosHH() {
-  const qc = useQueryClient()
   const [fecha, setFecha]         = useState(hoy())
   const [otmFilter, setOtmFilter] = useState('TODOS')
   const [supFilter, setSupFilter] = useState('TODOS')
@@ -31,15 +33,6 @@ export default function RegistrosHH() {
     queryKey: ['supervisores'],
     queryFn: () => fetch(API + '/api/supervisores').then(r => r.json()),
     staleTime: 5 * 60 * 1000,
-  })
-
-  const calcMutation = useMutation({
-    mutationFn: () => fetch(API + '/api/calcular-hh', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fecha }),
-    }).then(r => r.json()),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['registros', fecha] }),
   })
 
   const trabMap = useMemo(() => Object.fromEntries(trabajadores.map(t => [t.id, t])), [trabajadores])
@@ -83,11 +76,7 @@ export default function RegistrosHH() {
             className="flex items-center gap-2 bg-k-raised border border-k-border text-k-text2 hover:text-k-text font-bold text-sm px-4 py-2.5 rounded-lg transition-colors disabled:opacity-40">
             <Download size={14} /> Exportar CSV
           </button>
-          <button onClick={() => calcMutation.mutate()} disabled={calcMutation.isPending || registros.length === 0}
-            className="flex items-center gap-2 bg-k-amber hover:bg-k-amber2 disabled:opacity-40 text-black font-bold text-sm px-4 py-2.5 rounded-lg transition-colors">
-            {calcMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <Calculator size={14} />}
-            Calcular HH
-          </button>
+
         </div>
       </div>
 
@@ -166,8 +155,7 @@ export default function RegistrosHH() {
         {!isLoading && filtered.length > 0 && (
           <div className="px-4 py-2 border-t border-k-border bg-k-raised flex items-center justify-between">
             <span className="text-[11px] text-k-text3">{filtered.length} registros · {totalHH} HH totales</span>
-            {calcMutation.isSuccess && <span className="text-[11px] text-k-green">✓ HH calculadas correctamente</span>}
-          </div>
+            </div>
         )}
       </div>
     </div>
