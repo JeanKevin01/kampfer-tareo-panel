@@ -1,3 +1,4 @@
+import ImportarOTM from './ImportarOTM'
 // ============================================================
 // src/pages/ValorGanado.tsx
 // Módulo Valor Ganado — lógica ISP Fluor digitalizada
@@ -139,14 +140,21 @@ export default function ValorGanado() {
   const [tab, setTab] = useState<Tab>('resumen')
   const [semana, setSemana] = useState<number | null>(null)
 
-  const { data: semanas = [] } = useQuery<number[]>({
-    queryKey: ['ev-semanas'],
-    queryFn: () => req('/ev/semanas'),
+  interface SemanaAuto { semana: number; inicio: string; fin: string; hh: number; activa: boolean; label: string }
+  const { data: semanasAuto = [] } = useQuery<SemanaAuto[]>({
+    queryKey: ['ev-semanas-auto'],
+    queryFn: () => req('/ev/semanas-auto'),
+    refetchInterval: 5 * 60 * 1000,
   })
+  const semanas = semanasAuto.map(s => s.semana)
 
   useEffect(() => {
-    if (semana === null) setSemana(semanas.length ? semanas[semanas.length - 1] : 1)
-  }, [semanas, semana])
+    if (semana === null && semanasAuto.length) {
+      // Seleccionar la última semana ACTIVA (con registros)
+      const ultActiva = [...semanasAuto].reverse().find(s => s.activa)
+      setSemana(ultActiva ? ultActiva.semana : semanasAuto[semanasAuto.length - 1].semana)
+    }
+  }, [semanasAuto, semana])
 
   if (semana === null) {
     return <p className="text-k-text3 text-sm flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Cargando módulo…</p>
@@ -179,12 +187,17 @@ export default function ValorGanado() {
           <select
             value={semana}
             onChange={e => setSemana(Number(e.target.value))}
-            className="bg-k-raised border border-k-border rounded-lg px-3 py-2 text-sm text-k-text outline-none focus:border-k-amber transition-colors"
+            className="bg-k-raised border border-k-border rounded-lg px-3 py-2 text-sm text-k-text outline-none focus:border-k-amber transition-colors min-w-[280px]"
           >
-            {semanas.map(s => <option key={s} value={s}>Sem {s}</option>)}
+            {semanasAuto.map(s => (
+              <option key={s.semana} value={s.semana} style={{ color: s.activa ? undefined : '#4e5a72' }}>
+                {s.label}
+              </option>
+            ))}
             {!semanas.includes(semana) && <option value={semana}>Sem {semana}</option>}
           </select>
-          <button onClick={() => { setSemana(semana + 1); setTab('registro') }} className={BTN_AMBER}>
+          <button onClick={() => { setSemana(semana + 1); setTab('registro') }} className={BTN_AMBER}
+            title="Avanzar al registro de la siguiente semana">
             <Plus size={14} /> Nueva semana ({semana + 1})
           </button>
         </div>
@@ -209,7 +222,7 @@ export default function ValorGanado() {
       {tab === 'registro' && <TabRegistro semana={semana} />}
       {tab === 'tareo'    && <AsignarHH />}
       {tab === 'config'   && <TabConfig />}
-      {tab === 'importar' && <ImportarPartidas />}
+      {tab === 'importar' && <div className="space-y-5"><ImportarOTM /><ImportarPartidas /></div>}
     </div>
   )
 }
