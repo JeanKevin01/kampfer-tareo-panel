@@ -1,3 +1,4 @@
+import GuiaFases from './pages/GuiaFases'
 import Bitacora from '@/pages/Bitacora'
 import EdicionDatos from '@/pages/EdicionDatos'
 import ImpresionQR from '@/pages/ImpresionQR'
@@ -40,6 +41,7 @@ export default function App() {
             <Route path="rdc"          element={<GenerarRDC />} />
             <Route path="valor-ganado" element={<ValorGanado />} />
             <Route path="presupuesto"  element={<Placeholder title="Presupuesto por OTM"    desc="Control de HH plan vs real por partida."    icon="💰" />} />
+            <Route path="guia-fases"   element={<GuiaFases />} />
             <Route path="inventario"   element={<Placeholder title="Inventario y Materiales" desc="Registro de facturas y control de compras."  icon="📦" />} />
             <Route path="valorizacion" element={<Placeholder title="Valorización"            desc="Consolidado mensual para presentar a SMCV." icon="🧾" />} />
             <Route path="rentabilidad" element={<Placeholder title="Rentabilidad"            desc="Margen real vs contractual por OTM."        icon="📈" />} />

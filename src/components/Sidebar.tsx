@@ -41,6 +41,7 @@ const NAV: NavGroup[] = [
       { path: '/rdc',          label: 'Generar RDC',    icon: FileText },
       { path: '/valor-ganado', label: 'Valor Ganado',   icon: Target },
       { path: '/presupuesto',  label: 'Presupuesto',    icon: FileSpreadsheet },
+      { path: '/guia-fases',   label: 'Guía de Fases',  icon: BookOpen },
       { path: '/inventario',   label: 'Inventario',     icon: Package },
       { path: '/valorizacion', label: 'Valorización',   icon: Receipt },
       { path: '/rentabilidad', label: 'Rentabilidad',   icon: TrendingUp },
