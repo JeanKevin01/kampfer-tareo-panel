@@ -238,7 +238,7 @@ export default function ImportarOTM() {
                       <td className="px-3 py-2">
                         {p.ok
                           ? <CheckCircle size={12} className="text-k-green" />
-                          : <AlertCircle size={12} className="text-k-red" title={p.error} />}
+                          : <AlertCircle size={12} className="text-k-red" title={p.error ?? ''} />}
                       </td>
                       <td className="px-3 py-2 font-mono text-k-amber">{p.otm_id}</td>
                       <td className="px-3 py-2 font-mono text-k-text3">{p.codigo}</td>
