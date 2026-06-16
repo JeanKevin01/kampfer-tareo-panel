@@ -1,14 +1,26 @@
-// WBSArbol.tsx — Vista de árbol WBS completo con rollup de valores EV
+// WBSArbol.tsx — Árbol WBS completo con rollup de valores EV
+// Colores por nivel (igual que Excel del ingeniero de costos) + variables del panel Kampfer
 import { useState, useMemo, useCallback } from 'react'
-import { useQuery }  from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { ChevronRight, ChevronDown, Loader2 } from 'lucide-react'
 
 const API = 'https://api.apps1.astraera.space'
 
+// ── Colores por nivel (como el Excel del ing. de costos) ─────────
+// Panel usa tema oscuro → colores claros sobre fondo negro
+const NIVEL_COLOR: Record<number, { text: string; bg: string; border: string; bold: boolean }> = {
+  1: { text: '#FF7070', bg: 'rgba(255,80,80,0.10)',  border: '#FF7070', bold: true  }, // rojo — nivel raíz
+  2: { text: '#4ECDC4', bg: 'rgba(78,205,196,0.08)', border: '#4ECDC4', bold: true  }, // teal
+  3: { text: '#C77DFF', bg: 'rgba(199,125,255,0.07)',border: '#C77DFF', bold: false }, // morado
+  4: { text: '#FCA94C', bg: 'rgba(252,169,76,0.06)', border: '#FCA94C', bold: false }, // ámbar
+}
+const NIVEL_COLOR_DEFAULT = { text: '#94A3B8', bg: 'rgba(148,163,184,0.05)', border: '#94A3B8', bold: false }
+
+// Fase → color vivo visible sobre fondo oscuro
 const FASE_COLOR: Record<string, string> = {
-  FAB:'#1D9E75', EST:'#3B82F6', MEC:'#D85A30', ELE:'#BA7517',
-  TUB:'#7F77DD', INS:'#D4537E', CIV:'#888780', AND:'#0F8C6A',
-  APY:'#639922', ING:'#D97706', COM:'#7C3ABD',
+  FAB:'#2DD4A8', EST:'#60A5FA', MEC:'#FB923C', ELE:'#FACC15',
+  TUB:'#A78BFA', INS:'#F472B6', CIV:'#94A3B8', AND:'#34D399',
+  APY:'#86EFAC', ING:'#FCD34D', COM:'#C4B5FD',
 }
 
 interface Fila {
@@ -19,141 +31,121 @@ interface Fila {
 }
 interface Nodo extends Fila {
   children: Nodo[]
-  // rollup (calculado desde hijos para padres)
-  r_hh_gan: number; r_hh_gast: number; r_pct: number; r_pf: number
-}
-
-function pct(v: number) { return (v*100).toFixed(1)+'%' }
-function hh(v: number)  { return v > 0 ? v.toLocaleString('es-PE',{maximumFractionDigits:1}) : '—' }
-function pff(v: number, gast: number) {
-  if (gast <= 0) return '—'
-  const f = v/gast
-  return <span style={{ color: f >= 1 ? '#10b981' : f >= 0.85 ? '#f59e0b' : '#ef4444', fontWeight:600 }}>{f.toFixed(2)}</span>
+  r_hh_gan: number; r_hh_gast: number; r_pct: number
 }
 
 function buildTree(filas: Fila[]): Nodo[] {
   const map = new Map<string, Nodo>()
-  for (const f of filas) {
-    map.set(f.codigo, { ...f, children: [], r_hh_gan:0, r_hh_gast:0, r_pct:0, r_pf:0 })
-  }
+  for (const f of filas) map.set(f.codigo, { ...f, children: [], r_hh_gan:0, r_hh_gast:0, r_pct:0 })
   const roots: Nodo[] = []
   for (const node of map.values()) {
-    if (node.parent_codigo && map.has(node.parent_codigo)) {
-      map.get(node.parent_codigo)!.children.push(node)
-    } else {
-      roots.push(node)
-    }
+    if (node.parent_codigo && map.has(node.parent_codigo)) map.get(node.parent_codigo)!.children.push(node)
+    else roots.push(node)
   }
   const sort = (ns: Nodo[]) => { ns.sort((a,b) => a.codigo.localeCompare(b.codigo)); ns.forEach(n => sort(n.children)) }
   sort(roots)
-  // Rollup bottom-up
   const rollup = (n: Nodo) => {
-    if (n.children.length === 0) {
-      n.r_hh_gan  = n.hh_ganadas_acum
-      n.r_hh_gast = n.hh_gastadas_acum
-    } else {
-      n.children.forEach(rollup)
-      n.r_hh_gan  = n.children.reduce((s,c) => s + c.r_hh_gan,  0)
-      n.r_hh_gast = n.children.reduce((s,c) => s + c.r_hh_gast, 0)
-    }
+    if (n.children.length === 0) { n.r_hh_gan = n.hh_ganadas_acum; n.r_hh_gast = n.hh_gastadas_acum }
+    else { n.children.forEach(rollup); n.r_hh_gan = n.children.reduce((s,c)=>s+c.r_hh_gan,0); n.r_hh_gast = n.children.reduce((s,c)=>s+c.r_hh_gast,0) }
     n.r_pct = n.hh_presup > 0 ? n.r_hh_gan / n.hh_presup : 0
-    n.r_pf  = n.r_hh_gast > 0 ? n.r_hh_gan / n.r_hh_gast : 0
   }
   roots.forEach(rollup)
   return roots
 }
 
-function WBSRow({ node, collapsed, onToggle, depth }: {
-  node: Nodo; collapsed: Set<string>; onToggle:(c:string)=>void; depth: number
-}) {
+function pfDisplay(gan: number, gast: number) {
+  if (gast <= 0) return <span style={{ color:'#4e5a72', fontSize:11 }}>—</span>
+  const v = gan/gast
+  return <span style={{ color: v>=1?'#2DD4A8': v>=0.85?'#FACC15':'#FF6B6B', fontWeight:600, fontFamily:'var(--mono)', fontSize:12 }}>{v.toFixed(2)}</span>
+}
+
+function WBSRow({ node, collapsed, onToggle }: { node: Nodo; collapsed: Set<string>; onToggle:(c:string)=>void }) {
   const isCollapsed = collapsed.has(node.codigo)
   const hasChildren = node.children.length > 0
-  const color = node.fase ? (FASE_COLOR[node.fase] ?? '#888') : undefined
-  const esPadre = !node.es_hoja && hasChildren
-  const bg = esPadre ? 'rgba(255,255,255,0.03)' : 'transparent'
-  const indent = depth * 18
+  const isLeaf = node.es_hoja && !hasChildren
+  const nivelStyle = isLeaf
+    ? { text: FASE_COLOR[node.fase ?? ''] ?? '#E2E8F0', bg: 'transparent', border: FASE_COLOR[node.fase ?? ''] ?? '#4e5a72', bold: false }
+    : (NIVEL_COLOR[node.nivel] ?? NIVEL_COLOR_DEFAULT)
+  const indent = (node.nivel - 1) * 20
 
   return (
     <>
-      <tr style={{ background: bg, borderBottom: '0.5px solid var(--color-border-tertiary)' }}>
-        {/* Código */}
-        <td style={{ padding:'7px 8px 7px', whiteSpace:'nowrap' }}>
+      <tr style={{ background: nivelStyle.bg, borderBottom: '0.5px solid #1c2436', borderLeft: `3px solid ${nivelStyle.border}` }}>
+        {/* Código + toggle */}
+        <td style={{ padding:'7px 10px 7px 6px', whiteSpace:'nowrap', width:200 }}>
           <div style={{ display:'flex', alignItems:'center', gap:4, paddingLeft: indent }}>
-            {hasChildren ? (
-              <button onClick={() => onToggle(node.codigo)}
-                style={{ background:'none', border:'none', cursor:'pointer', color:'var(--color-text-tertiary)', padding:0, display:'flex', lineHeight:1 }}>
-                {isCollapsed ? <ChevronRight size={13}/> : <ChevronDown size={13}/>}
-              </button>
-            ) : <span style={{ width:17 }}/>}
-            <span style={{ fontFamily:'var(--font-mono)', fontSize:11,
-              color: esPadre ? 'var(--color-text-secondary)' : (color ?? 'var(--color-text-tertiary)'),
-              fontWeight: esPadre ? 500 : 400 }}>
+            {hasChildren
+              ? <button onClick={() => onToggle(node.codigo)}
+                  style={{ background:'none', border:'none', cursor:'pointer', color: nivelStyle.text, padding:0, display:'flex', lineHeight:1, flexShrink:0 }}>
+                  {isCollapsed ? <ChevronRight size={13}/> : <ChevronDown size={13}/>}
+                </button>
+              : <span style={{ display:'inline-block', width:17 }}/>
+            }
+            <span style={{ fontFamily:'var(--mono)', fontSize:11, color: nivelStyle.text, fontWeight: nivelStyle.bold ? 700 : 500, letterSpacing:'.3px' }}>
               {node.codigo}
             </span>
           </div>
         </td>
         {/* Descripción */}
-        <td style={{ padding:'7px 8px', maxWidth:320 }}>
-          <span style={{ fontSize: esPadre ? 13 : 12, fontWeight: esPadre ? 500 : 400,
-            color: esPadre ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
-            display:'block', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}
-            title={node.descripcion}>
-            {node.descripcion}
+        <td style={{ padding:'7px 12px' }}>
+          <span style={{
+            fontSize: node.nivel <= 2 ? 13 : 12,
+            fontWeight: nivelStyle.bold ? 600 : 400,
+            color: isLeaf ? '#c8d0e0' : nivelStyle.text,  // ← SIEMPRE claro sobre fondo oscuro
+            fontStyle: !isLeaf && node.nivel >= 2 ? 'italic' : 'normal',
+            display:'block', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'
+          }} title={node.descripcion}>
+            {node.descripcion || <span style={{ color:'#4e5a72', fontSize:11, fontStyle:'italic' }}>sin descripción</span>}
           </span>
         </td>
-        {/* Fase */}
-        <td style={{ padding:'7px 8px', textAlign:'center' }}>
+        {/* Fase badge */}
+        <td style={{ padding:'7px 8px', textAlign:'center', width:90 }}>
           {node.fase && (
-            <span style={{ fontFamily:'var(--font-mono)', fontSize:10, fontWeight:700,
-              color: color, background: color+'22', border:`0.5px solid ${color}55`,
-              padding:'1px 6px', borderRadius:4 }}>
+            <span style={{ fontFamily:'var(--mono)', fontSize:10, fontWeight:700,
+              color: FASE_COLOR[node.fase] ?? '#94A3B8',
+              background: (FASE_COLOR[node.fase] ?? '#94A3B8')+'22',
+              border:`0.5px solid ${(FASE_COLOR[node.fase] ?? '#94A3B8')}55`,
+              padding:'2px 6px', borderRadius:4, letterSpacing:'.3px', whiteSpace:'nowrap' }}>
               {node.sub_fase ?? node.fase}
             </span>
           )}
         </td>
         {/* Und */}
-        <td style={{ padding:'7px 8px', textAlign:'center', fontSize:11,
-          color:'var(--color-text-tertiary)', fontFamily:'var(--font-mono)' }}>
-          {node.unidad ?? '—'}
+        <td style={{ padding:'7px 8px', textAlign:'center', fontSize:11, color:'#8a96ad', fontFamily:'var(--mono)', width:60 }}>
+          {node.unidad ?? ''}
         </td>
         {/* HH Plan */}
-        <td style={{ padding:'7px 12px 7px 8px', textAlign:'right', fontFamily:'var(--font-mono)',
-          fontSize:12, fontWeight: esPadre ? 500 : 400, color:'var(--color-text-secondary)' }}>
-          {hh(node.hh_presup)}
+        <td style={{ padding:'7px 12px 7px 8px', textAlign:'right', fontFamily:'var(--mono)', fontSize:12,
+          color: isLeaf ? '#8a96ad' : '#e8edf5', fontWeight: isLeaf ? 400 : 500, width:100 }}>
+          {node.hh_presup > 0 ? node.hh_presup.toLocaleString('es-PE',{maximumFractionDigits:1}) : '—'}
         </td>
         {/* HH Gastadas */}
-        <td style={{ padding:'7px 12px 7px 8px', textAlign:'right', fontFamily:'var(--font-mono)',
-          fontSize:12, color:'#ef4444' }}>
-          {hh(node.r_hh_gast)}
+        <td style={{ padding:'7px 12px 7px 8px', textAlign:'right', fontFamily:'var(--mono)', fontSize:12, color:'#FF6B6B', width:110 }}>
+          {node.r_hh_gast > 0 ? node.r_hh_gast.toLocaleString('es-PE',{maximumFractionDigits:1}) : <span style={{color:'#4e5a72'}}>—</span>}
         </td>
         {/* HH Ganadas */}
-        <td style={{ padding:'7px 12px 7px 8px', textAlign:'right', fontFamily:'var(--font-mono)',
-          fontSize:12, color:'#10b981' }}>
-          {hh(node.r_hh_gan)}
+        <td style={{ padding:'7px 12px 7px 8px', textAlign:'right', fontFamily:'var(--mono)', fontSize:12, color:'#2DD4A8', width:110 }}>
+          {node.r_hh_gan > 0 ? node.r_hh_gan.toLocaleString('es-PE',{maximumFractionDigits:1}) : <span style={{color:'#4e5a72'}}>—</span>}
         </td>
         {/* % Avance */}
-        <td style={{ padding:'7px 8px', textAlign:'center' }}>
-          <div style={{ position:'relative', height:14, minWidth:64,
-            background:'var(--color-border-tertiary)', borderRadius:7, overflow:'hidden' }}>
-            <div style={{ position:'absolute', left:0, top:0, bottom:0, borderRadius:7,
-              background: node.r_pct >= 1 ? '#10b981' : '#3b82f6',
-              width: `${Math.min(node.r_pct * 100, 100)}%`, transition:'width .5s' }}/>
-            <span style={{ position:'absolute', inset:0, display:'flex', alignItems:'center',
-              justifyContent:'center', fontSize:9, fontWeight:700,
-              color: node.r_pct > 0.5 ? '#fff' : 'var(--color-text-secondary)' }}>
-              {pct(node.r_pct)}
+        <td style={{ padding:'7px 10px', width:100 }}>
+          <div style={{ position:'relative', height:16, background:'#1c2436', borderRadius:8, overflow:'hidden', minWidth:64 }}>
+            {node.r_pct > 0 && <div style={{ position:'absolute', left:0, top:0, bottom:0, borderRadius:8,
+              background: node.r_pct >= 1 ? '#2DD4A8' : '#3B82F6',
+              width:`${Math.min(node.r_pct*100,100)}%`, transition:'width .5s' }}/>}
+            <span style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center',
+              fontSize:9, fontWeight:700, color: node.r_pct > 0.5 ? '#0f1117' : '#8a96ad' }}>
+              {(node.r_pct*100).toFixed(1)}%
             </span>
           </div>
         </td>
         {/* PF */}
-        <td style={{ padding:'7px 8px', textAlign:'center', fontSize:12 }}>
-          {pff(node.r_hh_gan, node.r_hh_gast)}
+        <td style={{ padding:'7px 10px', textAlign:'center', width:70 }}>
+          {pfDisplay(node.r_hh_gan, node.r_hh_gast)}
         </td>
       </tr>
-      {/* Hijos */}
       {!isCollapsed && node.children.map(child => (
-        <WBSRow key={child.codigo} node={child} collapsed={collapsed}
-          onToggle={onToggle} depth={depth+1} />
+        <WBSRow key={child.codigo} node={child} collapsed={collapsed} onToggle={onToggle} />
       ))}
     </>
   )
@@ -162,7 +154,7 @@ function WBSRow({ node, collapsed, onToggle, depth }: {
 export default function WBSArbol({ otm, semana }: { otm: string; semana: number }) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
 
-  const { data, isLoading } = useQuery<{ filas: Fila[] }>({
+  const { data, isLoading, isError } = useQuery<{ filas: Fila[] }>({
     queryKey: ['ev-arbol', otm, semana],
     queryFn: () => fetch(`${API}/ev/arbol?semana=${semana}${otm ? `&otm=${otm}` : ''}`).then(r => r.json()),
     enabled: semana > 0,
@@ -171,98 +163,99 @@ export default function WBSArbol({ otm, semana }: { otm: string; semana: number 
   const tree = useMemo(() => buildTree(data?.filas ?? []), [data])
 
   const toggle = useCallback((c: string) => {
-    setCollapsed(prev => {
-      const next = new Set(prev)
-      if (next.has(c)) next.delete(c); else next.add(c)
-      return next
-    })
+    setCollapsed(prev => { const n = new Set(prev); if(n.has(c)) n.delete(c); else n.add(c); return n })
   }, [])
 
-  const expandAll  = () => setCollapsed(new Set())
+  const expandAll   = () => setCollapsed(new Set())
   const collapseAll = () => {
-    const parents = new Set((data?.filas ?? []).filter(f => !f.es_hoja).map(f => f.codigo))
-    setCollapsed(parents)
+    const padres = new Set((data?.filas ?? []).filter(f => !f.es_hoja || (data?.filas??[]).some(c=>c.parent_codigo===f.codigo)).map(f=>f.codigo))
+    setCollapsed(padres)
   }
 
-  if (isLoading) return (
-    <div className="flex items-center gap-2 py-10 text-k-text3 text-sm">
-      <Loader2 size={14} className="animate-spin"/> Cargando árbol WBS...
+  if (isLoading) return <div style={{display:'flex',alignItems:'center',gap:8,padding:'40px 0',color:'#8a96ad',fontSize:14}}><Loader2 size={16} className="animate-spin"/>Cargando árbol WBS...</div>
+  if (isError || !data?.filas?.length) return (
+    <div style={{textAlign:'center',padding:'48px 0',color:'#8a96ad',fontSize:14}}>
+      {otm ? `Sin partidas para ${otm} — verifica que esté importada` : 'Selecciona una OTM en el selector de arriba o importa partidas desde la pestaña Importar'}
     </div>
   )
 
-  if (!data?.filas?.length) return (
-    <div className="text-center py-12 text-k-text3 text-sm">
-      {otm ? `Sin partidas para ${otm}` : 'Selecciona una OTM o importa partidas primero'}
-    </div>
-  )
-
-  const totalPlan  = tree.reduce((s, n) => s + n.hh_presup, 0)
-  const totalGast  = tree.reduce((s, n) => s + n.r_hh_gast, 0)
-  const totalGan   = tree.reduce((s, n) => s + n.r_hh_gan,  0)
+  const totalPlan = tree.reduce((s,n)=>s+n.hh_presup,0)
+  const totalGast = tree.reduce((s,n)=>s+n.r_hh_gast,0)
+  const totalGan  = tree.reduce((s,n)=>s+n.r_hh_gan,0)
+  const totalNodos = data.filas.length
+  const totalHojas = data.filas.filter(f=>f.es_hoja).length
 
   return (
     <div>
       {/* Controles */}
-      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
-        <div style={{ display:'flex', gap:8 }}>
-          <button onClick={expandAll} style={{ fontSize:11, color:'var(--color-text-secondary)',
-            background:'var(--color-background-secondary)', border:'0.5px solid var(--color-border-secondary)',
-            borderRadius:6, padding:'4px 10px', cursor:'pointer' }}>
-            Expandir todo
-          </button>
-          <button onClick={collapseAll} style={{ fontSize:11, color:'var(--color-text-secondary)',
-            background:'var(--color-background-secondary)', border:'0.5px solid var(--color-border-secondary)',
-            borderRadius:6, padding:'4px 10px', cursor:'pointer' }}>
-            Colapsar todo
-          </button>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
+        <div style={{display:'flex',gap:8}}>
+          {['Expandir todo','Colapsar todo'].map((lbl,i) => (
+            <button key={lbl} onClick={i===0?expandAll:collapseAll}
+              style={{fontSize:11,color:'#8a96ad',background:'#1c2436',border:'0.5px solid #252f45',
+                borderRadius:6,padding:'4px 12px',cursor:'pointer'}}>
+              {lbl}
+            </button>
+          ))}
         </div>
-        <span style={{ fontSize:11, color:'var(--color-text-tertiary)' }}>
-          {data.filas.length} nodos · {data.filas.filter(f=>f.es_hoja).length} actividades · Sem {semana}
+        <div style={{display:'flex',gap:6,alignItems:'center'}}>
+          {[['FAB','#2DD4A8'],['EST','#60A5FA'],['MEC','#FB923C'],['ELE','#FACC15'],
+            ['TUB','#A78BFA'],['AND','#34D399'],['APY','#86EFAC'],['CIV','#94A3B8']].map(([f,c])=>(
+            <span key={f} style={{fontSize:10,color:c,fontFamily:'var(--mono)',fontWeight:700}}>{f}</span>
+          ))}
+          <span style={{fontSize:11,color:'#4e5a72',marginLeft:8}}>{totalNodos} nodos · {totalHojas} actividades · Sem {semana}</span>
+        </div>
+      </div>
+
+      {/* Leyenda niveles */}
+      <div style={{display:'flex',gap:16,marginBottom:10,padding:'6px 10px',background:'#141926',borderRadius:8,border:'0.5px solid #252f45'}}>
+        <span style={{fontSize:10,color:'#4e5a72',marginRight:4}}>NIVEL:</span>
+        {([[1,'#FF7070','Raíz'],[2,'#4ECDC4','Sección'],[3,'#C77DFF','Sub-sección'],[4,'#FCA94C','Detalle']] as [number,string,string][]).map(([n,c,lbl])=>(
+          <span key={n} style={{display:'flex',alignItems:'center',gap:4,fontSize:10}}>
+            <span style={{width:10,height:10,borderRadius:2,background:c,display:'inline-block'}}/>
+            <span style={{color:c}}>{n}. {lbl}</span>
+          </span>
+        ))}
+        <span style={{display:'flex',alignItems:'center',gap:4,fontSize:10,marginLeft:4}}>
+          <span style={{width:10,height:10,borderRadius:2,background:'#60A5FA',display:'inline-block'}}/>
+          <span style={{color:'#c8d0e0'}}>Hoja (actividad)</span>
         </span>
       </div>
 
       {/* Tabla */}
-      <div style={{ overflowX:'auto', border:'0.5px solid var(--color-border-tertiary)', borderRadius:12 }}>
-        <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12 }}>
+      <div style={{overflowX:'auto',border:'0.5px solid #252f45',borderRadius:12,background:'#141926'}}>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
           <thead>
-            <tr style={{ borderBottom:'0.5px solid var(--color-border-secondary)',
-              background:'var(--color-background-secondary)' }}>
-              {['Código','Descripción','Fase','Und','HH Plan','HH Gastadas','HH Ganadas','% Avance','PF'].map((h,i) => (
-                <th key={h} style={{ padding:'8px 8px', fontSize:10, fontWeight:500,
-                  textTransform:'uppercase', letterSpacing:'.06em',
-                  color:'var(--color-text-tertiary)', textAlign: i>=4 ? 'right' as const : 'left' as const,
-                  whiteSpace:'nowrap' }}>
-                  {h}
+            <tr style={{borderBottom:'1px solid #252f45',background:'#1c2436'}}>
+              {[['Código',200],['Descripción',null],['Fase',90],['Und',60],['HH Plan',100],['HH Gastadas',110],['HH Ganadas',110],['% Avance',100],['PF',70]].map(([h,w])=>(
+                <th key={String(h)} style={{padding:'9px 8px',fontSize:10,fontWeight:700,textTransform:'uppercase',
+                  letterSpacing:'.07em',color:'#8a96ad',textAlign: Number(h?.toString().length??0) > 3 && ['HH Plan','HH Gastadas','HH Ganadas','PF'].includes(String(h)) ? 'right' : 'left',
+                  whiteSpace:'nowrap',width: w ? w : undefined}}>
+                  {String(h)}
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {tree.map(node => (
-              <WBSRow key={node.codigo} node={node} collapsed={collapsed}
-                onToggle={toggle} depth={0} />
-            ))}
+            {tree.map(node => <WBSRow key={node.codigo} node={node} collapsed={collapsed} onToggle={toggle}/>)}
           </tbody>
           <tfoot>
-            <tr style={{ borderTop:'1px solid var(--color-border-secondary)',
-              background:'var(--color-background-secondary)', fontWeight:500 }}>
-              <td colSpan={4} style={{ padding:'8px 8px', fontSize:11, color:'var(--color-text-secondary)' }}>
-                Total OTM
+            <tr style={{borderTop:'1px solid #2e3a52',background:'#1c2436'}}>
+              <td colSpan={4} style={{padding:'8px 10px',fontSize:11,color:'#8a96ad',fontWeight:600}}>TOTAL OTM{otm ? ` · ${otm}` : ''}</td>
+              <td style={{padding:'8px 12px 8px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:12,color:'#e8edf5',fontWeight:600}}>
+                {totalPlan.toLocaleString('es-PE',{maximumFractionDigits:1})}
               </td>
-              <td style={{ padding:'8px 12px 8px 8px', textAlign:'right', fontFamily:'var(--font-mono)', fontSize:12 }}>
-                {hh(totalPlan)}
+              <td style={{padding:'8px 12px 8px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:12,color:'#FF6B6B',fontWeight:600}}>
+                {totalGast > 0 ? totalGast.toLocaleString('es-PE',{maximumFractionDigits:1}) : '—'}
               </td>
-              <td style={{ padding:'8px 12px 8px 8px', textAlign:'right', fontFamily:'var(--font-mono)', fontSize:12, color:'#ef4444' }}>
-                {hh(totalGast)}
+              <td style={{padding:'8px 12px 8px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:12,color:'#2DD4A8',fontWeight:600}}>
+                {totalGan > 0 ? totalGan.toLocaleString('es-PE',{maximumFractionDigits:1}) : '—'}
               </td>
-              <td style={{ padding:'8px 12px 8px 8px', textAlign:'right', fontFamily:'var(--font-mono)', fontSize:12, color:'#10b981' }}>
-                {hh(totalGan)}
+              <td style={{padding:'8px 10px',textAlign:'center',fontSize:12,fontFamily:'var(--mono)',color:'#8a96ad'}}>
+                {totalPlan > 0 ? (totalGan/totalPlan*100).toFixed(1)+'%' : '—'}
               </td>
-              <td style={{ padding:'8px 8px', textAlign:'center', fontFamily:'var(--font-mono)', fontSize:11 }}>
-                {totalPlan > 0 ? pct(totalGan/totalPlan) : '—'}
-              </td>
-              <td style={{ padding:'8px 8px', textAlign:'center', fontSize:12 }}>
-                {pff(totalGan, totalGast)}
+              <td style={{padding:'8px 10px',textAlign:'center'}}>
+                {pfDisplay(totalGan, totalGast)}
               </td>
             </tr>
           </tfoot>

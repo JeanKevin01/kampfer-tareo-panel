@@ -238,10 +238,10 @@ export default function ValorGanado() {
         ))}
       </div>
 
-      {tab === 'resumen'  && <TabResumen semana={semana} />}
+      {tab === 'resumen'  && <TabResumen semana={semana} otm={selectedOtm} />}
       {tab === 'partidas' && <WBSArbol otm={selectedOtm} semana={semana} />}
-      {tab === 'registro' && <TabRegistro semana={semana} />}
-      {tab === 'tareo'    && <AsignarHH />}
+      {tab === 'registro' && <TabRegistro semana={semana} otm={selectedOtm} />}
+      {tab === 'tareo'    && <AsignarHH otm={selectedOtm} />}
       {tab === 'config'   && <TabConfig />}
       {tab === 'importar' && <div className="space-y-5"><ImportarOTM /><ImportarPartidas /></div>}
     </div>
@@ -253,12 +253,12 @@ export default function ValorGanado() {
 // ============================================================
 function TabResumen({ semana, otm }: { semana: number; otm?: string }) {
   const { data: rep, isLoading } = useQuery<Reporte>({
-    queryKey: ['ev-reporte', semana],
-    queryFn: () => req(`/ev/reporte?semana=${semana}`),
+    queryKey: ['ev-reporte', semana, otm],
+    queryFn: () => req(`/ev/reporte?semana=${semana}${otm ? `&otm=${otm}` : ''}`),
   })
   const { data: curva = [] } = useQuery<PuntoCurva[]>({
-    queryKey: ['ev-curva', semana],
-    queryFn: () => req(`/ev/curva?hasta=${semana}`),
+    queryKey: ['ev-curva', semana, otm],
+    queryFn: () => req(`/ev/curva?hasta=${semana}${otm ? `&otm=${otm}` : ''}`),
   })
 
   if (isLoading || !rep) {
