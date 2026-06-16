@@ -5,7 +5,7 @@ import ImportarOTM from './ImportarOTM'
 // Módulo Valor Ganado — lógica ISP Fluor digitalizada
 // Autocontenido (sin shadcn), design system k- del panel
 // ============================================================
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   ResponsiveContainer, ComposedChart, LineChart, Line, Area,
@@ -477,8 +477,8 @@ function CurvasFase({ semana }: { semana: number }) {
 // ============================================================
 function TabPartidas({ semana }: { semana: number }) {
   const { data: rep, isLoading } = useQuery<Reporte>({
-    queryKey: ['ev-reporte', semana],
-    queryFn: () => req(`/ev/reporte?semana=${semana}`),
+    queryKey: ['ev-reporte', semana, otm],
+    queryFn: () => req(`/ev/reporte?semana=${semana}${otm ? `&otm=${otm}` : ''}`),
   })
   const [search, setSearch] = useState('')
 
@@ -567,146 +567,223 @@ function TabPartidas({ semana }: { semana: number }) {
 // ============================================================
 // TAB 3: Registro semanal (reemplaza los 11 pasos del ISP)
 // ============================================================
+
+const FASE_COLOR_REG: Record<string, string> = {
+  FAB:'#2DD4A8', EST:'#60A5FA', MEC:'#FB923C', ELE:'#FACC15',
+  TUB:'#A78BFA', INS:'#F472B6', CIV:'#94A3B8', AND:'#34D399',
+  APY:'#86EFAC', ING:'#FCD34D', COM:'#C4B5FD',
+}
+const FASE_NOMBRES: Record<string, string> = {
+  FAB:'Fabricación en Planta', EST:'Montaje de Estructuras', MEC:'Mecánico',
+  ELE:'Eléctrico', TUB:'Tuberías y Piping', INS:'Instrumentación',
+  CIV:'Civil', AND:'Andamios', APY:'Apoyo Constructivo', ING:'Ingeniería', COM:'Pre-comisionado',
+}
+
 function TabRegistro({ semana, otm }: { semana: number; otm?: string }) {
   const qc = useQueryClient()
+  const [expanded, setExpanded] = useState<Set<number>>(new Set())
+  const [avances, setAvances] = useState<Record<number, string>>({})
+  const [hh, setHh] = useState<Record<number, string>>({})
+  const [msg, setMsg] = useState('')
+
   const { data: todasCaptura = [], isLoading } = useQuery<CapturaPartida[]>({
     queryKey: ['ev-captura', semana, otm],
     queryFn: () => req(`/ev/captura?semana=${semana}${otm ? `&otm=${otm}` : ''}`),
   })
-  // Solo nodos hoja (los que tienen hitos) — los padres no tienen entrada de avance
   const captura = todasCaptura.filter(p => p.hitos && p.hitos.length > 0)
-
-  const [avances, setAvances] = useState<Record<number, string>>({})
-  const [hh, setHh] = useState<Record<number, string>>({})
-  const [msg, setMsg] = useState('')
 
   useEffect(() => {
     const a: Record<number, string> = {}
     const h: Record<number, string> = {}
     captura.forEach(p => {
-      h[p.partida_id] = String(p.hh_semana)
-      p.hitos.forEach(x => { a[x.hito_id] = String(x.cant_actual) })
+      h[p.partida_id] = String(p.hh_semana || 0)
+      p.hitos.forEach(x => { a[x.hito_id] = String(x.cant_actual ?? '') })
     })
     setAvances(a); setHh(h); setMsg('')
-  }, [captura])
+  // eslint-disable-next-line
+  }, [captura.map(p=>p.partida_id).join(',')])
 
   const guardar = useMutation({
-    mutationFn: () =>
-      req('/ev/captura', {
-        method: 'POST',
-        body: JSON.stringify({
-          semana,
-          avances: Object.entries(avances).map(([id, v]) => ({
-            hito_id: Number(id), cantidad_acum: Number(v) || 0,
-          })),
-          hh_gastadas: Object.entries(hh).map(([id, v]) => ({
-            partida_id: Number(id), hh: Number(v) || 0,
-          })),
-        }),
+    mutationFn: () => req('/ev/captura', {
+      method: 'POST',
+      body: JSON.stringify({
+        semana,
+        avances: Object.entries(avances).map(([id, v]) => ({ hito_id: Number(id), cantidad_acum: Number(v) || 0 })),
+        hh_gastadas: Object.entries(hh).map(([id, v]) => ({ partida_id: Number(id), hh: Number(v) || 0 })),
       }),
+    }),
     onSuccess: () => {
-      setMsg(`✓ Semana ${semana} guardada correctamente`)
+      setMsg(`✓ Semana ${semana} guardada`)
       qc.invalidateQueries({ queryKey: ['ev-reporte'] })
+      qc.invalidateQueries({ queryKey: ['ev-arbol'] })
       qc.invalidateQueries({ queryKey: ['ev-curva'] })
-      qc.invalidateQueries({ queryKey: ['ev-semanas'] })
     },
     onError: (e: Error) => setMsg(`✗ ${e.message}`),
   })
 
-  if (isLoading) {
-    return <p className="text-k-text3 text-sm flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Cargando captura…</p>
-  }
+  // Agrupar por Fase (código padre de la sub-fase, ej. "EST" de "EST.LIG")
+  const byFase = useMemo(() => {
+    const map: Record<string, CapturaPartida[]> = {}
+    captura.forEach(p => {
+      const f = (p.fase ?? '').split('.')[0] || 'SIN'
+      if (!map[f]) map[f] = []
+      map[f].push(p)
+    })
+    return Object.entries(map).sort(([a],[b]) => a.localeCompare(b))
+  }, [captura])
+
+  const toggleExp = (id: number) => setExpanded(prev => { const n = new Set(prev); n.has(id)?n.delete(id):n.add(id); return n })
+
+  if (isLoading) return <p className="text-k-text3 text-sm flex items-center gap-2"><Loader2 size={14} className="animate-spin"/>Cargando…</p>
+
+  if (!captura.length) return (
+    <div className={`${CARD} text-center py-10`}>
+      <p className="text-k-text3 text-sm">Sin actividades con avance para{otm ? ` ${otm}` : ' la selección'}.</p>
+      <p className="text-k-text3 text-xs mt-1">Importa partidas en la pestaña <strong>Importar</strong>.</p>
+    </div>
+  )
+
+  const totalHHTareo = captura.reduce((s,p) => s + (p.hh_tareo||0), 0)
+  const totalHHExtra = Object.values(hh).reduce((s,v) => s + (Number(v)||0), 0)
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-xs text-k-text3 max-w-2xl">
-          Ingresa el <span className="text-k-text2 font-bold">acumulado a la fecha</span> de cada hito
-          (el avance del periodo se calcula solo contra la semana anterior) y las HH gastadas de la semana.
-          Las HH podrán alimentarse automáticamente desde el tareo vía n8n.
-        </p>
-        <button onClick={() => guardar.mutate()} disabled={guardar.isPending} className={BTN_AMBER}>
-          {guardar.isPending ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-          {guardar.isPending ? 'Guardando…' : `Guardar Semana ${semana}`}
-        </button>
+        <div>
+          <p className="text-xs text-k-text3">
+            Ingresa el <strong className="text-k-text2">acumulado a la fecha</strong> de cada actividad.
+            HH del tareo se calculan automáticamente — solo agrega HH extra si corresponde.
+          </p>
+          {msg && <p className={`mt-1 text-xs font-bold ${msg.startsWith('✓')?'text-k-green':'text-k-red'}`}>{msg}</p>}
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="text-right">
+            <div className="text-[10px] text-k-text3 uppercase tracking-wider">HH Tareo auto</div>
+            <div className="font-mono text-sm font-bold text-k-green">{fmt(totalHHTareo)} HH</div>
+          </div>
+          {totalHHExtra > 0 && (
+            <div className="text-right">
+              <div className="text-[10px] text-k-text3 uppercase tracking-wider">HH Extra</div>
+              <div className="font-mono text-sm font-bold text-k-amber">{fmt(totalHHExtra)} HH</div>
+            </div>
+          )}
+          <button onClick={() => guardar.mutate()} disabled={guardar.isPending} className={BTN_AMBER}>
+            {guardar.isPending ? <Loader2 size={14} className="animate-spin"/> : <Save size={14}/>}
+            {guardar.isPending ? 'Guardando…' : `Guardar Sem ${semana}`}
+          </button>
+        </div>
       </div>
 
-      {msg && (
-        <p className={`text-xs px-3 py-2 rounded-lg border ${
-          msg.startsWith('✓')
-            ? 'text-k-green bg-green-500/10 border-green-500/20'
-            : 'text-k-red bg-red-500/10 border-red-500/20'
-        }`}>{msg}</p>
-      )}
-
-      {captura.map(p => (
-        <div key={p.partida_id} className={CARD}>
-          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-            <div>
-              <span className="font-mono text-[11px] text-k-amber mr-2">{p.codigo}</span>
-              <span className="text-sm font-bold text-k-text">{p.descripcion}</span>
-              <span className="ml-2 text-[11px] text-k-text3">
-                Metrado: {fmt(p.metrado_proyec)} {p.unidad}
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              {p.hh_tareo > 0 && (
-                <span className="font-mono text-[11px] font-bold px-2 py-1 rounded border text-k-green bg-green-500/10 border-green-500/20">
-                  Tareo: {fmt(p.hh_tareo)} HH (auto)
-                </span>
-              )}
-              <span className="text-[11px] font-bold text-k-text3 uppercase tracking-wider">
-                HH {p.hh_tareo > 0 ? 'adicionales' : 'gastadas'} sem {semana}
-              </span>
-              <input type="number" step="0.5" min="0"
-                value={hh[p.partida_id] ?? ''}
-                onChange={e => setHh({ ...hh, [p.partida_id]: e.target.value })}
-                className="w-28 bg-k-raised border border-k-border rounded-lg px-3 py-2 text-sm text-k-text font-mono outline-none focus:border-k-amber transition-colors" />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-            {p.hitos.map(x => {
-              const actual = Number(avances[x.hito_id] ?? 0)
-              const periodo = actual - x.cant_anterior
+      <div className="rounded-xl border border-k-border overflow-hidden bg-k-surface">
+        <table className="w-full" style={{ fontSize:12 }}>
+          <thead>
+            <tr className="bg-k-raised border-b border-k-border">
+              {['Fase','Código','Descripción','Und','Meta','Anterior','Actual ↵','Δ Per.','HH Auto','+ Extra'].map((h,i) => (
+                <th key={h} className={`py-2 px-2 text-[10px] font-bold uppercase tracking-wider text-k-text3 ${ [6,9].includes(i)?'text-k-amber':[8].includes(i)?'text-k-green':i>=4?'text-right':''}`}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {byFase.map(([fase, parts]) => {
+              const c = FASE_COLOR_REG[fase] ?? '#888780'
               return (
-                <div key={x.hito_id} className="bg-k-raised border border-k-border rounded-lg p-3 space-y-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-[11px] text-k-text2 font-bold truncate">
-                      Hito {x.numero} · {x.descripcion || '—'}
-                      {x.es_principal && (
-                        <span className="ml-1.5 text-[9px] text-k-blue bg-blue-500/10 border border-blue-500/20 px-1.5 py-0.5 rounded font-bold uppercase">
-                          Principal
-                        </span>
-                      )}
-                    </span>
-                    <span className="text-[10px] text-k-text3 flex-shrink-0">Peso {(x.peso * 100).toFixed(0)}%</span>
-                  </div>
-                  <input type="number" step="0.01" min="0"
-                    value={avances[x.hito_id] ?? ''}
-                    onChange={e => setAvances({ ...avances, [x.hito_id]: e.target.value })}
-                    className="w-full bg-k-void border border-k-border2 rounded-lg px-3 py-2 text-sm text-k-text font-mono outline-none focus:border-k-amber transition-colors" />
-                  <div className="flex justify-between text-[10px] text-k-text3">
-                    <span>Ant: {fmt(x.cant_anterior)}</span>
-                    <span className={periodo < 0 ? 'text-k-red font-bold' : periodo > 0 ? 'text-k-green' : ''}>
-                      Periodo: {periodo >= 0 ? '+' : ''}{fmt(periodo)} {p.unidad}
-                    </span>
-                  </div>
-                </div>
+                <Fragment key={fase}>
+                  <tr style={{ background:c+'15', borderTop:`1px solid ${c}40`, borderBottom:`0.5px solid ${c}30` }}>
+                    <td colSpan={10} className="py-1.5 px-3">
+                      <span style={{color:c}} className="text-[11px] font-bold uppercase tracking-wider">
+                        {fase} — {FASE_NOMBRES[fase] ?? fase}
+                      </span>
+                      <span className="ml-2 text-[10px] text-k-text3">{parts.length} actividad{parts.length!==1?'es':''}</span>
+                    </td>
+                  </tr>
+                  {parts.map(p => {
+                    const principal = p.hitos.find(x=>x.es_principal) ?? p.hitos[0]
+                    const tieneMulti = p.hitos.length > 1
+                    const isExp = expanded.has(p.partida_id)
+                    const actVal = principal ? Number(avances[principal.hito_id] ?? principal.cant_actual ?? 0) : 0
+                    const periodo = actVal - (principal?.cant_anterior ?? 0)
+                    return (
+                      <Fragment key={p.partida_id}>
+                        <tr className="border-b border-k-border" style={{background:'transparent'}} onMouseEnter={e=>(e.currentTarget.style.background='#1c2436')} onMouseLeave={e=>(e.currentTarget.style.background='transparent')}>
+                          <td className="py-1 px-2">
+                            <span style={{color:c,fontFamily:'var(--mono)',fontSize:10,fontWeight:700}}>{p.fase ?? '—'}</span>
+                          </td>
+                          <td className="py-1 px-2">
+                            <div className="flex items-center gap-1">
+                              {tieneMulti && (
+                                <button onClick={()=>toggleExp(p.partida_id)} className="text-k-text3 hover:text-k-amber" style={{fontSize:10,lineHeight:1,background:'none',border:'none',cursor:'pointer'}}>
+                                  {isExp?'▾':'▸'}
+                                </button>
+                              )}
+                              <span className="font-mono text-k-amber" style={{fontSize:10}}>{p.codigo}</span>
+                            </div>
+                          </td>
+                          <td className="py-1 px-2" style={{maxWidth:260}}>
+                            <span className="text-k-text2 truncate block" style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={p.descripcion}>{p.descripcion}</span>
+                          </td>
+                          <td className="py-1 px-2 text-center text-k-text3 font-mono" style={{fontSize:11}}>{p.unidad??'—'}</td>
+                          <td className="py-1 px-2 text-right font-mono text-k-text3" style={{fontSize:11}}>{fmt(p.metrado_proyec)}</td>
+                          <td className="py-1 px-2 text-right font-mono text-k-text3" style={{fontSize:11}}>{fmt(principal?.cant_anterior??0)}</td>
+                          <td className="py-1 px-1" style={{minWidth:90}}>
+                            {principal ? (
+                              <input type="number" step="0.01" min="0"
+                                value={avances[principal.hito_id] ?? ''}
+                                onChange={e => setAvances({...avances,[principal.hito_id]:e.target.value})}
+                                className="w-full bg-k-void border border-k-amber/40 focus:border-k-amber rounded px-2 py-1 text-k-text font-mono outline-none text-right transition-colors" style={{fontSize:12}} />
+                            ) : <span className="text-k-text3">—</span>}
+                          </td>
+                          <td className={`py-1 px-2 text-right font-mono font-bold ${periodo>0?'text-k-green':periodo<0?'text-k-red':'text-k-text3'}`} style={{fontSize:11}}>
+                            {periodo>0?'+':''}{fmt(periodo)}
+                          </td>
+                          <td className="py-1 px-2 text-right font-mono text-k-green" style={{fontSize:11}}>
+                            {p.hh_tareo>0?fmt(p.hh_tareo):'—'}
+                          </td>
+                          <td className="py-1 px-1" style={{minWidth:70}}>
+                            <input type="number" step="0.5" min="0"
+                              value={hh[p.partida_id]??''} placeholder="0"
+                              onChange={e => setHh({...hh,[p.partida_id]:e.target.value})}
+                              className="w-full bg-k-void border border-k-border focus:border-k-amber rounded px-2 py-1 text-k-text font-mono outline-none text-right transition-colors" style={{fontSize:12}} />
+                          </td>
+                        </tr>
+                        {tieneMulti && isExp && p.hitos.map(x => {
+                          const sub = Number(avances[x.hito_id]??x.cant_actual??0)
+                          const sp = sub - x.cant_anterior
+                          return (
+                            <tr key={x.hito_id} className="border-b border-k-border bg-k-raised/30">
+                              <td/><td className="py-1 px-2 pl-6"><span className="text-k-text3 font-bold" style={{fontSize:10}}>H{x.numero}</span></td>
+                              <td className="py-1 px-2" colSpan={2}><span className="text-k-text3" style={{fontSize:11}}>{x.descripcion} ({(x.peso*100).toFixed(0)}%)</span></td>
+                              <td className="py-1 px-2 text-right font-mono text-k-text3" style={{fontSize:11}}>{fmt(p.metrado_proyec)}</td>
+                              <td className="py-1 px-2 text-right font-mono text-k-text3" style={{fontSize:11}}>{fmt(x.cant_anterior)}</td>
+                              <td className="py-1 px-1">
+                                <input type="number" step="0.01" min="0"
+                                  value={avances[x.hito_id]??''} onChange={e=>setAvances({...avances,[x.hito_id]:e.target.value})}
+                                  className="w-full bg-k-void border border-k-amber/30 focus:border-k-amber rounded px-2 py-1 font-mono outline-none text-right transition-colors" style={{fontSize:11}} />
+                              </td>
+                              <td className={`py-1 px-2 text-right font-mono font-bold ${sp>0?'text-k-green':sp<0?'text-k-red':'text-k-text3'}`} style={{fontSize:10}}>{sp>0?'+':''}{fmt(sp)}</td>
+                              <td colSpan={2}/>
+                            </tr>
+                          )
+                        })}
+                      </Fragment>
+                    )
+                  })}
+                </Fragment>
               )
             })}
-          </div>
-        </div>
-      ))}
-
-      {captura.length === 0 && (
-        <div className={`${CARD} text-center py-10`}>
-          <p className="text-k-text3 text-sm">No hay partidas configuradas. Créalas primero en la pestaña Configuración.</p>
-        </div>
-      )}
+          </tbody>
+          <tfoot>
+            <tr className="border-t border-k-border bg-k-raised">
+              <td colSpan={8} className="py-2 px-3 text-[11px] text-k-text3 font-bold">{captura.length} actividades</td>
+              <td className="py-2 px-2 text-right font-mono text-k-green font-bold" style={{fontSize:12}}>{totalHHTareo>0?fmt(totalHHTareo):'—'}</td>
+              <td className="py-2 px-2 text-right font-mono text-k-amber font-bold" style={{fontSize:12}}>{totalHHExtra>0?fmt(totalHHExtra):'—'}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
     </div>
   )
 }
+
 
 // ============================================================
 // TAB 4: Configuración (hoja Fases: WBS + hitos ponderados)

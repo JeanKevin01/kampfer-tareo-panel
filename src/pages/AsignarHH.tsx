@@ -16,15 +16,16 @@ interface PartidaMin { id: number; codigo: string; descripcion: string; otm_id: 
 const fmt = (n: number, d = 1) =>
   n.toLocaleString('es-PE', { minimumFractionDigits: d, maximumFractionDigits: d })
 
-export default function AsignarHH() {
+export default function AsignarHH({ otm }: { otm?: string } = {}) {
   const qc = useQueryClient()
   const [seleccion, setSeleccion] = useState<Record<string, string>>({}) // key otm|fecha -> partida_id
   const [hechos, setHechos] = useState<Set<string>>(new Set())
 
-  const { data: pendientes = [], isLoading } = useQuery<Pendiente[]>({
+  const { data: todosPendientes = [], isLoading } = useQuery<Pendiente[]>({
     queryKey: ['ev-hh-sin-asignar'],
     queryFn: async () => (await fetch(`${API}/ev/hh-sin-asignar`)).json(),
   })
+  const pendientes = otm ? todosPendientes.filter(p => p.otm_id === otm) : todosPendientes
 
   const { data: partidas = [] } = useQuery<PartidaMin[]>({
     queryKey: ['ev-partidas'],
