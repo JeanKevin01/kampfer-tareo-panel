@@ -1,3 +1,4 @@
+import TabISP from './TabISP'
 import WBSArbol from './WBSArbol'
 import ImportarOTM from './ImportarOTM'
 // ============================================================
@@ -5,7 +6,7 @@ import ImportarOTM from './ImportarOTM'
 // Módulo Valor Ganado — lógica ISP Fluor digitalizada
 // Autocontenido (sin shadcn), design system k- del panel
 // ============================================================
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import { Activity, Fragment, useEffect, useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   ResponsiveContainer, ComposedChart, LineChart, Line, Area,
@@ -135,7 +136,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 // ============================================================
 // Componente principal
 // ============================================================
-type Tab = 'resumen' | 'partidas' | 'registro' | 'tareo' | 'config' | 'importar'
+type Tab = 'resumen' | 'partidas' | 'isp' | 'registro' | 'tareo' | 'config' | 'importar'
 
 export default function ValorGanado() {
   const [tab, setTab] = useState<Tab>('resumen')
@@ -240,6 +241,7 @@ export default function ValorGanado() {
 
       {tab === 'resumen'  && <TabResumen semana={semana} otm={selectedOtm} />}
       {tab === 'partidas' && <WBSArbol otm={selectedOtm} semana={semana} />}
+      {tab === 'isp'      && <TabISP semana={semana} otm={selectedOtm} />}
       {tab === 'registro' && <TabRegistro semana={semana} otm={selectedOtm} />}
       {tab === 'tareo'    && <AsignarHH otm={selectedOtm} />}
       {tab === 'config'   && <TabConfig />}
