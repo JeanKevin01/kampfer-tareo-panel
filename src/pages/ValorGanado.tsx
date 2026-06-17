@@ -173,6 +173,7 @@ export default function ValorGanado() {
   const TABS: { id: Tab; label: string; icon: typeof Target }[] = [
     { id: 'resumen',  label: 'Resumen',          icon: BarChart3 },
     { id: 'partidas', label: 'Partidas',         icon: ClipboardList },
+    { id: 'isp',      label: 'ISP',             icon: Activity },
     { id: 'registro', label: 'Registro semanal', icon: PenLine },
     { id: 'tareo',    label: 'HH Tareo',         icon: Link2 },
     { id: 'config',   label: 'Configuración',    icon: Settings2 },
