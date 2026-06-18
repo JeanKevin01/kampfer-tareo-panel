@@ -1,4 +1,6 @@
 import TabISP from './TabISP'
+import TabDiario from './TabDiario'
+import TabRendimientos from './TabRendimientos'
 import WBSArbol from './WBSArbol'
 import ImportarOTM from './ImportarOTM'
 // ============================================================
@@ -15,7 +17,7 @@ import {
 import {
   Target, BarChart3, ClipboardList, PenLine, Settings2,
   Plus, Pencil, Trash2, X, Save, Loader2, TrendingUp, Clock, Gauge,
-  Upload, Link2,
+  Upload, Link2, CalendarDays, Users,
 } from 'lucide-react'
 import ImportarPartidas from '@/pages/ImportarPartidas'
 import AsignarHH from '@/pages/AsignarHH'
@@ -136,12 +138,24 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 // ============================================================
 // Componente principal
 // ============================================================
-type Tab = 'resumen' | 'partidas' | 'isp' | 'registro' | 'tareo' | 'config' | 'importar'
+type Tab = 'resumen' | 'partidas' | 'isp' | 'diario' | 'rendimientos' | 'registro' | 'tareo' | 'config' | 'importar'
 
 export default function ValorGanado() {
   const [tab, setTab] = useState<Tab>('resumen')
   const [selectedOtm, setSelectedOtm] = useState<string>('')
   const [semana, setSemana] = useState<number | null>(null)
+
+  // Datos para TabRendimientos
+  const { data: supervisores = [] } = useQuery<{ id: string; nombre: string }[]>({
+    queryKey: ['supervisores'],
+    queryFn: () => req('/api/supervisores'),
+    staleTime: 300_000,
+  })
+  const { data: trabajadores = [] } = useQuery<{ id: string; nombre: string; cargo: string }[]>({
+    queryKey: ['trabajadores'],
+    queryFn: () => req('/api/trabajadores'),
+    staleTime: 300_000,
+  })
 
   // OTMs que tienen partidas en el módulo EV
   const { data: otmsEV = [] } = useQuery<{otm_id: string; partidas: number}[]>({
@@ -171,13 +185,15 @@ export default function ValorGanado() {
   }
 
   const TABS: { id: Tab; label: string; icon: typeof Target }[] = [
-    { id: 'resumen',  label: 'Resumen',          icon: BarChart3 },
-    { id: 'partidas', label: 'Partidas',         icon: ClipboardList },
-    { id: 'isp',      label: 'ISP',             icon: Activity },
-    { id: 'registro', label: 'Registro semanal', icon: PenLine },
-    { id: 'tareo',    label: 'HH Tareo',         icon: Link2 },
-    { id: 'config',   label: 'Configuración',    icon: Settings2 },
-    { id: 'importar', label: 'Importar',         icon: Upload },
+    { id: 'resumen',       label: 'Resumen',          icon: BarChart3 },
+    { id: 'partidas',      label: 'Partidas',         icon: ClipboardList },
+    { id: 'isp',           label: 'ISP',              icon: Activity },
+    { id: 'diario',        label: 'Control Diario',   icon: CalendarDays },
+    { id: 'rendimientos',  label: 'Rendimientos',     icon: Users },
+    { id: 'registro',      label: 'Registro semanal', icon: PenLine },
+    { id: 'tareo',         label: 'HH Tareo',         icon: Link2 },
+    { id: 'config',        label: 'Configuración',    icon: Settings2 },
+    { id: 'importar',      label: 'Importar',         icon: Upload },
   ]
 
   return (
@@ -244,9 +260,24 @@ export default function ValorGanado() {
       {tab === 'partidas' && <WBSArbol otm={selectedOtm} semana={semana} />}
       {tab === 'isp'      && <TabISP semana={semana} otm={selectedOtm} />}
       {tab === 'registro' && <TabRegistro semana={semana} otm={selectedOtm} />}
-      {tab === 'tareo'    && <AsignarHH otm={selectedOtm} />}
-      {tab === 'config'   && <TabConfig />}
-      {tab === 'importar' && <div className="space-y-5"><ImportarOTM /><ImportarPartidas /></div>}
+      {tab === 'tareo'         && <AsignarHH otm={selectedOtm} />}
+      {tab === 'diario'        && (
+        <TabDiario
+          semana={semana}
+          onSemana={setSemana}
+          selectedOtm={selectedOtm}
+        />
+      )}
+      {tab === 'rendimientos'  && (
+        <TabRendimientos
+          semana={semana}
+          selectedOtm={selectedOtm}
+          supervisores={supervisores}
+          trabajadores={trabajadores}
+        />
+      )}
+      {tab === 'config'        && <TabConfig />}
+      {tab === 'importar'      && <div className="space-y-5"><ImportarOTM /><ImportarPartidas /></div>}
     </div>
   )
 }
