@@ -145,7 +145,7 @@ type Tab = 'resumen' | 'partidas' | 'isp' | 'diario' | 'rendimientos' | 'control
 export default function ValorGanado() {
   const [tab, setTab] = useState<Tab>('resumen')
   const [selectedOtm, setSelectedOtm] = useState<string>('')
-  const [semana, setSemana] = useState<number | null>(null)
+  const [semana, setSemana] = useState<number>(1)
 
   // Datos para TabRendimientos
   const { data: supervisores = [] } = useQuery<{ id: string; nombre: string }[]>({
@@ -175,16 +175,13 @@ export default function ValorGanado() {
   const semanas = semanasAuto.map(s => s.semana)
 
   useEffect(() => {
-    if (semana === null && semanasAuto.length) {
-      // Seleccionar la última semana ACTIVA (con registros)
-      const ultActiva = [...semanasAuto].reverse().find(s => s.activa)
-      setSemana(ultActiva ? ultActiva.semana : semanasAuto[semanasAuto.length - 1].semana)
-    }
-  }, [semanasAuto, semana])
+    if (!semanasAuto.length) return
+    // Auto-seleccionar última semana activa cuando cargan los datos
+    const ultActiva = [...semanasAuto].reverse().find(s => s.activa)
+    setSemana(ultActiva ? ultActiva.semana : semanasAuto[semanasAuto.length - 1].semana)
+  }, [semanasAuto.length]) // solo cuando llegan datos por primera vez
 
-  if (semana === null) {
-    return <p className="text-k-text3 text-sm flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Cargando módulo…</p>
-  }
+  // Ya no bloqueamos el render — si no hay semanas, mostramos semana 1
 
   const TABS: { id: Tab; label: string; icon: typeof Target }[] = [
     { id: 'resumen',       label: 'Resumen',          icon: BarChart3 },
@@ -285,7 +282,7 @@ export default function ValorGanado() {
           fecha={new Date().toISOString().slice(0, 10)}
         />
       )}
-      {tab === 'historico'      && semana != null && (
+      {tab === 'historico'      && (
         <CargaHistorica
           semana={semana}
           selectedOtm={selectedOtm}
