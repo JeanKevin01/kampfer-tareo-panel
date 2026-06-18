@@ -1,6 +1,8 @@
 import TabISP from './TabISP'
 import TabDiario from './TabDiario'
 import TabRendimientos from './TabRendimientos'
+import ControlDiario from './ControlDiario'
+import CargaHistorica from './CargaHistorica'
 import WBSArbol from './WBSArbol'
 import ImportarOTM from './ImportarOTM'
 // ============================================================
@@ -17,7 +19,7 @@ import {
 import {
   Target, BarChart3, ClipboardList, PenLine, Settings2,
   Plus, Pencil, Trash2, X, Save, Loader2, TrendingUp, Clock, Gauge,
-  Upload, Link2, CalendarDays, Users,
+  Upload, Link2, CalendarDays, Users, History,
 } from 'lucide-react'
 import ImportarPartidas from '@/pages/ImportarPartidas'
 import AsignarHH from '@/pages/AsignarHH'
@@ -138,7 +140,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 // ============================================================
 // Componente principal
 // ============================================================
-type Tab = 'resumen' | 'partidas' | 'isp' | 'diario' | 'rendimientos' | 'registro' | 'tareo' | 'config' | 'importar'
+type Tab = 'resumen' | 'partidas' | 'isp' | 'diario' | 'rendimientos' | 'control-diario' | 'historico' | 'registro' | 'tareo' | 'config' | 'importar'
 
 export default function ValorGanado() {
   const [tab, setTab] = useState<Tab>('resumen')
@@ -190,6 +192,8 @@ export default function ValorGanado() {
     { id: 'isp',           label: 'ISP',              icon: Activity },
     { id: 'diario',        label: 'Control Diario',   icon: CalendarDays },
     { id: 'rendimientos',  label: 'Rendimientos',     icon: Users },
+    { id: 'control-diario', label: 'Asignar HH',      icon: Gauge },
+    { id: 'historico',      label: 'Carga Histórica',  icon: History },
     { id: 'registro',      label: 'Registro semanal', icon: PenLine },
     { id: 'tareo',         label: 'HH Tareo',         icon: Link2 },
     { id: 'config',        label: 'Configuración',    icon: Settings2 },
@@ -274,6 +278,17 @@ export default function ValorGanado() {
           selectedOtm={selectedOtm}
           supervisores={supervisores}
           trabajadores={trabajadores}
+        />
+      )}
+      {tab === 'control-diario' && (
+        <ControlDiario
+          fecha={new Date().toISOString().slice(0, 10)}
+        />
+      )}
+      {tab === 'historico'      && semana != null && (
+        <CargaHistorica
+          semana={semana}
+          selectedOtm={selectedOtm}
         />
       )}
       {tab === 'config'        && <TabConfig />}
