@@ -6,21 +6,21 @@ import { ChevronRight, ChevronDown, Loader2 } from 'lucide-react'
 
 const API = 'https://api.apps1.astraera.space'
 
-// ── Colores por nivel (como el Excel del ing. de costos) ─────────
-// Panel usa tema oscuro → colores claros sobre fondo negro
+// ── Colores por nivel — tono pastel, más distinguibles entre sí ───
+// Panel usa tema oscuro → pasteles claros con más opacidad de fondo
 const NIVEL_COLOR: Record<number, { text: string; bg: string; border: string; bold: boolean }> = {
-  1: { text: '#FF7070', bg: 'rgba(255,80,80,0.10)',  border: '#FF7070', bold: true  }, // rojo — nivel raíz
-  2: { text: '#4ECDC4', bg: 'rgba(78,205,196,0.08)', border: '#4ECDC4', bold: true  }, // teal
-  3: { text: '#C77DFF', bg: 'rgba(199,125,255,0.07)',border: '#C77DFF', bold: false }, // morado
-  4: { text: '#FCA94C', bg: 'rgba(252,169,76,0.06)', border: '#FCA94C', bold: false }, // ámbar
+  1: { text: '#FF9B9B', bg: 'rgba(255,123,123,0.16)', border: '#FF9B9B', bold: true  }, // coral pastel — raíz
+  2: { text: '#7FE0D4', bg: 'rgba(127,224,212,0.15)', border: '#7FE0D4', bold: true  }, // menta pastel
+  3: { text: '#D6B3FF', bg: 'rgba(214,179,255,0.14)', border: '#D6B3FF', bold: false }, // lila pastel
+  4: { text: '#FFC98B', bg: 'rgba(255,201,139,0.13)', border: '#FFC98B', bold: false }, // durazno pastel
 }
-const NIVEL_COLOR_DEFAULT = { text: '#94A3B8', bg: 'rgba(148,163,184,0.05)', border: '#94A3B8', bold: false }
+const NIVEL_COLOR_DEFAULT = { text: '#B8C4D9', bg: 'rgba(184,196,217,0.08)', border: '#B8C4D9', bold: false }
 
-// Fase → color vivo visible sobre fondo oscuro
+// Fase → pastel suave pero legible sobre fondo oscuro
 const FASE_COLOR: Record<string, string> = {
-  FAB:'#2DD4A8', EST:'#60A5FA', MEC:'#FB923C', ELE:'#FACC15',
-  TUB:'#A78BFA', INS:'#F472B6', CIV:'#94A3B8', AND:'#34D399',
-  APY:'#86EFAC', ING:'#FCD34D', COM:'#C4B5FD',
+  FAB:'#6EE7C0', EST:'#7FB2FF', MEC:'#FFB37A', ELE:'#FFE08A',
+  TUB:'#C7A8FF', INS:'#FFA6C9', CIV:'#AEB9CC', AND:'#7FE3A0',
+  APY:'#A8F0BF', ING:'#FFD97D', COM:'#D8C2FF',
 }
 
 interface Fila {
@@ -102,9 +102,9 @@ function WBSRow({ node, collapsed, onToggle }: { node: Nodo; collapsed: Set<stri
         <td style={{ padding:'7px 8px', textAlign:'center', width:90 }}>
           {node.fase && (
             <span style={{ fontFamily:'var(--mono)', fontSize:10, fontWeight:700,
-              color: FASE_COLOR[node.fase] ?? '#94A3B8',
-              background: (FASE_COLOR[node.fase] ?? '#94A3B8')+'22',
-              border:`0.5px solid ${(FASE_COLOR[node.fase] ?? '#94A3B8')}55`,
+              color: FASE_COLOR[node.fase] ?? '#AEB9CC',
+              background: (FASE_COLOR[node.fase] ?? '#AEB9CC')+'2E',
+              border:`0.5px solid ${(FASE_COLOR[node.fase] ?? '#AEB9CC')}66`,
               padding:'2px 6px', borderRadius:4, letterSpacing:'.3px', whiteSpace:'nowrap' }}>
               {node.sub_fase ?? node.fase}
             </span>
@@ -199,8 +199,8 @@ export default function WBSArbol({ otm, semana }: { otm: string; semana: number 
           ))}
         </div>
         <div style={{display:'flex',gap:6,alignItems:'center'}}>
-          {[['FAB','#2DD4A8'],['EST','#60A5FA'],['MEC','#FB923C'],['ELE','#FACC15'],
-            ['TUB','#A78BFA'],['AND','#34D399'],['APY','#86EFAC'],['CIV','#94A3B8']].map(([f,c])=>(
+          {[['FAB','#6EE7C0'],['EST','#7FB2FF'],['MEC','#FFB37A'],['ELE','#FFE08A'],
+            ['TUB','#C7A8FF'],['AND','#7FE3A0'],['APY','#A8F0BF'],['CIV','#AEB9CC']].map(([f,c])=>(
             <span key={f} style={{fontSize:10,color:c,fontFamily:'var(--mono)',fontWeight:700}}>{f}</span>
           ))}
           <span style={{fontSize:11,color:'#4e5a72',marginLeft:8}}>{totalNodos} nodos · {totalHojas} actividades · Sem {semana}</span>
@@ -210,14 +210,14 @@ export default function WBSArbol({ otm, semana }: { otm: string; semana: number 
       {/* Leyenda niveles */}
       <div style={{display:'flex',gap:16,marginBottom:10,padding:'6px 10px',background:'#141926',borderRadius:8,border:'0.5px solid #252f45'}}>
         <span style={{fontSize:10,color:'#4e5a72',marginRight:4}}>NIVEL:</span>
-        {([[1,'#FF7070','Raíz'],[2,'#4ECDC4','Sección'],[3,'#C77DFF','Sub-sección'],[4,'#FCA94C','Detalle']] as [number,string,string][]).map(([n,c,lbl])=>(
+        {([[1,'#FF9B9B','Raíz'],[2,'#7FE0D4','Sección'],[3,'#D6B3FF','Sub-sección'],[4,'#FFC98B','Detalle']] as [number,string,string][]).map(([n,c,lbl])=>(
           <span key={n} style={{display:'flex',alignItems:'center',gap:4,fontSize:10}}>
             <span style={{width:10,height:10,borderRadius:2,background:c,display:'inline-block'}}/>
             <span style={{color:c}}>{n}. {lbl}</span>
           </span>
         ))}
         <span style={{display:'flex',alignItems:'center',gap:4,fontSize:10,marginLeft:4}}>
-          <span style={{width:10,height:10,borderRadius:2,background:'#60A5FA',display:'inline-block'}}/>
+          <span style={{width:10,height:10,borderRadius:2,background:'#7FB2FF',display:'inline-block'}}/>
           <span style={{color:'#c8d0e0'}}>Hoja (actividad)</span>
         </span>
       </div>

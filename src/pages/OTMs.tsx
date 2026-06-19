@@ -65,14 +65,35 @@ export default function OTMs() {
     const reader = new FileReader()
     reader.onload = e => {
       const data = new Uint8Array(e.target?.result as ArrayBuffer)
-      const wb   = XLSX.read(data, { type: 'array' })
+      const wb   = XLSX.read(data, { type: 'array', cellDates: true })
       const ws   = wb.Sheets[wb.SheetNames[0]]
       const rows = XLSX.utils.sheet_to_json(ws, { defval: '' }) as Record<string, unknown>[]
+      // Convierte cualquier formato de fecha del Excel a ISO (YYYY-MM-DD).
+      // Maneja: objetos Date reales, números seriales de Excel (celda con
+      // formato de fecha pero leída como número), y texto DD/MM/YYYY o
+      // DD-MM-YYYY (celdas guardadas como texto plano).
       const fmtFecha = (v: unknown): string => {
-        if (!v) return ''
-        if (v instanceof Date) return v.toISOString().slice(0, 10)
+        if (v === null || v === undefined || v === '') return ''
+        if (v instanceof Date && !isNaN(v.getTime())) {
+          return v.toISOString().slice(0, 10)
+        }
+        if (typeof v === 'number') {
+          // Serial de Excel (días desde 1899-12-30)
+          const d = new Date(Math.round((v - 25569) * 86400 * 1000))
+          if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10)
+          return ''
+        }
         const s = String(v).trim()
-        return s
+        if (!s) return ''
+        // Ya es ISO (YYYY-MM-DD)
+        if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
+        // DD/MM/YYYY o DD-MM-YYYY
+        const m = s.match(/^(\d{1,2})[/\-](\d{1,2})[/\-](\d{4})$/)
+        if (m) {
+          const [, dd, mm, yyyy] = m
+          return `${yyyy}-${mm.padStart(2,'0')}-${dd.padStart(2,'0')}`
+        }
+        return '' // formato no reconocido — se omite en vez de enviar basura
       }
       const procesadas = rows.map(row => {
         const n: Record<string, string> = {}
