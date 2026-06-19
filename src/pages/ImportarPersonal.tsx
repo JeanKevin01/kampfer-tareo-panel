@@ -1,12 +1,24 @@
 import { useState, useMemo } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import * as XLSX from 'xlsx'
-import { Upload, FileSpreadsheet, CheckCircle, XCircle, Loader2, Download, X } from 'lucide-react'
+import { Upload, FileSpreadsheet, CheckCircle, XCircle, Loader2, Download, X, UserCog, HardHat } from 'lucide-react'
 
 const API = 'https://api.apps1.astraera.space'
 
-interface Fila { nombre: string; cargo: string; dni: string; _fila: number; _error: string | null }
-interface Resultado { nombre: string; ok: boolean; msg: string }
+interface Fila {
+  nombre: string; cargo: string; dni: string; tipo: string
+  destino: 'TRABAJADOR' | 'SUPERVISOR'
+  _fila: number; _error: string | null
+}
+interface Resultado { nombre: string; ok: boolean; msg: string; destino: string }
+
+// Detecta variantes: SUPERVISOR, SUPERVISOR DE CAMPO, SUPERVISORA, SUPERV., etc.
+function esSupervisor(cargo: string): boolean {
+  const limpio = cargo.toUpperCase()
+    .replace(/[ÁÀÄÂ]/g,'A').replace(/[ÉÈËÊ]/g,'E')
+    .replace(/[ÍÌÏÎ]/g,'I').replace(/[ÓÒÖÔ]/g,'O').replace(/[ÚÙÜÛ]/g,'U')
+  return /SUPERV/.test(limpio)
+}
 
 function normalizar(obj: Record<string, unknown>) {
   const n: Record<string, string> = {}
@@ -16,21 +28,25 @@ function normalizar(obj: Record<string, unknown>) {
       .replace(/[ÍÌÏÎ]/g,'I').replace(/[ÓÒÖÔ]/g,'O').replace(/[ÚÙÜÛ]/g,'U')
     n[ku] = String(obj[k] ?? '').trim()
   })
+  const tipoRaw = (n['TIPO'] || '').toUpperCase()
   return {
     nombre: (n['NOMBRE'] || n['APELLIDOS Y NOMBRES'] || n['NOMBRE COMPLETO'] || '').toUpperCase(),
     cargo:  (n['CARGO']  || n['PUESTO'] || n['OCUPACION'] || '').toUpperCase(),
     dni:    (n['DNI']    || n['DOCUMENTO'] || n['DOC'] || ''),
+    tipo:   tipoRaw === 'INDIRECTO' ? 'INDIRECTO' : 'DIRECTO',
   }
 }
 
 function descargarPlantilla() {
   const datos = [
-    { NOMBRE: 'GARCIA FLORES JUAN PABLO', CARGO: 'OFICIAL MECANICO',  DNI: '12345678' },
-    { NOMBRE: 'QUISPE MAMANI ROSA',       CARGO: 'LIDER MECANICO',    DNI: '87654321' },
-    { NOMBRE: 'LOPEZ TORRES CARLOS',      CARGO: 'CONDUCTOR',         DNI: '' },
+    { NOMBRE: 'GARCIA FLORES JUAN PABLO', CARGO: 'OFICIAL MECANICO',      DNI: '12345678', TIPO: 'DIRECTO' },
+    { NOMBRE: 'QUISPE MAMANI ROSA',       CARGO: 'LIDER MECANICO',        DNI: '87654321', TIPO: 'DIRECTO' },
+    { NOMBRE: 'LOPEZ TORRES CARLOS',      CARGO: 'CONDUCTOR',             DNI: '',         TIPO: 'DIRECTO' },
+    { NOMBRE: 'RIOS HUANCA JUAN',         CARGO: 'TOPOGRAFO',             DNI: '11223344', TIPO: 'INDIRECTO' },
+    { NOMBRE: 'MAMANI CCOPA DAVID',       CARGO: 'SUPERVISOR DE CAMPO',   DNI: '55667788', TIPO: 'DIRECTO' },
   ]
-  const ws = XLSX.utils.json_to_sheet(datos, { header: ['NOMBRE','CARGO','DNI'] })
-  ws['!cols'] = [{ wch: 40 }, { wch: 25 }, { wch: 12 }]
+  const ws = XLSX.utils.json_to_sheet(datos, { header: ['NOMBRE','CARGO','DNI','TIPO'] })
+  ws['!cols'] = [{ wch: 40 }, { wch: 25 }, { wch: 12 }, { wch: 12 }]
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, ws, 'Personal')
   XLSX.writeFile(wb, 'plantilla_personal_kampfer.xlsx')
@@ -44,17 +60,20 @@ export default function ImportarPersonal() {
   const [progreso, setProgreso]     = useState(0)
   const [dragging, setDragging]     = useState(false)
 
-  const validas = useMemo(() => filas.filter(f => !f._error), [filas])
-  const errores = useMemo(() => filas.filter(f =>  f._error), [filas])
+  const validas    = useMemo(() => filas.filter(f => !f._error), [filas])
+  const errores     = useMemo(() => filas.filter(f =>  f._error), [filas])
+  const nSupervisor = useMemo(() => validas.filter(f => f.destino === 'SUPERVISOR').length, [validas])
+  const nTrabajador  = useMemo(() => validas.filter(f => f.destino === 'TRABAJADOR').length, [validas])
 
   function procesarFilas(rows: Record<string, unknown>[]) {
     const procesadas: Fila[] = rows.map((row, i) => {
-      const { nombre, cargo, dni } = normalizar(row)
+      const { nombre, cargo, dni, tipo } = normalizar(row)
       let _error: string | null = null
       if (!nombre)        _error = 'NOMBRE vacío'
       else if (!cargo)    _error = 'CARGO vacío'
       else if (nombre.length < 3) _error = 'NOMBRE muy corto'
-      return { nombre, cargo, dni, _fila: i + 2, _error }
+      const destino: 'TRABAJADOR' | 'SUPERVISOR' = esSupervisor(cargo) ? 'SUPERVISOR' : 'TRABAJADOR'
+      return { nombre, cargo, dni, tipo, destino, _fila: i + 2, _error }
     })
     setFilas(procesadas)
     setPaso('preview')
@@ -95,22 +114,27 @@ export default function ImportarPersonal() {
     for (let i = 0; i < validas.length; i++) {
       const f = validas[i]
       try {
-        const r = await fetch(API + '/admin/trabajador', {
+        const endpoint = f.destino === 'SUPERVISOR' ? '/admin/supervisor' : '/admin/trabajador'
+        const body = f.destino === 'SUPERVISOR'
+          ? { nombre: f.nombre, email: '' }
+          : { nombre: f.nombre, cargo: f.cargo, dni: f.dni, tipo: f.tipo }
+        const r = await fetch(API + endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ nombre: f.nombre, cargo: f.cargo, dni: f.dni }),
+          body: JSON.stringify(body),
         })
         const j = await r.json()
-        if (r.ok) res.push({ nombre: f.nombre, ok: true,  msg: `ID: ${j.id}` })
-        else      res.push({ nombre: f.nombre, ok: false, msg: j.detail || 'Error' })
+        if (r.ok) res.push({ nombre: f.nombre, ok: true,  msg: `ID: ${j.id}`, destino: f.destino })
+        else      res.push({ nombre: f.nombre, ok: false, msg: j.detail || 'Error', destino: f.destino })
       } catch {
-        res.push({ nombre: f.nombre, ok: false, msg: 'Error de conexión' })
+        res.push({ nombre: f.nombre, ok: false, msg: 'Error de conexión', destino: f.destino })
       }
       setProgreso(Math.round(((i + 1) / validas.length) * 100))
       await new Promise(r => setTimeout(r, 80))
     }
     setResultados(res)
     qc.invalidateQueries({ queryKey: ['trabajadores'] })
+    qc.invalidateQueries({ queryKey: ['supervisores'] })
     setPaso('result')
   }
 
@@ -177,10 +201,13 @@ export default function ImportarPersonal() {
           <div className="bg-k-raised border border-k-border rounded-xl p-4 flex items-center gap-3">
             <FileSpreadsheet size={16} className="text-k-blue flex-shrink-0" />
             <p className="text-sm text-k-text2 flex-1">
-              El archivo debe tener columnas{' '}
-              <span className="text-k-text font-bold">NOMBRE</span>,{' '}
-              <span className="text-k-text font-bold">CARGO</span> y opcionalmente{' '}
-              <span className="text-k-text font-bold">DNI</span>.
+              Columnas: <span className="text-k-text font-bold">NOMBRE</span>,{' '}
+              <span className="text-k-text font-bold">CARGO</span>,{' '}
+              <span className="text-k-text font-bold">DNI</span> (opcional) y{' '}
+              <span className="text-k-text font-bold">TIPO</span> (DIRECTO / INDIRECTO, default DIRECTO).
+              Si el CARGO contiene la palabra <span className="text-k-amber font-bold">SUPERVISOR</span> (en cualquier
+              variante), la persona se crea automáticamente como <span className="text-k-amber font-bold">supervisor</span>{' '}
+              en vez de trabajador de cuadrilla.
             </p>
             <button onClick={e => { e.stopPropagation(); descargarPlantilla() }}
               className="flex items-center gap-1.5 text-xs font-bold text-k-amber bg-amber-500/10 border border-amber-500/20 px-3 py-2 rounded-lg hover:bg-amber-500/20 transition-colors flex-shrink-0">
@@ -193,15 +220,16 @@ export default function ImportarPersonal() {
       {/* PASO 2: Preview */}
       {paso === 'preview' && (
         <div className="space-y-4">
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-4 gap-3">
             {[
-              { label: 'Total leídos', value: filas.length,   color: 'text-k-text',  border: 'border-k-border' },
-              { label: 'Válidos',      value: validas.length, color: 'text-k-green', border: 'border-green-500/20' },
-              { label: 'Con error',    value: errores.length, color: errores.length > 0 ? 'text-k-red' : 'text-k-text3', border: errores.length > 0 ? 'border-red-500/20' : 'border-k-border' },
+              { label: 'Total leídos',  value: filas.length,    color: 'text-k-text',   border: 'border-k-border' },
+              { label: 'Trabajadores',  value: nTrabajador,     color: 'text-k-text',   border: 'border-k-border' },
+              { label: 'Supervisores',  value: nSupervisor,     color: 'text-k-amber',  border: 'border-amber-500/20' },
+              { label: 'Con error',     value: errores.length,  color: errores.length > 0 ? 'text-k-red' : 'text-k-text3', border: errores.length > 0 ? 'border-red-500/20' : 'border-k-border' },
             ].map(s => (
-              <div key={s.label} className={`bg-k-surface border ${s.border} rounded-xl p-5 flex items-center gap-4`}>
-                <div className={`font-mono text-4xl font-medium ${s.color}`}>{s.value}</div>
-                <div className="text-[11px] text-k-text3 uppercase tracking-wide">{s.label}</div>
+              <div key={s.label} className={`bg-k-surface border ${s.border} rounded-xl p-4 flex items-center gap-3`}>
+                <div className={`font-mono text-3xl font-medium ${s.color}`}>{s.value}</div>
+                <div className="text-[10px] text-k-text3 uppercase tracking-wide leading-tight">{s.label}</div>
               </div>
             ))}
           </div>
@@ -211,7 +239,7 @@ export default function ImportarPersonal() {
               <table className="w-full">
                 <thead className="sticky top-0 bg-k-raised border-b border-k-border">
                   <tr>
-                    {['Fila','Nombre','Cargo','DNI','Estado'].map(h => (
+                    {['Fila','Nombre','Cargo','Tipo','DNI','Destino','Estado'].map(h => (
                       <th key={h} className="px-4 py-3 text-left text-[10px] font-bold text-k-text3 uppercase tracking-wider">{h}</th>
                     ))}
                   </tr>
@@ -222,7 +250,16 @@ export default function ImportarPersonal() {
                       <td className="px-4 py-2.5 font-mono text-xs text-k-text3">F{f._fila}</td>
                       <td className="px-4 py-2.5 text-sm text-k-text">{f.nombre || '—'}</td>
                       <td className="px-4 py-2.5 text-xs text-k-text2">{f.cargo || '—'}</td>
+                      <td className="px-4 py-2.5 text-xs text-k-text3">
+                        {f.destino === 'TRABAJADOR' ? f.tipo : '—'}
+                      </td>
                       <td className="px-4 py-2.5 font-mono text-xs text-k-text3">{f.dni || '—'}</td>
+                      <td className="px-4 py-2.5">
+                        {f.destino === 'SUPERVISOR'
+                          ? <span className="flex items-center gap-1 text-[10px] font-bold text-k-amber bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded w-fit"><UserCog size={10}/> SUPERVISOR</span>
+                          : <span className="flex items-center gap-1 text-[10px] font-bold text-k-text2 bg-k-raised border border-k-border px-2 py-0.5 rounded w-fit"><HardHat size={10}/> TRABAJADOR</span>
+                        }
+                      </td>
                       <td className="px-4 py-2.5">
                         {f._error
                           ? <span className="text-[10px] font-bold text-k-red bg-red-500/10 border border-red-500/20 px-2 py-0.5 rounded">{f._error}</span>
@@ -246,86 +283,79 @@ export default function ImportarPersonal() {
             </button>
             <button onClick={importar} disabled={validas.length === 0}
               className="flex items-center gap-2 bg-k-amber hover:bg-k-amber2 disabled:opacity-40 text-black font-bold text-sm px-5 py-2.5 rounded-lg transition-colors">
-              <CheckCircle size={14} /> Importar {validas.length} trabajadores
+              <CheckCircle size={14} /> Importar {nTrabajador} trabajadores{nSupervisor > 0 ? ` + ${nSupervisor} supervisores` : ''}
             </button>
           </div>
         </div>
       )}
 
-      {/* PASO 3: Importando */}
+      {/* PASO 3: Importing */}
       {paso === 'importing' && (
-        <div className="bg-k-surface border border-k-border rounded-xl p-10 space-y-6 text-center">
-          <Loader2 size={40} className="animate-spin text-k-amber mx-auto" />
-          <div>
-            <p className="text-lg font-bold text-k-text mb-1">Importando personal…</p>
-            <p className="text-sm text-k-text3">Por favor espera, no cierres esta página</p>
+        <div className="bg-k-surface border border-k-border rounded-xl p-12 flex flex-col items-center gap-4">
+          <Loader2 size={32} className="animate-spin text-k-amber" />
+          <p className="text-sm font-bold text-k-text">Importando {validas.length} registros…</p>
+          <div className="w-full max-w-md bg-k-raised rounded-full h-2 overflow-hidden">
+            <div className="h-full bg-k-amber transition-all" style={{ width: `${progreso}%` }} />
           </div>
-          <div className="max-w-md mx-auto">
-            <div className="flex justify-between text-xs text-k-text3 mb-2">
-              <span>Progreso</span>
-              <span className="font-mono font-bold text-k-amber">{progreso}%</span>
-            </div>
-            <div className="w-full bg-k-raised rounded-full h-3 border border-k-border">
-              <div className="h-full bg-k-amber rounded-full transition-all duration-300" style={{ width: `${progreso}%` }} />
-            </div>
-          </div>
+          <p className="text-xs text-k-text3 font-mono">{progreso}%</p>
         </div>
       )}
 
-      {/* PASO 4: Resultado */}
+      {/* PASO 4: Result */}
       {paso === 'result' && (
         <div className="space-y-4">
-          <div className="bg-k-surface border border-k-border rounded-xl p-10 text-center">
-            <div className="text-6xl mb-4">{fallidos === 0 ? '🎉' : '⚠️'}</div>
-            <h2 className="font-condensed font-bold text-2xl text-k-text mb-2">
-              {fallidos === 0 ? '¡Importación completada!' : 'Importación con advertencias'}
-            </h2>
-            <p className="text-sm text-k-text3 mb-6">
-              {fallidos === 0
-                ? 'Todos los trabajadores fueron registrados exitosamente.'
-                : `${fallidos} registros tuvieron errores — probablemente ya existían.`}
-            </p>
-            <div className="flex justify-center gap-8 mb-6">
-              <div className="text-center">
-                <div className="font-mono text-4xl font-medium text-k-green">{exitosos}</div>
-                <div className="text-[11px] text-k-text3 uppercase tracking-wide mt-1">Importados</div>
-              </div>
-              {fallidos > 0 && (
-                <div className="text-center">
-                  <div className="font-mono text-4xl font-medium text-k-red">{fallidos}</div>
-                  <div className="text-[11px] text-k-text3 uppercase tracking-wide mt-1">Con error</div>
-                </div>
-              )}
-              <div className="text-center">
-                <div className="font-mono text-4xl font-medium text-k-amber">{exitosos + fallidos}</div>
-                <div className="text-[11px] text-k-text3 uppercase tracking-wide mt-1">Total procesados</div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="bg-k-surface border border-green-500/20 rounded-xl p-5 flex items-center gap-4">
+              <CheckCircle size={28} className="text-k-green" />
+              <div>
+                <div className="font-mono text-3xl font-medium text-k-green">{exitosos}</div>
+                <div className="text-[11px] text-k-text3 uppercase tracking-wide">Importados con éxito</div>
               </div>
             </div>
-            <button onClick={reset}
-              className="flex items-center gap-2 bg-k-amber hover:bg-k-amber2 text-black font-bold text-sm px-6 py-2.5 rounded-lg transition-colors mx-auto">
-              <Upload size={14} /> Importar otro archivo
-            </button>
+            <div className="bg-k-surface border border-k-border rounded-xl p-5 flex items-center gap-4">
+              <XCircle size={28} className={fallidos > 0 ? 'text-k-red' : 'text-k-text3'} />
+              <div>
+                <div className={`font-mono text-3xl font-medium ${fallidos > 0 ? 'text-k-red' : 'text-k-text3'}`}>{fallidos}</div>
+                <div className="text-[11px] text-k-text3 uppercase tracking-wide">Con error</div>
+              </div>
+            </div>
           </div>
 
-          {fallidos > 0 && (
-            <div className="bg-k-surface border border-k-border rounded-xl overflow-hidden">
-              <div className="px-4 py-3 bg-k-raised border-b border-k-border">
-                <span className="text-[11px] font-bold text-k-text3 uppercase tracking-wider">Detalle de errores</span>
-              </div>
-              <div className="max-h-48 overflow-y-auto">
-                {resultados.filter(r => !r.ok).map((r, i) => (
-                  <div key={i} className="flex items-center gap-3 px-4 py-3 border-b border-k-border last:border-0">
-                    <XCircle size={14} className="text-k-red flex-shrink-0" />
-                    <span className="text-sm text-k-text flex-1">{r.nombre}</span>
-                    <span className="text-xs text-k-red">{r.msg}</span>
-                  </div>
-                ))}
-              </div>
+          <div className="bg-k-surface border border-k-border rounded-xl overflow-hidden">
+            <div className="overflow-auto max-h-96">
+              <table className="w-full">
+                <thead className="sticky top-0 bg-k-raised border-b border-k-border">
+                  <tr>
+                    {['Nombre','Destino','Resultado'].map(h => (
+                      <th key={h} className="px-4 py-3 text-left text-[10px] font-bold text-k-text3 uppercase tracking-wider">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {resultados.map((r, i) => (
+                    <tr key={i} className="border-b border-k-border last:border-0">
+                      <td className="px-4 py-2.5 text-sm text-k-text">{r.nombre}</td>
+                      <td className="px-4 py-2.5 text-xs text-k-text3">{r.destino}</td>
+                      <td className="px-4 py-2.5">
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                          r.ok
+                            ? 'text-k-green bg-green-500/10 border border-green-500/20'
+                            : 'text-k-red bg-red-500/10 border border-red-500/20'
+                        }`}>{r.msg}</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          )}
+          </div>
+
+          <button onClick={reset}
+            className="w-full flex items-center justify-center gap-2 bg-k-amber hover:bg-k-amber2 text-black font-bold text-sm px-4 py-3 rounded-lg transition-colors">
+            <Upload size={16} /> Importar otro archivo
+          </button>
         </div>
       )}
-
     </div>
   )
 }

@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Calendar, CheckCircle, XCircle, Clock, Hash, Mail,
-  Loader2, Users, Search, X, ChevronDown, ChevronUp,
+  Loader2, Users, Search, X, ChevronDown, ChevronUp, UserPlus,
 } from 'lucide-react'
 
 const API = 'https://api.apps1.astraera.space'
@@ -155,13 +155,33 @@ function CuadrillaPanel({ supId, supNombre }: { supId: string; supNombre: string
 
 // ── Componente principal ──────────────────────────────────────
 export default function Supervisores() {
+  const qc = useQueryClient()
   const [fecha, setFecha]           = useState(hoy)
   const [editando, setEditando]     = useState<string | null>(null)
+  const [showNuevo, setShowNuevo]   = useState(false)
+  const [nuevoNombre, setNuevoNombre] = useState('')
+  const [nuevoEmail, setNuevoEmail]   = useState('')
 
   const { data: supervisores = [], isLoading: loadSup } = useQuery<Supervisor[]>({
     queryKey: ['supervisores'],
     queryFn: () => fetch(API + '/api/supervisores').then(r => r.json()),
     staleTime: 5 * 60 * 1000,
+  })
+
+  const crearSupervisor = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(API + '/admin/supervisor', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nombre: nuevoNombre, email: nuevoEmail }),
+      })
+      if (!r.ok) throw new Error((await r.json()).detail || 'Error al crear')
+      return r.json()
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['supervisores'] })
+      setNuevoNombre(''); setNuevoEmail(''); setShowNuevo(false)
+    },
   })
 
   const { data: registros = [], isLoading: loadReg } = useQuery<Registro[]>({
@@ -190,13 +210,50 @@ export default function Supervisores() {
       {/* Header con selector de fecha */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <p className="text-k-text2 text-sm">Estado de reporte por supervisor</p>
-        <div className="relative">
-          <Calendar size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-k-text3 pointer-events-none" />
-          <input type="date" value={fecha} onChange={e => setFecha(e.target.value)}
-            className="bg-k-raised border border-k-border rounded-lg pl-9 pr-4 py-2.5
-                       text-sm text-k-text outline-none focus:border-k-amber transition-colors" />
+        <div className="flex items-center gap-2">
+          <button onClick={() => setShowNuevo(v => !v)}
+            className="flex items-center gap-1.5 text-xs font-bold text-k-amber bg-amber-500/10 border border-amber-500/20 px-3 py-2.5 rounded-lg hover:bg-amber-500/20 transition-colors">
+            <UserPlus size={13} /> Agregar supervisor
+          </button>
+          <div className="relative">
+            <Calendar size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-k-text3 pointer-events-none" />
+            <input type="date" value={fecha} onChange={e => setFecha(e.target.value)}
+              className="bg-k-raised border border-k-border rounded-lg pl-9 pr-4 py-2.5
+                         text-sm text-k-text outline-none focus:border-k-amber transition-colors" />
+          </div>
         </div>
       </div>
+
+      {/* Formulario nuevo supervisor */}
+      {showNuevo && (
+        <div className="bg-k-surface border border-amber-500/20 rounded-xl p-4 flex flex-wrap items-end gap-3">
+          <div className="flex-1 min-w-[200px]">
+            <label className="block text-[10px] font-bold text-k-text3 uppercase tracking-wide mb-1.5">Nombre completo</label>
+            <input value={nuevoNombre} onChange={e => setNuevoNombre(e.target.value)}
+              placeholder="Ej: MAMANI CCOPA DAVID"
+              className="w-full bg-k-raised border border-k-border rounded-lg px-3 py-2.5 text-sm text-k-text outline-none focus:border-k-amber transition-colors" />
+          </div>
+          <div className="flex-1 min-w-[200px]">
+            <label className="block text-[10px] font-bold text-k-text3 uppercase tracking-wide mb-1.5">Email (opcional)</label>
+            <input value={nuevoEmail} onChange={e => setNuevoEmail(e.target.value)}
+              placeholder="correo@kampfer.pe"
+              className="w-full bg-k-raised border border-k-border rounded-lg px-3 py-2.5 text-sm text-k-text outline-none focus:border-k-amber transition-colors" />
+          </div>
+          <button onClick={() => crearSupervisor.mutate()}
+            disabled={!nuevoNombre.trim() || crearSupervisor.isPending}
+            className="flex items-center gap-2 bg-k-amber hover:bg-k-amber2 disabled:opacity-40 text-black font-bold text-sm px-4 py-2.5 rounded-lg transition-colors">
+            {crearSupervisor.isPending ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />}
+            Guardar
+          </button>
+          <button onClick={() => setShowNuevo(false)}
+            className="flex items-center gap-2 bg-k-raised border border-k-border text-k-text2 font-bold text-sm px-4 py-2.5 rounded-lg hover:bg-k-border transition-colors">
+            <X size={14} />
+          </button>
+          {crearSupervisor.isError && (
+            <p className="text-xs text-k-red w-full">{(crearSupervisor.error as Error).message}</p>
+          )}
+        </div>
+      )}
 
       {/* KPIs */}
       <div className="grid grid-cols-4 gap-4">
