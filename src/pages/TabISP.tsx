@@ -2,7 +2,7 @@
 // Replica ResPorSubFase + Productividades + Resumen Ejecutivo
 import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react'
+import { ChevronDown, ChevronRight, Loader2, AlertTriangle } from 'lucide-react'
 
 const API = 'https://api.apps1.astraera.space'
 
@@ -162,10 +162,18 @@ function FilaPartida({ p, semanas, semanaActual }: { p:PartidaISP; semanas:SemIn
 export default function TabISP({ semana, otm }: { semana: number; otm?: string }) {
   const [grupFase, setGrupFase] = useState<string|null>(null)
 
-  const { data, isLoading } = useQuery<{semanas:SemInfo[]; partidas:PartidaISP[]}>({
+  const { data, isLoading, error } = useQuery<{semanas:SemInfo[]; partidas:PartidaISP[]}>({
     queryKey: ['ev-isp', otm],
-    queryFn: () => fetch(`${API}/ev/isp${otm?`?otm=${otm}`:''}`).then(r => r.json()),
+    queryFn: async () => {
+      const r = await fetch(`${API}/ev/isp${otm?`?otm=${otm}`:''}`)
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}))
+        throw new Error(j.detail ? JSON.stringify(j.detail) : `Error ${r.status}`)
+      }
+      return r.json()
+    },
     staleTime: 2 * 60_000,
+    retry: 1,
   })
 
   const semanas   = data?.semanas ?? []
@@ -193,6 +201,15 @@ export default function TabISP({ semana, otm }: { semana: number; otm?: string }
   if (isLoading) return (
     <div className="flex items-center gap-2 py-10 text-k-text3 text-sm">
       <Loader2 size={14} className="animate-spin"/> Calculando ISP completo...
+    </div>
+  )
+  if (error) return (
+    <div className="flex items-start gap-2 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-red-400 text-sm">
+      <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
+      <div>
+        <p className="font-semibold">Error calculando el ISP</p>
+        <p className="text-xs mt-1 text-red-400/70 break-all">{(error as Error).message}</p>
+      </div>
     </div>
   )
   if (!partidas.length) return (

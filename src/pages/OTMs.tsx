@@ -223,19 +223,19 @@ export default function OTMs() {
           <table className="w-full">
             <thead>
               <tr className="bg-k-raised border-b border-k-border">
-                {['OTM','Descripción','Área','Estado','Cambiar estado'].map((h, i) => (
-                  <th key={h} className={`px-4 py-3 text-[11px] font-bold text-k-text3 uppercase tracking-wider ${i >= 3 ? 'text-center' : 'text-left'}`}>{h}</th>
+                {['OTM','Descripción','Área','Plazo','Inicio','Fin','Monto contr.','Monto valor.','Estado','Cambiar estado'].map((h, i) => (
+                  <th key={h} className={`px-4 py-3 text-[11px] font-bold text-k-text3 uppercase tracking-wider whitespace-nowrap ${i >= 3 ? 'text-center' : 'text-left'}`}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {isLoading && (
-                <tr><td colSpan={5} className="px-4 py-10 text-center text-k-text3 text-sm">
+                <tr><td colSpan={10} className="px-4 py-10 text-center text-k-text3 text-sm">
                   <Loader2 size={16} className="animate-spin inline mr-2" />Cargando OTMs…
                 </td></tr>
               )}
               {!isLoading && filtered.length === 0 && (
-                <tr><td colSpan={5} className="px-4 py-10 text-center text-k-text3 text-sm">No hay OTMs con ese filtro</td></tr>
+                <tr><td colSpan={10} className="px-4 py-10 text-center text-k-text3 text-sm">No hay OTMs con ese filtro</td></tr>
               )}
               {filtered.map(o => (
                 <tr key={o.id} className="border-b border-k-border last:border-0 hover:bg-k-raised/40 transition-colors">
@@ -247,6 +247,25 @@ export default function OTMs() {
                   </td>
                   <td className="px-4 py-3">
                     <span className="text-xs text-k-text2">{o.area || '—'}</span>
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    <span className="text-xs font-mono text-k-text2">{o.plazo ? `${o.plazo} d` : '—'}</span>
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    <span className="text-[11px] font-mono text-k-text3">{o.fecha_inicio || '—'}</span>
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    <span className="text-[11px] font-mono text-k-text3">{o.fecha_fin || '—'}</span>
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    <span className="text-xs font-mono text-k-text2">
+                      {o.monto_contractual != null ? `S/ ${Number(o.monto_contractual).toLocaleString('es-PE')}` : '—'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    <span className="text-xs font-mono text-k-green">
+                      {o.monto_valorizado != null ? `S/ ${Number(o.monto_valorizado).toLocaleString('es-PE')}` : 'S/ 0'}
+                    </span>
                   </td>
                   <td className="px-4 py-3 text-center">
                     <span className={`inline-block text-[10px] font-bold uppercase tracking-wide px-2.5 py-0.5 rounded border ${estadoStyle[o.estado] || estadoStyle['CERRADA']}`}>
