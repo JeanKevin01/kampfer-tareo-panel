@@ -29,24 +29,30 @@ function normalizar(obj: Record<string, unknown>) {
     n[ku] = String(obj[k] ?? '').trim()
   })
   const tipoRaw = (n['TIPO'] || '').toUpperCase()
+  // Columna explícita ES_SUPERVISOR (SI/NO). Tiene prioridad sobre el cargo.
+  const supRaw = (n['ES_SUPERVISOR'] || n['ES SUPERVISOR'] || n['SUPERVISOR'] || '').toUpperCase()
+  let es_sup: 'SI' | 'NO' | '' = ''
+  if (['SI','SÍ','S','X','TRUE','VERDADERO','1'].includes(supRaw)) es_sup = 'SI'
+  else if (['NO','N','FALSE','FALSO','0'].includes(supRaw)) es_sup = 'NO'
   return {
     nombre: (n['NOMBRE'] || n['APELLIDOS Y NOMBRES'] || n['NOMBRE COMPLETO'] || '').toUpperCase(),
     cargo:  (n['CARGO']  || n['PUESTO'] || n['OCUPACION'] || '').toUpperCase(),
     dni:    (n['DNI']    || n['DOCUMENTO'] || n['DOC'] || ''),
     tipo:   tipoRaw === 'INDIRECTO' ? 'INDIRECTO' : 'DIRECTO',
+    es_sup,
   }
 }
 
 function descargarPlantilla() {
   const datos = [
-    { NOMBRE: 'GARCIA FLORES JUAN PABLO', CARGO: 'OFICIAL MECANICO',      DNI: '12345678', TIPO: 'DIRECTO' },
-    { NOMBRE: 'QUISPE MAMANI ROSA',       CARGO: 'LIDER MECANICO',        DNI: '87654321', TIPO: 'DIRECTO' },
-    { NOMBRE: 'LOPEZ TORRES CARLOS',      CARGO: 'CONDUCTOR',             DNI: '',         TIPO: 'DIRECTO' },
-    { NOMBRE: 'RIOS HUANCA JUAN',         CARGO: 'TOPOGRAFO',             DNI: '11223344', TIPO: 'INDIRECTO' },
-    { NOMBRE: 'MAMANI CCOPA DAVID',       CARGO: 'SUPERVISOR DE CAMPO',   DNI: '55667788', TIPO: 'DIRECTO' },
+    { NOMBRE: 'GARCIA FLORES JUAN PABLO', CARGO: 'OFICIAL MECANICO',      DNI: '12345678', TIPO: 'DIRECTO',   ES_SUPERVISOR: 'NO' },
+    { NOMBRE: 'QUISPE MAMANI ROSA',       CARGO: 'LIDER MECANICO',        DNI: '87654321', TIPO: 'DIRECTO',   ES_SUPERVISOR: 'NO' },
+    { NOMBRE: 'LOPEZ TORRES CARLOS',      CARGO: 'CONDUCTOR',             DNI: '',         TIPO: 'INDIRECTO', ES_SUPERVISOR: 'NO' },
+    { NOMBRE: 'RIOS HUANCA JUAN',         CARGO: 'SUPERVISOR DE CALIDAD', DNI: '11223344', TIPO: 'INDIRECTO', ES_SUPERVISOR: 'NO' },
+    { NOMBRE: 'MAMANI CCOPA DAVID',       CARGO: 'SUPERVISOR DE CAMPO',   DNI: '55667788', TIPO: 'INDIRECTO', ES_SUPERVISOR: 'SI' },
   ]
-  const ws = XLSX.utils.json_to_sheet(datos, { header: ['NOMBRE','CARGO','DNI','TIPO'] })
-  ws['!cols'] = [{ wch: 40 }, { wch: 25 }, { wch: 12 }, { wch: 12 }]
+  const ws = XLSX.utils.json_to_sheet(datos, { header: ['NOMBRE','CARGO','DNI','TIPO','ES_SUPERVISOR'] })
+  ws['!cols'] = [{ wch: 40 }, { wch: 25 }, { wch: 12 }, { wch: 12 }, { wch: 14 }]
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, ws, 'Personal')
   XLSX.writeFile(wb, 'plantilla_personal_kampfer.xlsx')
@@ -67,12 +73,16 @@ export default function ImportarPersonal() {
 
   function procesarFilas(rows: Record<string, unknown>[]) {
     const procesadas: Fila[] = rows.map((row, i) => {
-      const { nombre, cargo, dni, tipo } = normalizar(row)
+      const { nombre, cargo, dni, tipo, es_sup } = normalizar(row)
       let _error: string | null = null
       if (!nombre)        _error = 'NOMBRE vacío'
       else if (!cargo)    _error = 'CARGO vacío'
       else if (nombre.length < 3) _error = 'NOMBRE muy corto'
-      const destino: 'TRABAJADOR' | 'SUPERVISOR' = esSupervisor(cargo) ? 'SUPERVISOR' : 'TRABAJADOR'
+      // Prioridad: columna ES_SUPERVISOR explícita; si está vacía, heurístico por cargo.
+      const destino: 'TRABAJADOR' | 'SUPERVISOR' =
+        es_sup === 'SI' ? 'SUPERVISOR'
+        : es_sup === 'NO' ? 'TRABAJADOR'
+        : (esSupervisor(cargo) ? 'SUPERVISOR' : 'TRABAJADOR')
       return { nombre, cargo, dni, tipo, destino, _fila: i + 2, _error }
     })
     setFilas(procesadas)
@@ -203,11 +213,14 @@ export default function ImportarPersonal() {
             <p className="text-sm text-k-text2 flex-1">
               Columnas: <span className="text-k-text font-bold">NOMBRE</span>,{' '}
               <span className="text-k-text font-bold">CARGO</span>,{' '}
-              <span className="text-k-text font-bold">DNI</span> (opcional) y{' '}
-              <span className="text-k-text font-bold">TIPO</span> (DIRECTO / INDIRECTO, default DIRECTO).
-              Si el CARGO contiene la palabra <span className="text-k-amber font-bold">SUPERVISOR</span> (en cualquier
-              variante), la persona se crea automáticamente como <span className="text-k-amber font-bold">supervisor</span>{' '}
-              en vez de trabajador de cuadrilla.
+              <span className="text-k-text font-bold">DNI</span> (opcional),{' '}
+              <span className="text-k-text font-bold">TIPO</span> (DIRECTO / INDIRECTO, default DIRECTO) y{' '}
+              <span className="text-k-text font-bold">ES_SUPERVISOR</span> (SI / NO).
+              La columna <span className="text-k-amber font-bold">ES_SUPERVISOR=SI</span> crea a la persona como{' '}
+              <span className="text-k-amber font-bold">supervisor de tareo</span>. Si la dejas vacía, se usa el
+              criterio anterior (cargo que contenga «SUPERVISOR»). Así un{' '}
+              <span className="text-k-text font-bold">SUPERVISOR DE CALIDAD/SSOMA</span> con ES_SUPERVISOR=NO
+              entra como trabajador indirecto, no como supervisor de cuadrilla.
             </p>
             <button onClick={e => { e.stopPropagation(); descargarPlantilla() }}
               className="flex items-center gap-1.5 text-xs font-bold text-k-amber bg-amber-500/10 border border-amber-500/20 px-3 py-2 rounded-lg hover:bg-amber-500/20 transition-colors flex-shrink-0">

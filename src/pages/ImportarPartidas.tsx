@@ -54,17 +54,21 @@ const num = (s: string | undefined): number | null => {
 const esTrue = (s: string): boolean => ['SI', 'SÍ', 'TRUE', '1', 'X', 'YES'].includes((s || '').toUpperCase().trim())
 
 function descargarPlantilla() {
+  // Ejemplo consistente con la estructura WBS real (códigos jerárquicos).
+  // Nodos PADRE: FASE vacía (no se registran, solo agrupan).
+  // Nodos HOJA: FASE llena (se registran tareo + avance).
   const partidas = [
-    { OTM: 'OTM-0005', CODIGO: 'CIV.EXC.001', FASE: 'CIV', SUB_FASE: 'EXC', DESCRIPCION: 'Excavación en material suelto', UNIDAD: 'm3', METRADO_PRESUP: 980, METRADO_PROYEC: '', HH_PRESUP: 1600, HH_GASTADAS_INICIAL: '', HH_GANADAS_INICIAL: '' },
-    { OTM: 'OTM-0005', CODIGO: 'CIV.REL.001', FASE: 'CIV', SUB_FASE: 'REL', DESCRIPCION: 'Relleno compactado',             UNIDAD: 'm3', METRADO_PRESUP: 1250, METRADO_PROYEC: '', HH_PRESUP: 900,  HH_GASTADAS_INICIAL: 320, HH_GANADAS_INICIAL: 280 },
-    { OTM: 'OTM-0012', CODIGO: 'EST.ACE.001', FASE: 'EST', SUB_FASE: 'ACE', DESCRIPCION: 'Acero en zapatas',                UNIDAD: 'kg', METRADO_PRESUP: 18500, METRADO_PROYEC: '', HH_PRESUP: 740,  HH_GASTADAS_INICIAL: '', HH_GANADAS_INICIAL: '' },
+    { OTM: 'OTM-0005', CODIGO: '02',             FASE: '',    SUB_FASE: '',        DESCRIPCION: 'TRABAJOS EN INSTALACIONES DE SMCV', UNIDAD: '',   METRADO_PRESUP: '',  METRADO_PROYEC: '', HH_PRESUP: '',     HH_GASTADAS_INICIAL: '', HH_GANADAS_INICIAL: '' },
+    { OTM: 'OTM-0005', CODIGO: '02.01',          FASE: '',    SUB_FASE: '',        DESCRIPCION: 'DIVERTER DV-041',                   UNIDAD: '',   METRADO_PRESUP: '',  METRADO_PROYEC: '', HH_PRESUP: '',     HH_GASTADAS_INICIAL: '', HH_GANADAS_INICIAL: '' },
+    { OTM: 'OTM-0005', CODIGO: '02.01.01.01.01', FASE: 'AND', SUB_FASE: 'AND.INS', DESCRIPCION: 'TRANSPORTE INTERNO CAMIÓN GRÚA',    UNIDAD: 'hm', METRADO_PRESUP: 16,  METRADO_PROYEC: '', HH_PRESUP: 17.57,  HH_GASTADAS_INICIAL: '', HH_GANADAS_INICIAL: '' },
+    { OTM: 'OTM-0005', CODIGO: '02.01.01.01.02', FASE: 'EST', SUB_FASE: 'EST.LIG', DESCRIPCION: 'PERSONAL DE APOYO CARGUÍO',         UNIDAD: 'hh', METRADO_PRESUP: 32,  METRADO_PROYEC: '', HH_PRESUP: 160,    HH_GASTADAS_INICIAL: '', HH_GANADAS_INICIAL: '' },
   ]
+  // OJO: CODIGO de HITOS debe ser EXACTAMENTE el código de la partida hoja.
   const hitos = [
-    { CODIGO: 'CIV.EXC.001', NUMERO: 1, DESCRIPCION: 'Trazo y replanteo',  PESO: 0.05, ES_PRINCIPAL: 'NO' },
-    { CODIGO: 'CIV.EXC.001', NUMERO: 2, DESCRIPCION: 'Excavación ejecutada', PESO: 0.90, ES_PRINCIPAL: 'SI' },
-    { CODIGO: 'CIV.EXC.001', NUMERO: 3, DESCRIPCION: 'Limpieza y perfilado', PESO: 0.05, ES_PRINCIPAL: 'NO' },
-    { CODIGO: 'CIV.REL.001', NUMERO: 1, DESCRIPCION: 'Relleno y compactado', PESO: 1.00, ES_PRINCIPAL: 'SI' },
-    // EST.ACE.001 no aparece aquí a propósito → se le asigna 1 hito (100%) automáticamente
+    { CODIGO: '02.01.01.01.01', NUMERO: 1, DESCRIPCION: 'Preparación / traslado', PESO: 0.10, ES_PRINCIPAL: 'NO' },
+    { CODIGO: '02.01.01.01.01', NUMERO: 2, DESCRIPCION: 'Ejecución',              PESO: 0.90, ES_PRINCIPAL: 'SI' },
+    { CODIGO: '02.01.01.01.02', NUMERO: 1, DESCRIPCION: 'Ejecución',              PESO: 1.00, ES_PRINCIPAL: 'SI' },
+    // Si una hoja no aparece aquí → se le asigna 1 hito (100%) automáticamente.
   ]
   const wb = XLSX.utils.book_new()
   const ws1 = XLSX.utils.json_to_sheet(partidas, {
@@ -85,6 +89,7 @@ export default function ImportarPartidas() {
   const qc = useQueryClient()
   const [paso, setPaso] = useState<'upload' | 'preview' | 'importing' | 'result'>('upload')
   const [partidas, setPartidas] = useState<FilaPartida[]>([])
+  const [hitosHuerfanos, setHitosHuerfanos] = useState<string[]>([])
   const [resultado, setResultado] = useState<{ ok: boolean; msg: string; detalle?: string[] } | null>(null)
   const [dragging, setDragging] = useState(false)
 
@@ -183,6 +188,13 @@ export default function ImportarPartidas() {
       }
     })
 
+    // Detectar códigos de la hoja HITOS que no coinciden con ninguna partida.
+    // Esos hitos se ignoran silenciosamente y la partida queda con 1 hito 100%,
+    // así que avisamos explícitamente (fue una fuente real de confusión).
+    const codigosPartida = new Set(fp.map(p => p.codigo))
+    const huerfanos = [...hitosPorCodigo.keys()].filter(c => !codigosPartida.has(c))
+    setHitosHuerfanos(huerfanos)
+
     setPartidas(fp)
     setPaso('preview')
   }
@@ -264,7 +276,7 @@ export default function ImportarPartidas() {
     setPaso('result')
   }
 
-  const reset = () => { setPartidas([]); setResultado(null); setPaso('upload') }
+  const reset = () => { setPartidas([]); setHitosHuerfanos([]); setResultado(null); setPaso('upload') }
 
   // ---------------- UI ----------------
   if (paso === 'upload') {
@@ -349,6 +361,18 @@ export default function ImportarPartidas() {
             </button>
           </div>
         </div>
+
+        {hitosHuerfanos.length > 0 && (
+          <div className="flex items-start gap-2 px-4 py-3 rounded-xl border border-amber-500/30 bg-amber-500/10 text-xs text-k-amber">
+            <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
+            <div>
+              <strong>{hitosHuerfanos.length} código(s) de la hoja HITOS no coinciden con ninguna partida</strong> y
+              serán ignorados (esas partidas usarán 1 hito al 100%). El CODIGO de HITOS debe ser exactamente el de la
+              partida hoja. Códigos sin coincidencia:{' '}
+              <span className="font-mono text-k-text2">{hitosHuerfanos.slice(0, 12).join(', ')}{hitosHuerfanos.length > 12 ? '…' : ''}</span>
+            </div>
+          </div>
+        )}
 
         <div className="bg-k-surface border border-k-border rounded-xl overflow-hidden">
           <div className="px-4 py-2 border-b border-k-border bg-k-raised text-[11px] font-bold text-k-text3 uppercase tracking-widest">
