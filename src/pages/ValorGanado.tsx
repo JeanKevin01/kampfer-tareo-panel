@@ -4,7 +4,6 @@ import TabRendimientos from './TabRendimientos'
 import ControlDiario from './ControlDiario'
 import CargaHistorica from './CargaHistorica'
 import WBSArbol from './WBSArbol'
-import ImportarOTM from './ImportarOTM'
 // ============================================================
 // src/pages/ValorGanado.tsx
 // Módulo Valor Ganado — lógica ISP Fluor digitalizada
@@ -19,7 +18,7 @@ import {
 import {
   Target, BarChart3, ClipboardList, PenLine, Settings2,
   Plus, Pencil, Trash2, X, Save, Loader2, TrendingUp, Clock, Gauge,
-  Upload, Link2, CalendarDays, Users, History,
+  Upload, Link2, CalendarDays, Users, History, AlertTriangle,
 } from 'lucide-react'
 import ImportarPartidas from '@/pages/ImportarPartidas'
 import AsignarHH from '@/pages/AsignarHH'
@@ -160,7 +159,7 @@ export default function ValorGanado() {
   })
 
   // OTMs que tienen partidas en el módulo EV
-  const { data: otmsEV = [] } = useQuery<{otm_id: string; partidas: number}[]>({
+  const { data: otmsEV = [] } = useQuery<{otm_id: string; descripcion: string; estado: string; partidas: number}[]>({
     queryKey: ['ev-otms'],
     queryFn: () => req('/ev/otms'),
     staleTime: 30_000,
@@ -220,7 +219,9 @@ export default function ValorGanado() {
             >
               <option value="">Todas las OTMs</option>
               {otmsEV.map(o => (
-                <option key={o.otm_id} value={o.otm_id}>{o.otm_id} ({o.partidas})</option>
+                <option key={o.otm_id} value={o.otm_id}>
+                  {o.otm_id} — {o.descripcion?.slice(0, 28) || '—'} {o.partidas > 0 ? `(${o.partidas} partidas)` : '(sin partidas — importar)'}
+                </option>
               ))}
             </select>
             <select
@@ -257,6 +258,19 @@ export default function ValorGanado() {
         ))}
       </div>
 
+      {selectedOtm && otmsEV.find(o => o.otm_id === selectedOtm)?.partidas === 0 && (
+        <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-amber-500/30 bg-amber-500/10 text-sm text-k-amber">
+          <AlertTriangle size={16} className="flex-shrink-0" />
+          <span className="flex-1">
+            <strong>{selectedOtm}</strong> aún no tiene partidas importadas — el Valor Ganado no puede calcular nada para esta OTM.
+          </span>
+          <button onClick={() => setTab('importar')}
+            className="flex-shrink-0 bg-k-amber text-black font-bold text-xs px-3 py-1.5 rounded-lg hover:bg-k-amber2 transition-colors">
+            Importar partidas →
+          </button>
+        </div>
+      )}
+
       {tab === 'resumen'  && <TabResumen semana={semana} otm={selectedOtm} />}
       {tab === 'partidas' && <WBSArbol otm={selectedOtm} semana={semana} />}
       {tab === 'isp'      && <TabISP semana={semana} otm={selectedOtm} />}
@@ -289,7 +303,7 @@ export default function ValorGanado() {
         />
       )}
       {tab === 'config'        && <TabConfig />}
-      {tab === 'importar'      && <div className="space-y-5"><ImportarOTM /><ImportarPartidas /></div>}
+      {tab === 'importar'      && <ImportarPartidas />}
     </div>
   )
 }

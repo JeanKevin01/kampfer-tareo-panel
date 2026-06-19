@@ -7,6 +7,8 @@ const API = 'https://api.apps1.astraera.space'
 
 interface OTM {
   id: string; descripcion: string; estado: string; area?: string; cc?: string
+  sdp?: string; plazo?: number; fecha_inicio?: string; fecha_fin?: string
+  monto_contractual?: number; monto_valorizado?: number
 }
 
 const ESTADOS = ['EJECUCION', 'POR INICIAR', 'CERRADA', 'CONCLUIDA']
@@ -21,22 +23,39 @@ export default function OTMs() {
   const qc = useQueryClient()
   const [search, setSearch]       = useState('')
   const [showModal, setShowModal] = useState(false)
-  const [form, setForm]           = useState({ id: '', descripcion: '', estado: 'POR INICIAR', area: '', cc: '' })
+  const [form, setForm]           = useState({
+    id: '', descripcion: '', estado: 'POR INICIAR', area: '', cc: '',
+    sdp: '', plazo: '', fecha_inicio: '', fecha_fin: '', monto_contractual: '', monto_valorizado: '',
+  })
   const [formError, setFormError] = useState('')
 
   // ── Importación masiva ──
   const [showImport, setShowImport]   = useState(false)
-  const [filasImport, setFilasImport] = useState<Array<Record<string, string> & { _error: string | null }>>([])
+  const [filasImport, setFilasImport] = useState<Array<{
+    ID: string; DESCRIPCION: string; AREA: string; ESTADO: string; SDP: string; CENTRO_COSTO: string
+    PLAZO: string; FECHA_INICIO: string; FECHA_FIN: string; MONTO_CONTRACTUAL: string; MONTO_VALORIZADO: string
+    _error: string | null
+  }>>([])
   const [resultImport, setResultImport] = useState<{ creadas: number; errores: { id: string; error: string }[] } | null>(null)
 
   function descargarPlantillaOTMs() {
     const datos = [
-      { ID: 'OTM-0005', DESCRIPCION: 'MONTAJE ESTRUCTURA M-12', AREA: 'SX-EW',          ESTADO: 'EJECUCION',   SDP: '', CENTRO_COSTO: '' },
-      { ID: 'OTM-0012', DESCRIPCION: 'REUBICACION NIDO DE CICLONES', AREA: 'Mina',       ESTADO: 'EJECUCION',   SDP: '', CENTRO_COSTO: '' },
-      { ID: 'OTM-0036', DESCRIPCION: 'INSTALACION TUBERIA PVC',  AREA: 'C2 Area Seca',   ESTADO: 'POR INICIAR', SDP: '', CENTRO_COSTO: '' },
+      { SDP: '', ID: 'OTM-0005', CENTRO_COSTO: '', DESCRIPCION: 'MONTAJE ESTRUCTURA M-12', AREA: 'SX-EW',
+        ESTADO: 'EJECUCION', PLAZO: 30, 'FECHA DE INICIO': '2026-01-06', 'FECHA DE FIN': '2026-02-05',
+        'MONTO CONTRACTUAL': 125000, 'MONTO VALORIZADO': 0 },
+      { SDP: '', ID: 'OTM-0012', CENTRO_COSTO: '', DESCRIPCION: 'REUBICACION NIDO DE CICLONES', AREA: 'Mina',
+        ESTADO: 'EJECUCION', PLAZO: 45, 'FECHA DE INICIO': '2026-01-13', 'FECHA DE FIN': '2026-02-27',
+        'MONTO CONTRACTUAL': 280000, 'MONTO VALORIZADO': 0 },
+      { SDP: '', ID: 'OTM-0036', CENTRO_COSTO: '', DESCRIPCION: 'INSTALACION TUBERIA PVC', AREA: 'C2 Area Seca',
+        ESTADO: 'POR INICIAR', PLAZO: 20, 'FECHA DE INICIO': '', 'FECHA DE FIN': '',
+        'MONTO CONTRACTUAL': 60000, 'MONTO VALORIZADO': 0 },
     ]
-    const ws = XLSX.utils.json_to_sheet(datos, { header: ['ID','DESCRIPCION','AREA','ESTADO','SDP','CENTRO_COSTO'] })
-    ws['!cols'] = [{ wch: 12 }, { wch: 40 }, { wch: 16 }, { wch: 14 }, { wch: 10 }, { wch: 18 }]
+    const ws = XLSX.utils.json_to_sheet(datos, {
+      header: ['SDP','ID','CENTRO_COSTO','DESCRIPCION','AREA','ESTADO','PLAZO',
+               'FECHA DE INICIO','FECHA DE FIN','MONTO CONTRACTUAL','MONTO VALORIZADO']
+    })
+    ws['!cols'] = [{ wch: 8 }, { wch: 12 }, { wch: 16 }, { wch: 38 }, { wch: 16 }, { wch: 14 },
+                   { wch: 8 }, { wch: 14 }, { wch: 14 }, { wch: 16 }, { wch: 16 }]
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'OTMs')
     XLSX.writeFile(wb, 'plantilla_otms_kampfer.xlsx')
@@ -49,6 +68,12 @@ export default function OTMs() {
       const wb   = XLSX.read(data, { type: 'array' })
       const ws   = wb.Sheets[wb.SheetNames[0]]
       const rows = XLSX.utils.sheet_to_json(ws, { defval: '' }) as Record<string, unknown>[]
+      const fmtFecha = (v: unknown): string => {
+        if (!v) return ''
+        if (v instanceof Date) return v.toISOString().slice(0, 10)
+        const s = String(v).trim()
+        return s
+      }
       const procesadas = rows.map(row => {
         const n: Record<string, string> = {}
         Object.keys(row).forEach(k => { n[k.toUpperCase().trim()] = String(row[k] ?? '').trim() })
@@ -58,10 +83,19 @@ export default function OTMs() {
         const estado       = (n['ESTADO'] || 'POR INICIAR').toUpperCase()
         const sdp           = n['SDP'] || ''
         const centro_costo = n['CENTRO_COSTO'] || n['CC'] || ''
+        const plazo         = n['PLAZO'] || ''
+        const fecha_inicio  = fmtFecha(row['FECHA DE INICIO'] ?? n['FECHA DE INICIO'] ?? n['FECHA_INICIO'])
+        const fecha_fin     = fmtFecha(row['FECHA DE FIN']    ?? n['FECHA DE FIN']    ?? n['FECHA_FIN'])
+        const monto_c       = n['MONTO CONTRACTUAL'] || n['MONTO_CONTRACTUAL'] || ''
+        const monto_v       = n['MONTO VALORIZADO']  || n['MONTO_VALORIZADO']  || ''
         let _error: string | null = null
         if (!id) _error = 'ID vacío'
         else if (!descripcion) _error = 'DESCRIPCION vacía'
-        return { ID: id, DESCRIPCION: descripcion, AREA: area, ESTADO: estado, SDP: sdp, CENTRO_COSTO: centro_costo, _error }
+        return {
+          ID: id, DESCRIPCION: descripcion, AREA: area, ESTADO: estado, SDP: sdp, CENTRO_COSTO: centro_costo,
+          PLAZO: plazo, FECHA_INICIO: fecha_inicio, FECHA_FIN: fecha_fin,
+          MONTO_CONTRACTUAL: monto_c, MONTO_VALORIZADO: monto_v, _error,
+        }
       })
       setFilasImport(procesadas)
       setResultImport(null)
@@ -74,6 +108,11 @@ export default function OTMs() {
       const otms = filasImport.filter(f => !f._error).map(f => ({
         id: f.ID, descripcion: f.DESCRIPCION, area: f.AREA, estado: f.ESTADO,
         sdp: f.SDP, centro_costo: f.CENTRO_COSTO,
+        plazo: f.PLAZO ? Number(f.PLAZO) : null,
+        fecha_inicio: f.FECHA_INICIO || null,
+        fecha_fin: f.FECHA_FIN || null,
+        monto_contractual: f.MONTO_CONTRACTUAL ? Number(f.MONTO_CONTRACTUAL) : null,
+        monto_valorizado: f.MONTO_VALORIZADO ? Number(f.MONTO_VALORIZADO) : 0,
       }))
       const r = await fetch(API + '/admin/otms/bulk', {
         method: 'POST',
@@ -105,7 +144,10 @@ export default function OTMs() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['otms-all'] })
       qc.invalidateQueries({ queryKey: ['otms'] })
-      setShowModal(false); setForm({ id: '', descripcion: '', estado: 'POR INICIAR', area: '', cc: '' }); setFormError('')
+      setShowModal(false)
+      setForm({ id: '', descripcion: '', estado: 'POR INICIAR', area: '', cc: '',
+                sdp: '', plazo: '', fecha_inicio: '', fecha_fin: '', monto_contractual: '', monto_valorizado: '' })
+      setFormError('')
     },
     onError: (e: Error) => setFormError(e.message),
   })
@@ -238,7 +280,7 @@ export default function OTMs() {
       {/* Modal nueva OTM */}
       {showModal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-k-surface border border-k-border2 rounded-2xl p-6 w-full max-w-lg shadow-2xl">
+          <div className="bg-k-surface border border-k-border2 rounded-2xl p-6 w-full max-w-2xl shadow-2xl max-h-[88vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-6">
               <h2 className="font-condensed font-bold text-xl text-k-text">Nueva OTM</h2>
               <button onClick={() => { setShowModal(false); setFormError('') }} className="text-k-text3 hover:text-k-text"><X size={18} /></button>
@@ -248,11 +290,17 @@ export default function OTMs() {
                 { key: 'id',          label: 'ID OTM *',       placeholder: 'OTM-0036',           col: 1 },
                 { key: 'area',        label: 'Área',            placeholder: 'Aguas / C2 Area Seca', col: 1 },
                 { key: 'descripcion', label: 'Descripción *',  placeholder: 'Descripción del trabajo', col: 2 },
+                { key: 'sdp',         label: 'SDP',             placeholder: '',                    col: 1 },
                 { key: 'cc',          label: 'Centro de Costo', placeholder: 'CAP270551100000',    col: 1 },
+                { key: 'plazo',       label: 'Plazo (días)',    placeholder: '30',                  col: 1, type: 'number' },
+                { key: 'fecha_inicio', label: 'Fecha de inicio', placeholder: '',                   col: 1, type: 'date' },
+                { key: 'fecha_fin',    label: 'Fecha de fin',    placeholder: '',                   col: 1, type: 'date' },
+                { key: 'monto_contractual', label: 'Monto contractual (S/)', placeholder: '0.00',   col: 1, type: 'number' },
+                { key: 'monto_valorizado',  label: 'Monto valorizado (S/)',  placeholder: '0.00',   col: 1, type: 'number' },
               ].map(f => (
                 <div key={f.key} className={f.col === 2 ? 'col-span-2' : ''}>
                   <label className="text-[11px] font-bold text-k-text3 uppercase tracking-wider block mb-1.5">{f.label}</label>
-                  <input type="text" placeholder={f.placeholder}
+                  <input type={f.type || 'text'} placeholder={f.placeholder}
                     value={form[f.key as keyof typeof form]}
                     onChange={e => setForm(p => ({ ...p, [f.key]: e.target.value }))}
                     className="w-full bg-k-raised border border-k-border2 rounded-lg px-4 py-2.5 text-sm text-k-text placeholder:text-k-text3 outline-none focus:border-k-amber transition-colors" />
@@ -301,11 +349,13 @@ export default function OTMs() {
                 <div className="bg-k-raised border border-k-border rounded-xl p-4 flex items-center gap-3">
                   <FileSpreadsheet size={16} className="text-k-blue flex-shrink-0" />
                   <p className="text-xs text-k-text2 flex-1">
-                    Columnas: <span className="text-k-text font-bold">ID</span>,{' '}
+                    Columnas: <span className="text-k-text font-bold">SDP</span>,{' '}
+                    <span className="text-k-text font-bold">ID</span>,{' '}
+                    <span className="text-k-text font-bold">CENTRO_COSTO</span>,{' '}
                     <span className="text-k-text font-bold">DESCRIPCION</span>,{' '}
                     <span className="text-k-text font-bold">AREA</span>,{' '}
                     <span className="text-k-text font-bold">ESTADO</span>,{' '}
-                    SDP y CENTRO_COSTO (opcionales).
+                    PLAZO, FECHA DE INICIO, FECHA DE FIN, MONTO CONTRACTUAL y MONTO VALORIZADO (opcionales).
                   </p>
                   <button onClick={descargarPlantillaOTMs}
                     className="flex items-center gap-1.5 text-xs font-bold text-k-amber bg-amber-500/10 border border-amber-500/20 px-3 py-2 rounded-lg hover:bg-amber-500/20 transition-colors flex-shrink-0">
@@ -334,7 +384,7 @@ export default function OTMs() {
                     <table className="w-full text-xs">
                       <thead className="sticky top-0 bg-k-raised border-b border-k-border">
                         <tr>
-                          {['ID','Descripción','Área','Estado','Estado fila'].map(h => (
+                          {['ID','Descripción','Área','Estado','Plazo','Inicio','Fin','Monto contr.','Estado fila'].map(h => (
                             <th key={h} className="px-3 py-2 text-left font-bold text-k-text3 uppercase tracking-wider">{h}</th>
                           ))}
                         </tr>
@@ -343,9 +393,13 @@ export default function OTMs() {
                         {filasImport.map((f, i) => (
                           <tr key={i} className={`border-b border-k-border last:border-0 ${f._error ? 'bg-red-500/5' : ''}`}>
                             <td className="px-3 py-2 font-mono text-k-amber">{f.ID || '—'}</td>
-                            <td className="px-3 py-2 text-k-text max-w-[220px] truncate">{f.DESCRIPCION || '—'}</td>
+                            <td className="px-3 py-2 text-k-text max-w-[180px] truncate">{f.DESCRIPCION || '—'}</td>
                             <td className="px-3 py-2 text-k-text2">{f.AREA || '—'}</td>
                             <td className="px-3 py-2 text-k-text2">{f.ESTADO}</td>
+                            <td className="px-3 py-2 text-k-text2 font-mono">{f.PLAZO || '—'}</td>
+                            <td className="px-3 py-2 text-k-text3 font-mono">{f.FECHA_INICIO || '—'}</td>
+                            <td className="px-3 py-2 text-k-text3 font-mono">{f.FECHA_FIN || '—'}</td>
+                            <td className="px-3 py-2 text-k-text2 font-mono">{f.MONTO_CONTRACTUAL || '—'}</td>
                             <td className="px-3 py-2">
                               {f._error
                                 ? <span className="text-[10px] font-bold text-k-red bg-red-500/10 border border-red-500/20 px-2 py-0.5 rounded">{f._error}</span>

@@ -1,33 +1,37 @@
 // ============================================================
-// src/components/ev/ImportarPartidas.tsx
-// Importador masivo de partidas EV — patrón de ImportarPersonal
-// Hoja PARTIDAS (obligatoria) + AVANCES y HH (opcionales, histórico)
+// src/pages/ImportarPartidas.tsx
+// Importador masivo de partidas EV.
+// Hoja PARTIDAS (obligatoria): OTM, FASE, SUB_FASE, DESCRIPCION,
+//   UNIDAD, METRADO_PRESUP, METRADO_PROYEC, HH_PRESUP,
+//   HH_GASTADAS_INICIAL, HH_GANADAS_INICIAL (las 2 últimas opcionales
+//   — sirven para migrar el histórico de otra empresa/Excel).
+// Hoja HITOS (opcional): hitos ponderados manuales por partida.
+//   Si una partida no tiene hitos definidos, se le asigna uno solo
+//   (100% al completar) automáticamente.
 // ============================================================
 import { useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as XLSX from 'xlsx'
 import {
-  Upload, FileSpreadsheet, CheckCircle, XCircle, Loader2, Download, X,
+  Upload, FileSpreadsheet, CheckCircle, XCircle, Loader2, Download, X, AlertTriangle,
 } from 'lucide-react'
 
 const API = 'https://api.apps1.astraera.space'
 
-interface Plantilla { tipo_actividad: string; hitos: unknown[] }
+interface OTMItem { otm_id: string; descripcion?: string; partidas: number }
+
+interface HitoFila {
+  numero: number; descripcion: string; peso: number; es_principal: boolean
+}
 
 interface FilaPartida {
   codigo: string; otm_id: string | null; fase: string | null; sub_fase: string | null
-  descripcion: string; unidad: string | null; sistema: string | null
+  descripcion: string; unidad: string | null
   metrado_presup: number; metrado_proyec: number | null; hh_presup: number
-  tipo_actividad: string | null; nivel: number; parent_codigo: string | null
-  _fila: number; _error: string | null
-}
-interface FilaAvance {
-  codigo: string; semana: number; hito: number; cantidad_acum: number
-  _fila: number; _error: string | null
-}
-interface FilaHH {
-  codigo: string; semana: number; hh: number
-  _fila: number; _error: string | null
+  hh_gastadas_inicial: number; hh_ganadas_inicial: number
+  hitos: HitoFila[]
+  nivel: number; parent_codigo: string | null
+  _fila: number; _error: string | null; _warn: string | null
 }
 
 function norm(obj: Record<string, unknown>) {
@@ -41,36 +45,39 @@ function norm(obj: Record<string, unknown>) {
   return n
 }
 
-const num = (s: string): number | null => {
+const num = (s: string | undefined): number | null => {
   if (s === '' || s === undefined || s === null) return null
   const v = Number(String(s).replace(/,/g, '.'))
   return Number.isFinite(v) ? v : null
 }
 
+const esTrue = (s: string): boolean => ['SI', 'SÍ', 'TRUE', '1', 'X', 'YES'].includes((s || '').toUpperCase().trim())
+
 function descargarPlantilla() {
   const partidas = [
-    { OTM: 'OTM-014', CODIGO: '10,02,01', FASE: '10', SUB_FASE: '10,02', DESCRIPCION: 'Excavación en roca', UNIDAD: 'm3', TIPO_ACTIVIDAD: 'EXCAVACION', SISTEMA: 'MOV01', METRADO_PRESUP: 980, METRADO_PROYEC: '', HH_PRESUP: 1600 },
-    { OTM: 'OTM-014', CODIGO: '20,03', FASE: '20', SUB_FASE: '20,03', DESCRIPCION: 'Relleno compactado', UNIDAD: 'm3', TIPO_ACTIVIDAD: 'RELLENO', SISTEMA: 'MOV01', METRADO_PRESUP: 1250, METRADO_PROYEC: '', HH_PRESUP: 900 },
-    { OTM: 'OTM-014', CODIGO: '40,01,01', FASE: '40', SUB_FASE: '40,01', DESCRIPCION: 'Acero en zapatas', UNIDAD: 'kg', TIPO_ACTIVIDAD: 'ACERO', SISTEMA: 'AC01', METRADO_PRESUP: 18500, METRADO_PROYEC: '', HH_PRESUP: 740 },
+    { OTM: 'OTM-0005', CODIGO: 'CIV.EXC.001', FASE: 'CIV', SUB_FASE: 'EXC', DESCRIPCION: 'Excavación en material suelto', UNIDAD: 'm3', METRADO_PRESUP: 980, METRADO_PROYEC: '', HH_PRESUP: 1600, HH_GASTADAS_INICIAL: '', HH_GANADAS_INICIAL: '' },
+    { OTM: 'OTM-0005', CODIGO: 'CIV.REL.001', FASE: 'CIV', SUB_FASE: 'REL', DESCRIPCION: 'Relleno compactado',             UNIDAD: 'm3', METRADO_PRESUP: 1250, METRADO_PROYEC: '', HH_PRESUP: 900,  HH_GASTADAS_INICIAL: 320, HH_GANADAS_INICIAL: 280 },
+    { OTM: 'OTM-0012', CODIGO: 'EST.ACE.001', FASE: 'EST', SUB_FASE: 'ACE', DESCRIPCION: 'Acero en zapatas',                UNIDAD: 'kg', METRADO_PRESUP: 18500, METRADO_PROYEC: '', HH_PRESUP: 740,  HH_GASTADAS_INICIAL: '', HH_GANADAS_INICIAL: '' },
   ]
-  const avances = [
-    { CODIGO: '10,02,01', SEMANA: 1, HITO: 1, CANTIDAD_ACUM: 350 },
-    { CODIGO: '10,02,01', SEMANA: 2, HITO: 1, CANTIDAD_ACUM: 720 },
-    { CODIGO: '20,03', SEMANA: 2, HITO: 2, CANTIDAD_ACUM: 180 },
-  ]
-  const hh = [
-    { CODIGO: '10,02,01', SEMANA: 1, HH: 540 },
-    { CODIGO: '10,02,01', SEMANA: 2, HH: 610 },
-    { CODIGO: '20,03', SEMANA: 2, HH: 120 },
+  const hitos = [
+    { CODIGO: 'CIV.EXC.001', NUMERO: 1, DESCRIPCION: 'Trazo y replanteo',  PESO: 0.05, ES_PRINCIPAL: 'NO' },
+    { CODIGO: 'CIV.EXC.001', NUMERO: 2, DESCRIPCION: 'Excavación ejecutada', PESO: 0.90, ES_PRINCIPAL: 'SI' },
+    { CODIGO: 'CIV.EXC.001', NUMERO: 3, DESCRIPCION: 'Limpieza y perfilado', PESO: 0.05, ES_PRINCIPAL: 'NO' },
+    { CODIGO: 'CIV.REL.001', NUMERO: 1, DESCRIPCION: 'Relleno y compactado', PESO: 1.00, ES_PRINCIPAL: 'SI' },
+    // EST.ACE.001 no aparece aquí a propósito → se le asigna 1 hito (100%) automáticamente
   ]
   const wb = XLSX.utils.book_new()
-  const ws1 = XLSX.utils.json_to_sheet(partidas)
-  ws1['!cols'] = [{ wch: 10 }, { wch: 12 }, { wch: 6 }, { wch: 10 }, { wch: 35 }, { wch: 8 }, { wch: 16 }, { wch: 10 }, { wch: 16 }, { wch: 16 }, { wch: 12 }]
+  const ws1 = XLSX.utils.json_to_sheet(partidas, {
+    header: ['OTM','CODIGO','FASE','SUB_FASE','DESCRIPCION','UNIDAD','METRADO_PRESUP','METRADO_PROYEC',
+             'HH_PRESUP','HH_GASTADAS_INICIAL','HH_GANADAS_INICIAL'],
+  })
+  ws1['!cols'] = [{wch:12},{wch:14},{wch:8},{wch:10},{wch:34},{wch:8},{wch:14},{wch:14},{wch:12},{wch:18},{wch:18}]
   XLSX.utils.book_append_sheet(wb, ws1, 'PARTIDAS')
-  const ws2 = XLSX.utils.json_to_sheet(avances)
-  XLSX.utils.book_append_sheet(wb, ws2, 'AVANCES')
-  const ws3 = XLSX.utils.json_to_sheet(hh)
-  XLSX.utils.book_append_sheet(wb, ws3, 'HH')
+
+  const ws2 = XLSX.utils.json_to_sheet(hitos, { header: ['CODIGO','NUMERO','DESCRIPCION','PESO','ES_PRINCIPAL'] })
+  ws2['!cols'] = [{wch:14},{wch:8},{wch:28},{wch:8},{wch:12}]
+  XLSX.utils.book_append_sheet(wb, ws2, 'HITOS')
+
   XLSX.writeFile(wb, 'plantilla_partidas_valor_ganado.xlsx')
 }
 
@@ -78,98 +85,106 @@ export default function ImportarPartidas() {
   const qc = useQueryClient()
   const [paso, setPaso] = useState<'upload' | 'preview' | 'importing' | 'result'>('upload')
   const [partidas, setPartidas] = useState<FilaPartida[]>([])
-  const [avances, setAvances] = useState<FilaAvance[]>([])
-  const [hh, setHh] = useState<FilaHH[]>([])
   const [resultado, setResultado] = useState<{ ok: boolean; msg: string; detalle?: string[] } | null>(null)
   const [dragging, setDragging] = useState(false)
 
-  const { data: plantillas = [] } = useQuery<Plantilla[]>({
-    queryKey: ['ev-plantillas'],
-    queryFn: async () => (await fetch(`${API}/ev/plantillas`)).json(),
+  const { data: otms = [] } = useQuery<OTMItem[]>({
+    queryKey: ['ev-otms'],
+    queryFn: async () => (await fetch(`${API}/ev/otms`)).json(),
+    staleTime: 30_000,
   })
-  const tipos = useMemo(() => new Set(plantillas.map(p => p.tipo_actividad)), [plantillas])
+  const otmIds = useMemo(() => new Set(otms.map(o => o.otm_id)), [otms])
 
-  const pOk = useMemo(() => partidas.filter(f => !f._error), [partidas])
-  const pErr = useMemo(() => partidas.filter(f => f._error), [partidas])
-  const aOk = useMemo(() => avances.filter(f => !f._error), [avances])
-  const aErr = useMemo(() => avances.filter(f => f._error), [avances])
-  const hOk = useMemo(() => hh.filter(f => !f._error), [hh])
-  const hErr = useMemo(() => hh.filter(f => f._error), [hh])
-  const totalErr = pErr.length + aErr.length + hErr.length
+  const pOk  = useMemo(() => partidas.filter(f => !f._error), [partidas])
+  const pErr = useMemo(() => partidas.filter(f =>  f._error), [partidas])
 
   function procesar(wb: XLSX.WorkBook) {
     const hojaP = wb.Sheets['PARTIDAS'] ?? wb.Sheets[wb.SheetNames[0]]
     if (!hojaP) { setResultado({ ok: false, msg: 'No se encontró la hoja PARTIDAS' }); setPaso('result'); return }
+
+    // ── Hoja HITOS (opcional) — agrupar por código ──
+    const hitosPorCodigo = new Map<string, HitoFila[]>()
+    if (wb.Sheets['HITOS']) {
+      const rowsH = XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets['HITOS'])
+      rowsH.forEach(row => {
+        const n = norm(row)
+        const codigo = n['CODIGO'] || ''
+        if (!codigo) return
+        const h: HitoFila = {
+          numero: num(n['NUMERO']) ?? 1,
+          descripcion: n['DESCRIPCION'] || '',
+          peso: num(n['PESO']) ?? 0,
+          es_principal: esTrue(n['ES_PRINCIPAL']),
+        }
+        if (!hitosPorCodigo.has(codigo)) hitosPorCodigo.set(codigo, [])
+        hitosPorCodigo.get(codigo)!.push(h)
+      })
+    }
 
     const rowsP = XLSX.utils.sheet_to_json<Record<string, unknown>>(hojaP)
     const codigos = new Set<string>()
     const fp: FilaPartida[] = rowsP.map((row, i) => {
       const n = norm(row)
       const codigo = n['CODIGO'] || ''
-      const tipo = null
-      const fase  = n['FASE'] || null   // null para nodos padre del WBS
+      const otm_id = n['OTM'] || n['OTM_ID'] || null
+      const fase   = n['FASE'] || null
       const unidad = n['UNIDAD'] || null
+
       let _error: string | null = null
+      let _warn: string | null  = null
+
       if (!codigo) _error = 'CODIGO vacío'
       else if (codigos.has(codigo)) _error = 'CODIGO duplicado en el archivo'
       else if (!n['DESCRIPCION']) _error = 'DESCRIPCION vacía'
-      // Solo validar unidad si es nodo hoja (tiene Fase)
-      else if (fase && !unidad) _error = 'UNIDAD vacía (requerida para nodos con Fase)'
+      else if (!otm_id) _error = 'OTM vacío'
+      else if (fase && !unidad) _error = 'UNIDAD vacía (requerida para nodos con fase)'
       codigos.add(codigo)
-      // Calcular nivel y parent_codigo desde el código
+
+      if (!_error && otm_id && !otmIds.has(otm_id)) {
+        _warn = `OTM ${otm_id} no existe aún en el sistema — créala primero en la página OTMs`
+      }
+
       const sep = codigo.includes('.') ? '.' : ','
       const nivel = codigo ? codigo.split(sep).length : 1
       const parent_codigo = nivel > 1 ? codigo.split(sep).slice(0, -1).join(sep) : null
+
+      // Hitos: del archivo, o uno por defecto (100%)
+      let hitos: HitoFila[] = hitosPorCodigo.get(codigo) || []
+      if (hitos.length === 0 && fase) {
+        hitos = [{ numero: 1, descripcion: 'Ejecución', peso: 1.0, es_principal: true }]
+      }
+      if (hitos.length > 0) {
+        const sumaPeso = Math.round(hitos.reduce((s, h) => s + h.peso, 0) * 1000) / 1000
+        const nPrincipales = hitos.filter(h => h.es_principal).length
+        if (Math.abs(sumaPeso - 1) > 0.001) {
+          _error = _error || `Hitos suman ${sumaPeso} (deben sumar 1.00)`
+        } else if (nPrincipales !== 1) {
+          _error = _error || `Debe haber exactamente 1 hito ES_PRINCIPAL (tiene ${nPrincipales})`
+        }
+      }
+
+      const metrado_presup = num(n['METRADO_PRESUP']) ?? 0
+      const hh_presup      = num(n['HH_PRESUP']) ?? 0
+      const factor = metrado_presup > 0 ? hh_presup / metrado_presup : 0
+      const hh_gastadas_inicial = num(n['HH_GASTADAS_INICIAL']) ?? 0
+      const hh_ganadas_inicial  = num(n['HH_GANADAS_INICIAL']) ?? 0
+
+      if (hh_ganadas_inicial > 0 && factor === 0) {
+        _warn = _warn || 'HH_GANADAS_INICIAL ingresada pero no se puede convertir a metrado (METRADO_PRESUP = 0)'
+      }
+
       return {
-        codigo,
-        otm_id: n['OTM'] || n['OTM_ID'] || null,
-        fase: fase,
-        sub_fase: n['SUB_FASE'] || n['SUBFASE'] || null,
-        descripcion: n['DESCRIPCION'] || '',
-        unidad: unidad,
-        sistema: n['SISTEMA'] || null,
-        metrado_presup: num(n['METRADO_PRESUP']) ?? 0,
-        metrado_proyec: num(n['METRADO_PROYEC']),
-        hh_presup: num(n['HH_PRESUP']) ?? 0,
-        tipo_actividad: tipo,
-        nivel, parent_codigo,
-        _fila: i + 2, _error,
+        codigo, otm_id, fase, sub_fase: n['SUB_FASE'] || n['SUBFASE'] || null,
+        descripcion: n['DESCRIPCION'] || '', unidad,
+        metrado_presup, metrado_proyec: num(n['METRADO_PROYEC']), hh_presup,
+        hh_gastadas_inicial, hh_ganadas_inicial,
+        hitos, nivel, parent_codigo,
+        _fila: i + 2, _error, _warn,
       }
     })
 
-    const fa: FilaAvance[] = wb.Sheets['AVANCES']
-      ? XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets['AVANCES']).map((row, i) => {
-          const n = norm(row)
-          let _error: string | null = null
-          if (!n['CODIGO']) _error = 'CODIGO vacío'
-          else if (!codigos.has(n['CODIGO'])) _error = `CODIGO ${n['CODIGO']} no está en PARTIDAS`
-          else if (num(n['SEMANA']) === null || (num(n['SEMANA']) ?? 0) < 1) _error = 'SEMANA inválida'
-          else if (num(n['HITO']) === null) _error = 'HITO inválido'
-          else if (num(n['CANTIDAD_ACUM']) === null) _error = 'CANTIDAD_ACUM inválida'
-          return {
-            codigo: n['CODIGO'] || '', semana: num(n['SEMANA']) ?? 0,
-            hito: num(n['HITO']) ?? 0, cantidad_acum: num(n['CANTIDAD_ACUM']) ?? 0,
-            _fila: i + 2, _error,
-          }
-        })
-      : []
-
-    const fh: FilaHH[] = wb.Sheets['HH']
-      ? XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets['HH']).map((row, i) => {
-          const n = norm(row)
-          let _error: string | null = null
-          if (!n['CODIGO']) _error = 'CODIGO vacío'
-          else if (!codigos.has(n['CODIGO'])) _error = `CODIGO ${n['CODIGO']} no está en PARTIDAS`
-          else if (num(n['SEMANA']) === null || (num(n['SEMANA']) ?? 0) < 1) _error = 'SEMANA inválida'
-          else if (num(n['HH']) === null) _error = 'HH inválida'
-          return {
-            codigo: n['CODIGO'] || '', semana: num(n['SEMANA']) ?? 0,
-            hh: num(n['HH']) ?? 0, _fila: i + 2, _error,
-          }
-        })
-      : []
-
-    setPartidas(fp); setAvances(fa); setHh(fh); setPaso('preview')
+    setPartidas(fp)
+    setPaso('preview')
   }
 
   function handleFile(file: File) {
@@ -184,14 +199,45 @@ export default function ImportarPartidas() {
   async function importar() {
     setPaso('importing')
     try {
+      // Semana base para los valores iniciales — usar la última semana activa
+      const rSem = await fetch(`${API}/ev/semanas-auto`)
+      const semanasAuto = rSem.ok ? await rSem.json() : []
+      const ultActiva = [...semanasAuto].reverse().find((s: any) => s.activa)
+      const semanaBase = ultActiva ? ultActiva.semana : (semanasAuto[semanasAuto.length - 1]?.semana ?? 1)
+
+      const avances: { codigo: string; semana: number; hito: number; cantidad_acum: number }[] = []
+      const hh: { codigo: string; semana: number; hh: number }[] = []
+
+      pOk.forEach(p => {
+        if (p.hh_gastadas_inicial > 0) {
+          hh.push({ codigo: p.codigo, semana: semanaBase, hh: p.hh_gastadas_inicial })
+        }
+        if (p.hh_ganadas_inicial > 0 && p.metrado_presup > 0 && p.hh_presup > 0) {
+          const factor = p.hh_presup / p.metrado_presup
+          const principal = p.hitos.find(h => h.es_principal) ?? p.hitos[0]
+          if (factor > 0 && principal) {
+            avances.push({
+              codigo: p.codigo, semana: semanaBase, hito: principal.numero,
+              cantidad_acum: Math.round((p.hh_ganadas_inicial / factor) * 100) / 100,
+            })
+          }
+        }
+      })
+
+      const payload = {
+        partidas: pOk.map(p => ({
+          codigo: p.codigo, otm_id: p.otm_id, fase: p.fase, sub_fase: p.sub_fase,
+          descripcion: p.descripcion, unidad: p.unidad, sistema: null,
+          metrado_presup: p.metrado_presup, metrado_proyec: p.metrado_proyec, hh_presup: p.hh_presup,
+          hitos: p.hitos.length > 0 ? p.hitos : undefined,
+          nivel: p.nivel, parent_codigo: p.parent_codigo,
+        })),
+        avances, hh,
+      }
+
       const res = await fetch(`${API}/ev/importar`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          partidas: pOk.map(({ _fila, _error, ...p }) => p),
-          avances: aOk.map(({ _fila, _error, ...a }) => a),
-          hh: hOk.map(({ _fila, _error, ...h }) => h),
-        }),
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
       })
       const j = await res.json()
       if (!res.ok) {
@@ -200,13 +246,17 @@ export default function ImportarPartidas() {
       } else {
         setResultado({
           ok: true,
-          msg: `${j.partidas_creadas} partidas creadas, ${j.partidas_actualizadas} actualizadas, ${j.avances_importados} avances y ${j.hh_importadas} HH históricas importadas.`,
+          msg: `${j.partidas_creadas} partidas creadas, ${j.partidas_actualizadas} actualizadas`
+             + (hh.length > 0 ? `, ${j.hh_importadas} valores de HH gastadas iniciales` : '')
+             + (avances.length > 0 ? `, ${j.avances_importados} avances iniciales` : '') + '.',
         })
         qc.invalidateQueries({ queryKey: ['ev-partidas'] })
+        qc.invalidateQueries({ queryKey: ['ev-otms'] })
         qc.invalidateQueries({ queryKey: ['ev-reporte'] })
         qc.invalidateQueries({ queryKey: ['ev-captura'] })
         qc.invalidateQueries({ queryKey: ['ev-curva'] })
-        qc.invalidateQueries({ queryKey: ['ev-semanas'] })
+        qc.invalidateQueries({ queryKey: ['ev-semanas-auto'] })
+        qc.invalidateQueries({ queryKey: ['semana-grid'] })
       }
     } catch (e) {
       setResultado({ ok: false, msg: `Error de red: ${(e as Error).message}` })
@@ -214,7 +264,7 @@ export default function ImportarPartidas() {
     setPaso('result')
   }
 
-  const reset = () => { setPartidas([]); setAvances([]); setHh([]); setResultado(null); setPaso('upload') }
+  const reset = () => { setPartidas([]); setResultado(null); setPaso('upload') }
 
   // ---------------- UI ----------------
   if (paso === 'upload') {
@@ -222,14 +272,15 @@ export default function ImportarPartidas() {
       <div className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-xs text-k-text3 max-w-2xl">
-            Carga masiva de partidas desde Excel. La hoja <span className="text-k-text2 font-bold">PARTIDAS</span> es
-            obligatoria; <span className="text-k-text2 font-bold">AVANCES</span> y <span className="text-k-text2 font-bold">HH</span> son
-            opcionales — úsalas si el proyecto ya está en marcha y quieres traer el histórico.
-            Los hitos se asignan automáticamente según TIPO_ACTIVIDAD
-            ({plantillas.map(p => p.tipo_actividad).join(', ') || 'cargando catálogo…'}).
+            Carga masiva de partidas desde Excel. Hoja <span className="text-k-text2 font-bold">PARTIDAS</span> obligatoria,
+            hoja <span className="text-k-text2 font-bold">HITOS</span> opcional (define los hitos ponderados de cada partida
+            — si una partida no aparece ahí, se le asigna un único hito al 100%).
+            Las columnas <span className="text-k-text2 font-bold">HH_GASTADAS_INICIAL</span> y{' '}
+            <span className="text-k-text2 font-bold">HH_GANADAS_INICIAL</span> son opcionales — úsalas para migrar
+            el histórico de otra empresa o Excel; de ahí en adelante el sistema sigue calculando solo con el tareo diario.
           </p>
           <button onClick={descargarPlantilla}
-            className="bg-k-raised border border-k-border text-k-text2 font-bold text-sm px-4 py-2.5 rounded-lg hover:bg-k-border transition-colors flex items-center gap-2">
+            className="bg-k-raised border border-k-border text-k-text2 font-bold text-sm px-4 py-2.5 rounded-lg hover:bg-k-border transition-colors flex items-center gap-2 flex-shrink-0">
             <Download size={14} /> Descargar plantilla
           </button>
         </div>
@@ -255,30 +306,37 @@ export default function ImportarPartidas() {
               onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f) }} />
           </label>
         </div>
+
+        {otms.length === 0 && (
+          <div className="flex items-center gap-2 px-4 py-3 rounded-xl border border-amber-500/30 bg-amber-500/10 text-xs text-k-amber">
+            <AlertTriangle size={14} className="flex-shrink-0" />
+            No hay ninguna OTM creada todavía. Crea las OTMs primero en la página <strong>OTMs</strong> para poder vincular las partidas.
+          </div>
+        )}
       </div>
     )
   }
 
   if (paso === 'preview') {
+    const conWarn = partidas.filter(p => p._warn && !p._error)
     return (
       <div className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3 text-sm flex-wrap">
             <span className="text-k-green font-bold flex items-center gap-1">
               <CheckCircle size={14} />
-              {pOk.filter(p=>p.fase).length} nodos hoja +{' '}
-              {pOk.filter(p=>!p.fase).length} nodos padre
-              {aOk.length > 0 && ` · ${aOk.length} avances`}
-              {hOk.length > 0 && ` · ${hOk.length} HH`}
+              {pOk.filter(p=>p.fase).length} nodos hoja + {pOk.filter(p=>!p.fase).length} nodos padre
             </span>
-            {totalErr > 0 && (
+            {pErr.length > 0 && (
               <span className="text-k-red font-bold flex items-center gap-1">
-                <XCircle size={14} /> {totalErr} con error (no se importarán)
+                <XCircle size={14} /> {pErr.length} con error (no se importarán)
               </span>
             )}
-            <span className="text-k-text3 text-[11px]">
-              · filas padre/resumen omitidas automáticamente
-            </span>
+            {conWarn.length > 0 && (
+              <span className="text-k-amber font-bold flex items-center gap-1">
+                <AlertTriangle size={14} /> {conWarn.length} con advertencia
+              </span>
+            )}
           </div>
           <div className="flex gap-2">
             <button onClick={reset}
@@ -296,30 +354,35 @@ export default function ImportarPartidas() {
           <div className="px-4 py-2 border-b border-k-border bg-k-raised text-[11px] font-bold text-k-text3 uppercase tracking-widest">
             Hoja PARTIDAS
           </div>
-          <div className="overflow-x-auto max-h-72 overflow-y-auto">
+          <div className="overflow-x-auto max-h-96 overflow-y-auto">
             <table className="w-full whitespace-nowrap">
               <thead>
                 <tr className="border-b border-k-border">
-                  {['Fila', 'OTM', 'Código', 'Fase', 'Sub-Fase', 'Descripción', 'Und', 'Metrado', 'HH Ppto', 'Estado'].map(h => (
+                  {['Fila','OTM','Código','Fase','Sub-Fase','Descripción','Und','Met. Presup','HH Ppto','HH Gast. ini','HH Gan. ini','Hitos','Estado'].map(h => (
                     <th key={h} className="py-2 px-3 text-[10px] font-bold text-k-text3 uppercase tracking-wider text-left">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {partidas.map(f => (
-                  <tr key={f._fila} className={`border-b border-k-border last:border-0 ${f._error ? 'bg-red-500/5' : ''}`}>
+                  <tr key={f._fila} className={`border-b border-k-border last:border-0 ${f._error ? 'bg-red-500/5' : f._warn ? 'bg-amber-500/5' : ''}`}>
                     <td className="py-1.5 px-3 text-[11px] text-k-text3 font-mono">{f._fila}</td>
-                    <td className="py-1.5 px-3 text-sm text-k-text2">{f.otm_id ?? '—'}</td>
+                    <td className="py-1.5 px-3 text-sm text-k-text2 font-mono">{f.otm_id ?? '—'}</td>
                     <td className="py-1.5 px-3 text-[11px] font-mono text-k-amber">{f.codigo}</td>
                     <td className="py-1.5 px-3 text-[11px] font-bold" style={{color: f.fase ? '#3B82F6' : '#888'}}>{f.fase ?? <span style={{color:'#888',fontStyle:'italic'}}>padre WBS</span>}</td>
                     <td className="py-1.5 px-3 text-[11px] text-k-text3 font-mono">{f.sub_fase ?? '—'}</td>
-                    <td className="py-1.5 px-3 text-sm text-k-text2 max-w-[200px] truncate">{f.descripcion}</td>
+                    <td className="py-1.5 px-3 text-sm text-k-text2 max-w-[180px] truncate">{f.descripcion}</td>
                     <td className="py-1.5 px-3 text-sm text-k-text2">{f.unidad}</td>
                     <td className="py-1.5 px-3 text-sm font-mono text-k-text2 text-right">{f.metrado_presup}</td>
                     <td className="py-1.5 px-3 text-sm font-mono text-k-text2 text-right">{f.hh_presup}</td>
+                    <td className="py-1.5 px-3 text-sm font-mono text-k-amber text-right">{f.hh_gastadas_inicial || '—'}</td>
+                    <td className="py-1.5 px-3 text-sm font-mono text-k-green text-right">{f.hh_ganadas_inicial || '—'}</td>
+                    <td className="py-1.5 px-3 text-[11px] text-k-text3">{f.hitos.length || '—'}</td>
                     <td className="py-1.5 px-3 text-[11px]">
                       {f._error
                         ? <span className="text-k-red font-bold">{f._error}</span>
+                        : f._warn
+                        ? <span className="text-k-amber font-bold">{f._warn}</span>
                         : <span className="text-k-green font-bold">OK</span>}
                     </td>
                   </tr>
@@ -328,17 +391,6 @@ export default function ImportarPartidas() {
             </table>
           </div>
         </div>
-
-        {(avances.length > 0 || hh.length > 0) && (
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-            {avances.length > 0 && (
-              <ResumenHoja titulo="Hoja AVANCES (histórico)" ok={aOk.length} errores={aErr} />
-            )}
-            {hh.length > 0 && (
-              <ResumenHoja titulo="Hoja HH (histórico)" ok={hOk.length} errores={hErr} />
-            )}
-          </div>
-        )}
       </div>
     )
   }
@@ -375,22 +427,6 @@ export default function ImportarPartidas() {
         className="bg-k-raised border border-k-border text-k-text2 font-bold text-sm px-4 py-2.5 rounded-lg hover:bg-k-border transition-colors">
         Importar otro archivo
       </button>
-    </div>
-  )
-}
-
-function ResumenHoja({ titulo, ok, errores }: { titulo: string; ok: number; errores: { _fila: number; _error: string | null }[] }) {
-  return (
-    <div className="bg-k-surface border border-k-border rounded-xl p-4">
-      <p className="text-[11px] font-bold text-k-text3 uppercase tracking-widest mb-2">{titulo}</p>
-      <p className="text-sm text-k-green font-bold">{ok} filas válidas</p>
-      {errores.length > 0 && (
-        <ul className="mt-2 space-y-0.5 max-h-32 overflow-y-auto">
-          {errores.map(e => (
-            <li key={e._fila} className="text-[11px] text-k-red font-mono">Fila {e._fila}: {e._error}</li>
-          ))}
-        </ul>
-      )}
     </div>
   )
 }
