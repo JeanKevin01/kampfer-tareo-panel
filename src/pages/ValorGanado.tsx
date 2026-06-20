@@ -900,29 +900,32 @@ const PARTIDA_VACIA: PartidaInput = {
 const DIAS_LBL = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
 interface JornadaResp {
   vigentes: { dia_semana: number; dia: string; hh: number }[]
-  puntuales: { id: number; desde: string; hh: number; nota: string | null }[]
-  semanal: { id: number; desde: string; dia_semana: number; hh: number; nota: string | null }[]
+  puntuales: { id: number; desde: string; hh: number; nota: string | null; otm_id: string | null }[]
+  semanal: { id: number; desde: string; dia_semana: number; hh: number; nota: string | null; otm_id: string | null }[]
 }
 function JornadaConfig() {
   const qc = useQueryClient()
-  const { data } = useQuery<JornadaResp>({ queryKey: ['jornada'], queryFn: () => req('/api/jornada') })
+  const [scope, setScope] = useState('')   // '' = todas las OTMs
+  const { data } = useQuery<JornadaResp>({ queryKey: ['jornada', scope], queryFn: () => req(`/api/jornada${scope ? `?otm=${encodeURIComponent(scope)}` : ''}`) })
+  const { data: otms } = useQuery<{ id: string; nombre?: string }[]>({ queryKey: ['otms-jor'], queryFn: () => req('/api/otms?activas=true') })
   const [abierto, setAbierto] = useState(true)
   const [desde, setDesde] = useState(() => new Date().toISOString().slice(0, 10))
   const [hh, setHh] = useState<Record<number, string>>({})
   const [pFecha, setPFecha] = useState(''); const [pHh, setPHh] = useState(''); const [pNota, setPNota] = useState('')
   const [msg, setMsg] = useState('')
+  const scopeLbl = scope || 'todas las OTMs'
 
   useEffect(() => {
     if (data) { const m: Record<number, string> = {}; data.vigentes.forEach(v => m[v.dia_semana] = String(v.hh)); setHh(m) }
   }, [data])
 
   const guardarSemanal = useMutation({
-    mutationFn: () => req('/api/jornada', { method: 'POST', body: JSON.stringify({ tipo: 'semanal', desde, dias: Object.fromEntries(Object.entries(hh).map(([k, v]) => [k, Number(v) || 0])) }) }),
-    onSuccess: () => { setMsg(`✓ Jornada vigente desde ${desde}`); qc.invalidateQueries({ queryKey: ['jornada'] }) },
+    mutationFn: () => req('/api/jornada', { method: 'POST', body: JSON.stringify({ tipo: 'semanal', desde, otm_id: scope || null, dias: Object.fromEntries(Object.entries(hh).map(([k, v]) => [k, Number(v) || 0])) }) }),
+    onSuccess: () => { setMsg(`✓ Jornada de ${scopeLbl} vigente desde ${desde}`); qc.invalidateQueries({ queryKey: ['jornada'] }) },
     onError: (e: Error) => setMsg(`✗ ${e.message}`),
   })
   const addPuntual = useMutation({
-    mutationFn: () => req('/api/jornada', { method: 'POST', body: JSON.stringify({ tipo: 'puntual', fecha: pFecha, hh: Number(pHh) || 0, nota: pNota || null }) }),
+    mutationFn: () => req('/api/jornada', { method: 'POST', body: JSON.stringify({ tipo: 'puntual', fecha: pFecha, hh: Number(pHh) || 0, nota: pNota || null, otm_id: scope || null }) }),
     onSuccess: () => { setPFecha(''); setPHh(''); setPNota(''); setMsg('✓ Excepción agregada'); qc.invalidateQueries({ queryKey: ['jornada'] }) },
     onError: (e: Error) => setMsg(`✗ ${e.message}`),
   })
@@ -945,12 +948,24 @@ function JornadaConfig() {
         </span>
       </button>
 
-      {abierto && (
-        <div className="mt-4 grid md:grid-cols-2 gap-5">
+      {abierto && (<>
+        <div className="mt-4 mb-3 flex items-center gap-2 flex-wrap">
+          <label className="text-[11px] text-k-text3">Aplica a:</label>
+          <select value={scope} onChange={e => setScope(e.target.value)}
+            className="bg-k-void border border-k-border focus:border-k-amber rounded px-2 py-1.5 text-xs text-k-text outline-none">
+            <option value="">Todas las OTMs (global)</option>
+            {otms?.map(o => <option key={o.id} value={o.id}>{o.id}{o.nombre ? ` — ${o.nombre}` : ''}</option>)}
+          </select>
+          <span className="text-[10px] text-k-text3">
+            {scope ? 'La regla de esta OTM tiene prioridad sobre la global.' : 'Regla base para todas las OTMs.'}
+          </span>
+        </div>
+        <div className="grid md:grid-cols-2 gap-5">
           {/* Regla semanal */}
           <div>
             <p className="text-[11px] text-k-text3 mb-2">
-              HH por día de semana. Al guardar, rige <strong className="text-k-text2">desde la fecha indicada</strong> en adelante
+              HH por día de semana para <strong className="text-k-text2">{scopeLbl}</strong>. Al guardar, rige
+              <strong className="text-k-text2"> desde la fecha indicada</strong> en adelante
               (el supervisor lo verá como referencial al registrar).
             </p>
             <div className="grid grid-cols-7 gap-1.5 mb-3">
@@ -999,6 +1014,7 @@ function JornadaConfig() {
                 <div key={r.id} className="flex items-center gap-2 text-[11px] bg-k-raised rounded px-2 py-1">
                   <span className="font-mono text-k-text2">{r.desde}</span>
                   <span className="font-mono font-bold text-k-amber">{r.hh} HH</span>
+                  <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${r.otm_id ? 'bg-k-amber/15 text-k-amber' : 'bg-k-border/40 text-k-text3'}`}>{r.otm_id ?? 'GLOBAL'}</span>
                   <span className="text-k-text3 flex-1 truncate">{r.nota ?? ''}</span>
                   <button onClick={() => delRegla.mutate(r.id)} className="text-k-red hover:text-red-400"><Trash2 size={12} /></button>
                 </div>
@@ -1006,7 +1022,7 @@ function JornadaConfig() {
             </div>
           </div>
         </div>
-      )}
+      </>)}
       {msg && <p className={`mt-3 text-xs font-bold ${msg.startsWith('✓') ? 'text-k-green' : 'text-k-red'}`}>{msg}</p>}
     </div>
   )
