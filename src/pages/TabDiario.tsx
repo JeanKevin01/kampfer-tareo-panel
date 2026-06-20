@@ -1,15 +1,9 @@
 import { useState, useCallback, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ChevronLeft, ChevronRight, RefreshCw, ClipboardEdit, Check, AlertTriangle } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronDown, RefreshCw, ClipboardEdit, Check, AlertTriangle } from 'lucide-react'
+import { buildWbsTree, flattenVisible, nivelStyle, faseColor } from '@/lib/wbs'
 
 const API = import.meta.env.VITE_API_URL ?? 'https://api.apps1.astraera.space'
-
-/* ── Colores por fase ─────────────────────────────────── */
-const FASE_CLR: Record<string, string> = {
-  CIV:'#fb923c',FAB:'#818cf8',MEC:'#60a5fa',ELE:'#f59e0b',
-  TUB:'#22d3ee',INS:'#a78bfa',EST:'#34d399',AND:'#4ade80',
-  APY:'#94a3b8',ING:'#f472b6',MON:'#e879f9',
-}
 
 /* ── Types ────────────────────────────────────────────── */
 interface DiaCell {
@@ -26,6 +20,8 @@ interface PartidaGrid {
   descripcion:    string
   fase:           string
   sub_fase:       string | null
+  nivel:          number
+  parent_codigo:  string | null
   unidad:         string
   factor_conv:    number
   hh_presup:      number
@@ -33,11 +29,19 @@ interface PartidaGrid {
   dias:           Record<string, DiaCell>
 }
 
+interface GrupoGrid {
+  codigo:         string
+  descripcion:    string
+  nivel:          number
+  parent_codigo:  string | null
+}
+
 interface SemanaGrid {
   semana:   number
   otm:      string | null
   lunes:    string
   fechas:   string[]
+  grupos?:  GrupoGrid[]
   partidas: PartidaGrid[]
 }
 
@@ -82,6 +86,9 @@ export default function TabDiario({ semana, lunes, onSemana, selectedOtm }: Prop
   const [pending,  setPending]  = useState<Record<string, string>>({})
   const [saving,   setSaving]   = useState<Record<string, boolean>>({})
   const [savedAt,  setSavedAt]  = useState<Record<string, Date>>({})
+
+  // ── árbol jerárquico (colapsar grupos) ─────────────────
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
 
   // ── modal edición masiva ───────────────────────────────
   const [bulkOpen,   setBulkOpen]   = useState(false)
@@ -195,7 +202,25 @@ export default function TabDiario({ semana, lunes, onSemana, selectedOtm }: Prop
     </div>
   )
 
-  const diasActivos = data ? data.fechas.slice(0, 5) : []
+  // Días: Lun–Vie siempre; Sáb/Dom solo si hubo actividad ese día.
+  const fechas = data?.fechas ?? []
+  const hayActividad = (fs: string) => !!data && data.partidas.some(p => {
+    const d = p.dias[fs]
+    return !!d && ((d.hh_gastadas ?? 0) > 0 || (d.hh_estimada ?? 0) > 0 || d.cant_ejecutada != null)
+  })
+  const diasActivos = fechas.filter((fs, i) => i < 5 || hayActividad(fs))
+
+  // Árbol jerárquico: grupos (padres) + partidas (hojas con captura diaria)
+  const items = data
+    ? [
+        ...(data.grupos ?? []).map(g => ({ ...g, kind: 'grupo' as const })),
+        ...data.partidas.map(p => ({ ...p, kind: 'hoja' as const })),
+      ]
+    : []
+  const tree = buildWbsTree(items)
+  const visibles = flattenVisible(tree, collapsed)
+  const padres = new Set((data?.grupos ?? []).map(g => g.codigo))
+  const toggle = (c: string) => setCollapsed(prev => { const n = new Set(prev); n.has(c) ? n.delete(c) : n.add(c); return n })
 
   return (
     <div className="space-y-4">
@@ -218,6 +243,10 @@ export default function TabDiario({ semana, lunes, onSemana, selectedOtm }: Prop
             className="p-1.5 rounded-lg border border-k-border hover:bg-k-raised transition-colors ml-1">
             <RefreshCw size={13} className={isLoading ? 'animate-spin' : ''} />
           </button>
+          <button onClick={() => setCollapsed(new Set())}
+            className="text-[11px] text-k-text3 border border-k-border rounded-lg px-2.5 py-1.5 hover:text-k-text transition-colors ml-1">Expandir</button>
+          <button onClick={() => setCollapsed(new Set(padres))}
+            className="text-[11px] text-k-text3 border border-k-border rounded-lg px-2.5 py-1.5 hover:text-k-text transition-colors">Colapsar</button>
         </div>
 
         {data && lunes && (
@@ -285,16 +314,39 @@ export default function TabDiario({ semana, lunes, onSemana, selectedOtm }: Prop
               </tr>
             </thead>
             <tbody>
-              {data.partidas.map((p, pi) => {
-                const clr = FASE_CLR[p.fase] || '#94a3b8'
+              {visibles.map(node => {
+                // ── Nodo de agrupación (padre) ──
+                if (node.item.kind === 'grupo') {
+                  const g = node.item
+                  const st = nivelStyle(node.nivel, false, null)
+                  const gIndent = (node.nivel - 1) * 14
+                  return (
+                    <tr key={`g-${g.codigo}`} style={{ background: st.bg, borderLeft: `3px solid ${st.border}`, borderTop: '1px solid #1a2133' }}>
+                      <td colSpan={diasActivos.length + 2} style={{ padding: '8px 14px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingLeft: gIndent }}>
+                          <button onClick={() => toggle(g.codigo)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: st.text, display: 'flex', padding: 0 }}>
+                            {collapsed.has(g.codigo) ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
+                          </button>
+                          <span style={{ fontFamily: 'monospace', fontSize: 11, fontWeight: st.bold ? 700 : 600, color: st.text }}>{g.codigo}</span>
+                          <span style={{ fontSize: 11, fontStyle: 'italic', color: st.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={g.descripcion}>{g.descripcion}</span>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                }
+
+                // ── Hoja (partida con captura diaria) ──
+                const p = node.item
+                const clr = faseColor(p.fase)
+                const indent = (node.nivel - 1) * 14
                 let totHH = 0, totEst = 0, totCant = 0
 
                 return (
                   <>
                     {/* ── Label row ── */}
-                    <tr key={`h-${p.id}`} style={{ borderTop: pi > 0 ? '1px solid #1a2133' : 'none', borderLeft:`3px solid ${clr}` }}>
-                      <td colSpan={7} style={{ padding:'10px 14px 3px', background:`linear-gradient(90deg, ${clr}14, #141926 40%)` }}>
-                        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                    <tr key={`h-${p.id}`} style={{ borderTop: '1px solid #1a2133', borderLeft:`3px solid ${clr}` }}>
+                      <td colSpan={diasActivos.length + 2} style={{ padding:'10px 14px 3px', background:`linear-gradient(90deg, ${clr}14, #141926 40%)` }}>
+                        <div style={{ display:'flex', alignItems:'center', gap:8, paddingLeft:indent }}>
                           <span style={{ padding:'2px 7px', borderRadius:5, fontSize:9, fontWeight:800,
                             background:clr+'20', border:`1px solid ${clr}40`, color:clr, flexShrink:0 }}>
                             {p.fase}{p.sub_fase ? '.' + p.sub_fase : ''}
