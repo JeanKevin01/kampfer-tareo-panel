@@ -11,13 +11,16 @@ interface OTM {
   monto_contractual?: number; monto_valorizado?: number
 }
 
-const ESTADOS = ['EJECUCION', 'POR INICIAR', 'CERRADA', 'CONCLUIDA']
+// Deben coincidir con los estados válidos del backend (main.py)
+const ESTADOS = ['EJECUCION', 'POR INICIAR', 'CERRADO', 'CONCLUIDO', 'STAND BY']
 const estadoStyle: Record<string, string> = {
   'EJECUCION':   'text-k-green  bg-green-500/10  border-green-500/20',
   'POR INICIAR': 'text-k-amber  bg-amber-500/10  border-amber-500/20',
-  'CERRADA':     'text-k-text3  bg-k-raised       border-k-border',
-  'CONCLUIDA':   'text-k-blue   bg-blue-500/10   border-blue-500/20',
+  'CERRADO':     'text-k-text3  bg-k-raised       border-k-border',
+  'CONCLUIDO':   'text-k-blue   bg-blue-500/10   border-blue-500/20',
+  'STAND BY':    'text-k-text3  bg-k-raised       border-k-border',
 }
+const ESTADO_DEFAULT_STYLE = 'text-k-text3 bg-k-raised border-k-border'
 
 export default function OTMs() {
   const qc = useQueryClient()
@@ -289,7 +292,7 @@ export default function OTMs() {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-center">
-                    <span className={`inline-block text-[10px] font-bold uppercase tracking-wide px-2.5 py-0.5 rounded border ${estadoStyle[o.estado] || estadoStyle['CERRADA']}`}>
+                    <span className={`inline-block text-[10px] font-bold uppercase tracking-wide px-2.5 py-0.5 rounded border ${estadoStyle[o.estado] || ESTADO_DEFAULT_STYLE}`}>
                       {o.estado}
                     </span>
                   </td>
@@ -300,7 +303,11 @@ export default function OTMs() {
                         onChange={e => estadoMutation.mutate({ id: o.id, estado: e.target.value })}
                         className="appearance-none bg-k-raised border border-k-border text-k-text2 text-xs rounded-lg pl-3 pr-7 py-1.5 outline-none focus:border-k-amber cursor-pointer transition-colors"
                       >
-                        {ESTADOS.map(e => <option key={e} value={e} className="bg-k-raised">{e}</option>)}
+                        {/* Incluye el estado actual aunque no esté en la lista estándar
+                            (ej. CULMINADO, GENERAR NUEVO SDP importados del Excel) */}
+                        {(ESTADOS.includes(o.estado) ? ESTADOS : [o.estado, ...ESTADOS]).map(e => (
+                          <option key={e} value={e} className="bg-k-raised">{e}</option>
+                        ))}
                       </select>
                       <ChevronDown size={11} className="absolute right-2 top-1/2 -translate-y-1/2 text-k-text3 pointer-events-none" />
                     </div>

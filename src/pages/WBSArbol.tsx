@@ -26,6 +26,7 @@ const FASE_COLOR: Record<string, string> = {
 interface Fila {
   id: number; codigo: string; otm_id: string; fase: string|null; sub_fase: string|null
   descripcion: string; unidad: string|null; hh_presup: number
+  metrado_presup: number; metrado_proyec: number|null
   nivel: number; parent_codigo: string|null; es_hoja: boolean
   hh_ganadas_acum: number; hh_gastadas_acum: number; pct_avance: number; pf_acum: number
 }
@@ -113,6 +114,11 @@ function WBSRow({ node, collapsed, onToggle }: { node: Nodo; collapsed: Set<stri
         {/* Und */}
         <td style={{ padding:'7px 8px', textAlign:'center', fontSize:11, color:'#8a96ad', fontFamily:'var(--mono)', width:60 }}>
           {node.unidad ?? ''}
+        </td>
+        {/* Metrado Presup (solo hojas tienen metrado propio) */}
+        <td style={{ padding:'7px 12px 7px 8px', textAlign:'right', fontFamily:'var(--mono)', fontSize:12,
+          color: isLeaf ? '#c8d0e0' : '#8a96ad', width:100 }}>
+          {node.metrado_presup > 0 ? node.metrado_presup.toLocaleString('es-PE',{maximumFractionDigits:2}) : <span style={{color:'#4e5a72'}}>—</span>}
         </td>
         {/* HH Plan */}
         <td style={{ padding:'7px 12px 7px 8px', textAlign:'right', fontFamily:'var(--mono)', fontSize:12,
@@ -227,9 +233,9 @@ export default function WBSArbol({ otm, semana }: { otm: string; semana: number 
         <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
           <thead>
             <tr style={{borderBottom:'1px solid #252f45',background:'#1c2436'}}>
-              {[['Código',200],['Descripción',null],['Fase',90],['Und',60],['HH Plan',100],['HH Gastadas',110],['HH Ganadas',110],['% Avance',100],['PF',70]].map(([h,w])=>(
+              {[['Código',200],['Descripción',null],['Fase',90],['Und',60],['Metrado',100],['HH Plan',100],['HH Gastadas',110],['HH Ganadas',110],['% Avance',100],['PF',70]].map(([h,w])=>(
                 <th key={String(h)} style={{padding:'9px 8px',fontSize:10,fontWeight:700,textTransform:'uppercase',
-                  letterSpacing:'.07em',color:'#8a96ad',textAlign: Number(h?.toString().length??0) > 3 && ['HH Plan','HH Gastadas','HH Ganadas','PF'].includes(String(h)) ? 'right' : 'left',
+                  letterSpacing:'.07em',color:'#8a96ad',textAlign: ['Metrado','HH Plan','HH Gastadas','HH Ganadas','PF'].includes(String(h)) ? 'right' : 'left',
                   whiteSpace:'nowrap',width: w ? w : undefined}}>
                   {String(h)}
                 </th>
@@ -241,7 +247,7 @@ export default function WBSArbol({ otm, semana }: { otm: string; semana: number 
           </tbody>
           <tfoot>
             <tr style={{borderTop:'1px solid #2e3a52',background:'#1c2436'}}>
-              <td colSpan={4} style={{padding:'8px 10px',fontSize:11,color:'#8a96ad',fontWeight:600}}>TOTAL OTM{otm ? ` · ${otm}` : ''}</td>
+              <td colSpan={5} style={{padding:'8px 10px',fontSize:11,color:'#8a96ad',fontWeight:600}}>TOTAL OTM{otm ? ` · ${otm}` : ''}</td>
               <td style={{padding:'8px 12px 8px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:12,color:'#e8edf5',fontWeight:600}}>
                 {totalPlan.toLocaleString('es-PE',{maximumFractionDigits:1})}
               </td>
