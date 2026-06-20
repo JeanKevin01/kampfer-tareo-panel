@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as XLSX from 'xlsx'
 import { Upload, FileSpreadsheet, CheckCircle, XCircle, Loader2, Download, X, UserCog, HardHat } from 'lucide-react'
 
@@ -8,7 +8,7 @@ const API = 'https://api.apps1.astraera.space'
 interface Fila {
   nombre: string; cargo: string; dni: string; tipo: string
   destino: 'TRABAJADOR' | 'SUPERVISOR'
-  _fila: number; _error: string | null
+  _fila: number; _error: string | null; _exists?: boolean
 }
 interface Resultado { nombre: string; ok: boolean; msg: string; destino: string }
 
@@ -66,8 +66,38 @@ export default function ImportarPersonal() {
   const [progreso, setProgreso]     = useState(0)
   const [dragging, setDragging]     = useState(false)
 
-  const validas    = useMemo(() => filas.filter(f => !f._error), [filas])
-  const errores     = useMemo(() => filas.filter(f =>  f._error), [filas])
+  // Personal ya registrado — para no duplicar al re-importar
+  const { data: existTrab = [] } = useQuery<Array<{ nombre: string; dni?: string }>>({
+    queryKey: ['trabajadores-all'],
+    queryFn: () => fetch(API + '/admin/trabajadores').then(r => r.json()),
+    staleTime: 60_000,
+  })
+  const { data: existSup = [] } = useQuery<Array<{ nombre: string }>>({
+    queryKey: ['supervisores-all'],
+    queryFn: () => fetch(API + '/admin/supervisores').then(r => r.json()),
+    staleTime: 60_000,
+  })
+  const { dniSet, trabNameSet, supNameSet } = useMemo(() => {
+    const dniSet = new Set<string>(), trabNameSet = new Set<string>(), supNameSet = new Set<string>()
+    existTrab.forEach(t => { if (t.dni) dniSet.add(String(t.dni).trim()); if (t.nombre) trabNameSet.add(String(t.nombre).toUpperCase().trim()) })
+    existSup.forEach(s => { if (s.nombre) supNameSet.add(String(s.nombre).toUpperCase().trim()) })
+    return { dniSet, trabNameSet, supNameSet }
+  }, [existTrab, existSup])
+
+  // Marca cada fila con _exists si ya está registrada (supervisor por nombre; trabajador por DNI o nombre)
+  const filasMarcadas = useMemo(() => filas.map(f => {
+    let _exists = false
+    if (!f._error) {
+      _exists = f.destino === 'SUPERVISOR'
+        ? supNameSet.has(f.nombre.trim())
+        : ((!!f.dni && dniSet.has(f.dni.trim())) || trabNameSet.has(f.nombre.trim()))
+    }
+    return { ...f, _exists }
+  }), [filas, dniSet, trabNameSet, supNameSet])
+
+  const validas    = useMemo(() => filasMarcadas.filter(f => !f._error && !f._exists), [filasMarcadas])
+  const errores     = useMemo(() => filasMarcadas.filter(f =>  f._error), [filasMarcadas])
+  const nExisten    = useMemo(() => filasMarcadas.filter(f => f._exists && !f._error).length, [filasMarcadas])
   const nSupervisor = useMemo(() => validas.filter(f => f.destino === 'SUPERVISOR').length, [validas])
   const nTrabajador  = useMemo(() => validas.filter(f => f.destino === 'TRABAJADOR').length, [validas])
 
@@ -145,6 +175,8 @@ export default function ImportarPersonal() {
     setResultados(res)
     qc.invalidateQueries({ queryKey: ['trabajadores'] })
     qc.invalidateQueries({ queryKey: ['supervisores'] })
+    qc.invalidateQueries({ queryKey: ['trabajadores-all'] })
+    qc.invalidateQueries({ queryKey: ['supervisores-all'] })
     setPaso('result')
   }
 
@@ -233,11 +265,12 @@ export default function ImportarPersonal() {
       {/* PASO 2: Preview */}
       {paso === 'preview' && (
         <div className="space-y-4">
-          <div className="grid grid-cols-4 gap-3">
+          <div className="grid grid-cols-5 gap-3">
             {[
               { label: 'Total leídos',  value: filas.length,    color: 'text-k-text',   border: 'border-k-border' },
-              { label: 'Trabajadores',  value: nTrabajador,     color: 'text-k-text',   border: 'border-k-border' },
-              { label: 'Supervisores',  value: nSupervisor,     color: 'text-k-amber',  border: 'border-amber-500/20' },
+              { label: 'Nuevos',        value: validas.length,  color: 'text-k-green',  border: 'border-green-500/20' },
+              { label: 'Ya registrados', value: nExisten,        color: nExisten > 0 ? 'text-k-blue' : 'text-k-text3', border: nExisten > 0 ? 'border-blue-500/20' : 'border-k-border' },
+              { label: 'Supervisores (nuevos)', value: nSupervisor, color: 'text-k-amber', border: 'border-amber-500/20' },
               { label: 'Con error',     value: errores.length,  color: errores.length > 0 ? 'text-k-red' : 'text-k-text3', border: errores.length > 0 ? 'border-red-500/20' : 'border-k-border' },
             ].map(s => (
               <div key={s.label} className={`bg-k-surface border ${s.border} rounded-xl p-4 flex items-center gap-3`}>
@@ -258,8 +291,8 @@ export default function ImportarPersonal() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filas.map(f => (
-                    <tr key={f._fila} className={`border-b border-k-border last:border-0 ${f._error ? 'bg-red-500/5' : 'hover:bg-k-raised/40'}`}>
+                  {filasMarcadas.map(f => (
+                    <tr key={f._fila} className={`border-b border-k-border last:border-0 ${f._error ? 'bg-red-500/5' : f._exists ? 'bg-blue-500/5' : 'hover:bg-k-raised/40'}`}>
                       <td className="px-4 py-2.5 font-mono text-xs text-k-text3">F{f._fila}</td>
                       <td className="px-4 py-2.5 text-sm text-k-text">{f.nombre || '—'}</td>
                       <td className="px-4 py-2.5 text-xs text-k-text2">{f.cargo || '—'}</td>
@@ -276,7 +309,9 @@ export default function ImportarPersonal() {
                       <td className="px-4 py-2.5">
                         {f._error
                           ? <span className="text-[10px] font-bold text-k-red bg-red-500/10 border border-red-500/20 px-2 py-0.5 rounded">{f._error}</span>
-                          : <span className="text-[10px] font-bold text-k-green bg-green-500/10 border border-green-500/20 px-2 py-0.5 rounded">OK</span>
+                          : f._exists
+                          ? <span className="text-[10px] font-bold text-k-blue bg-blue-500/10 border border-blue-500/20 px-2 py-0.5 rounded">YA REGISTRADO</span>
+                          : <span className="text-[10px] font-bold text-k-green bg-green-500/10 border border-green-500/20 px-2 py-0.5 rounded">NUEVO</span>
                         }
                       </td>
                     </tr>
