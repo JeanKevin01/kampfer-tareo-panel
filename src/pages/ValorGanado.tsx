@@ -1,7 +1,6 @@
 import TabISP from './TabISP'
 import TabDiario from './TabDiario'
 import TabRendimientos from './TabRendimientos'
-import ControlDiario from './ControlDiario'
 import CargaHistorica from './CargaHistorica'
 import WBSArbol from './WBSArbol'
 // ============================================================
@@ -9,7 +8,7 @@ import WBSArbol from './WBSArbol'
 // Módulo Valor Ganado — lógica ISP Fluor digitalizada
 // Autocontenido (sin shadcn), design system k- del panel
 // ============================================================
-import { Activity, Fragment, useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   ResponsiveContainer, ComposedChart, LineChart, Line, Area,
@@ -18,10 +17,9 @@ import {
 import {
   Target, BarChart3, ClipboardList, PenLine, Settings2,
   Plus, Pencil, Trash2, X, Save, Loader2, TrendingUp, Clock, Gauge,
-  Upload, Link2, CalendarDays, Users, History, AlertTriangle,
+  Upload, CalendarDays, Users, History, AlertTriangle, Activity,
 } from 'lucide-react'
 import ImportarPartidas from '@/pages/ImportarPartidas'
-import AsignarHH from '@/pages/AsignarHH'
 
 const API = 'https://api.apps1.astraera.space'
 
@@ -139,7 +137,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 // ============================================================
 // Componente principal
 // ============================================================
-type Tab = 'resumen' | 'partidas' | 'isp' | 'diario' | 'rendimientos' | 'control-diario' | 'historico' | 'registro' | 'tareo' | 'config' | 'importar'
+type Tab = 'resumen' | 'partidas' | 'isp' | 'diario' | 'rendimientos' | 'registro' | 'config' | 'importar' | 'historico'
 
 export default function ValorGanado() {
   const [tab, setTab] = useState<Tab>('resumen')
@@ -182,18 +180,19 @@ export default function ValorGanado() {
 
   // Ya no bloqueamos el render — si no hay semanas, mostramos semana 1
 
-  const TABS: { id: Tab; label: string; icon: typeof Target }[] = [
+  // Navegación consolidada: 7 módulos principales + Migración (secundaria).
+  // 'tareo' (HH Tareo) y 'control-diario' (Asignar HH) se eliminaron: la Fase 1
+  // hace que tareo_partida alimente HH gastadas automáticamente.
+  const TABS: { id: Tab; label: string; icon: typeof Target; secondary?: boolean }[] = [
     { id: 'resumen',       label: 'Resumen',          icon: BarChart3 },
     { id: 'partidas',      label: 'Partidas',         icon: ClipboardList },
     { id: 'isp',           label: 'ISP',              icon: Activity },
     { id: 'diario',        label: 'Control Diario',   icon: CalendarDays },
+    { id: 'registro',      label: 'Avances',          icon: PenLine },
     { id: 'rendimientos',  label: 'Rendimientos',     icon: Users },
-    { id: 'control-diario', label: 'Asignar HH',      icon: Gauge },
-    { id: 'historico',      label: 'Carga Histórica',  icon: History },
-    { id: 'registro',      label: 'Registro semanal', icon: PenLine },
-    { id: 'tareo',         label: 'HH Tareo',         icon: Link2 },
     { id: 'config',        label: 'Configuración',    icon: Settings2 },
     { id: 'importar',      label: 'Importar',         icon: Upload },
+    { id: 'historico',     label: 'Migración',        icon: History, secondary: true },
   ]
 
   return (
@@ -249,10 +248,15 @@ export default function ValorGanado() {
         {TABS.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${
+              t.secondary ? 'ml-auto' : ''
+            } ${
               tab === t.id
                 ? 'bg-k-amber text-black'
-                : 'bg-k-surface border border-k-border text-k-text2 hover:text-k-text hover:border-k-border2'
-            }`}>
+                : t.secondary
+                  ? 'bg-transparent border border-dashed border-k-border text-k-text3 hover:text-k-text2 hover:border-k-border2'
+                  : 'bg-k-surface border border-k-border text-k-text2 hover:text-k-text hover:border-k-border2'
+            }`}
+            title={t.secondary ? 'Herramienta de migración de datos históricos' : undefined}>
             <t.icon size={14} /> {t.label}
           </button>
         ))}
@@ -275,7 +279,6 @@ export default function ValorGanado() {
       {tab === 'partidas' && <WBSArbol otm={selectedOtm} semana={semana} />}
       {tab === 'isp'      && <TabISP semana={semana} otm={selectedOtm} />}
       {tab === 'registro' && <TabRegistro semana={semana} otm={selectedOtm} />}
-      {tab === 'tareo'         && <AsignarHH otm={selectedOtm} />}
       {tab === 'diario'        && (
         <TabDiario
           semana={semana}
@@ -289,11 +292,6 @@ export default function ValorGanado() {
           selectedOtm={selectedOtm}
           supervisores={supervisores}
           trabajadores={trabajadores}
-        />
-      )}
-      {tab === 'control-diario' && (
-        <ControlDiario
-          fecha={new Date().toISOString().slice(0, 10)}
         />
       )}
       {tab === 'historico'      && (

@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ChevronLeft, ChevronRight, RefreshCw, UploadCloud, ClipboardEdit, Check, AlertTriangle } from 'lucide-react'
+import { ChevronLeft, ChevronRight, RefreshCw, ClipboardEdit, Check, AlertTriangle } from 'lucide-react'
 
 const API = import.meta.env.VITE_API_URL ?? 'https://api.apps1.astraera.space'
 
@@ -43,7 +43,7 @@ interface SemanaGrid {
 
 interface Props {
   semana:      number
-  lunes:       string     // ISO date del lunes — viene de semanasAuto
+  lunes?:      string     // ISO date del lunes — opcional; si falta, el backend lo deriva de la semana
   onSemana:    (s: number) => void
   selectedOtm: string
 }
@@ -147,24 +147,6 @@ export default function TabDiario({ semana, lunes, onSemana, selectedOtm }: Prop
     }
   }, [pending, saveMut])
 
-  /* ── Volcar al ISP ──────────────────────────────────── */
-  const volcarMut = useMutation({
-    mutationFn: async () => {
-      const r = await fetch(`${API}/ev/volcar-diario-a-isp`, {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ semana, otm: selectedOtm, lunes }),
-      })
-      if (!r.ok) {
-        const e = await r.json().catch(() => ({}))
-        throw new Error(e.detail || 'Error volcando')
-      }
-      return r.json()
-    },
-    onSuccess: d => showToast(`✓ ${d.partidas_volcadas} partidas volcadas al ISP Sem ${semana}`),
-    onError:   e => showToast((e as Error).message, false),
-  })
-
   /* ── Edición masiva ─────────────────────────────────── */
   const openBulk = (fecha: string) => {
     setBulkFecha(fecha)
@@ -247,15 +229,10 @@ export default function TabDiario({ semana, lunes, onSemana, selectedOtm }: Prop
         )}
 
         <div className="ml-auto flex items-center gap-2">
-          <button
-            onClick={() => volcarMut.mutate()}
-            disabled={volcarMut.isPending || !data?.partidas.length}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-500/30
-                       bg-amber-500/10 text-amber-400 text-xs font-semibold
-                       hover:bg-amber-500/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
-            <UploadCloud size={13} />
-            {volcarMut.isPending ? 'Volcando…' : 'Volcar al ISP'}
-          </button>
+          <span className="flex items-center gap-1.5 text-[11px] text-k-text3"
+            title="El tareo capturado por partida alimenta el ISP y el árbol automáticamente (Fase 1).">
+            <Check size={12} className="text-emerald-400" /> Tareo → ISP automático
+          </span>
         </div>
       </div>
 
@@ -315,8 +292,8 @@ export default function TabDiario({ semana, lunes, onSemana, selectedOtm }: Prop
                 return (
                   <>
                     {/* ── Label row ── */}
-                    <tr key={`h-${p.id}`} style={{ borderTop: pi > 0 ? '1px solid #1a2133' : 'none' }}>
-                      <td colSpan={7} style={{ padding:'10px 14px 3px', background:'#141926' }}>
+                    <tr key={`h-${p.id}`} style={{ borderTop: pi > 0 ? '1px solid #1a2133' : 'none', borderLeft:`3px solid ${clr}` }}>
+                      <td colSpan={7} style={{ padding:'10px 14px 3px', background:`linear-gradient(90deg, ${clr}14, #141926 40%)` }}>
                         <div style={{ display:'flex', alignItems:'center', gap:8 }}>
                           <span style={{ padding:'2px 7px', borderRadius:5, fontSize:9, fontWeight:800,
                             background:clr+'20', border:`1px solid ${clr}40`, color:clr, flexShrink:0 }}>
