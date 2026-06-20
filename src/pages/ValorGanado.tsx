@@ -1,1170 +1,2028 @@
-import TabISP from './TabISP'
-import TabDiario from './TabDiario'
-import TabRendimientos from './TabRendimientos'
-import ControlDiario from './ControlDiario'
-import CargaHistorica from './CargaHistorica'
-import WBSArbol from './WBSArbol'
-// ============================================================
-// src/pages/ValorGanado.tsx
-// Módulo Valor Ganado — lógica ISP Fluor digitalizada
-// Autocontenido (sin shadcn), design system k- del panel
-// ============================================================
-import { Activity, Fragment, useEffect, useMemo, useState } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import {
-  ResponsiveContainer, ComposedChart, LineChart, Line, Area,
-  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine,
-} from 'recharts'
-import {
-  Target, BarChart3, ClipboardList, PenLine, Settings2,
-  Plus, Pencil, Trash2, X, Save, Loader2, TrendingUp, Clock, Gauge,
-  Upload, Link2, CalendarDays, Users, History, AlertTriangle,
-} from 'lucide-react'
-import ImportarPartidas from '@/pages/ImportarPartidas'
-import AsignarHH from '@/pages/AsignarHH'
+# ============================================================
+# routers/valor_ganado.py  —  v2
+# Módulo Valor Ganado - lógica ISP Fluor digitalizada
+#
+# Novedades v2:
+#   - OTM por encima de fase/sub-fase (ev_partidas.otm_id)
+#   - POST /ev/importar: carga masiva de partidas (desde cero o con
+#     histórico de avances y HH) en una sola transacción
+#   - GET/POST /ev/plantillas: catálogo de rules of credit por tipo
+#     de actividad
+#   - HH automáticas desde el tareo QR (vista ev_hh_tareo) sumadas a
+#     las HH manuales; mapeo fecha->semana vía ev_config.fecha_base
+#   - POST /ev/asignar-hh: etiquetar registros del tareo con partida
+#   - GET /ev/curva-fase: tendencia de PF por disciplina
+#
+# Integración en main.py (sin cambios respecto a v1):
+#   from routers.valor_ganado import router as ev_router
+#   app.include_router(ev_router)   # después de crear app
+# ============================================================
+import os
+import json
+from collections import defaultdict
+from datetime import date, timedelta, datetime, timezone
+from typing import Optional
 
-const API = 'https://api.apps1.astraera.space'
+import asyncpg
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, Field
 
-async function req<T>(path: string, options?: RequestInit): Promise<T> {
-  const r = await fetch(API + path, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-  })
-  const j = await r.json().catch(() => null)
-  if (!r.ok) throw new Error(j?.detail ?? `Error ${r.status}`)
-  return j as T
-}
+router = APIRouter(prefix="/ev", tags=["valor-ganado"])
 
-// ---------------- Tipos ----------------
-interface Hito {
-  id?: number; numero: number; descripcion: string
-  peso: number; es_principal: boolean
-}
-interface Partida {
-  id: number; codigo: string; otm_id: string | null; fase: string; sub_fase: string | null
-  descripcion: string; unidad: string; sistema: string | null
-  metrado_presup: number; metrado_proyec: number | null; hh_presup: number
-  hitos: Hito[]
-}
-interface PartidaInput {
-  codigo: string; otm_id: string | null; fase: string; sub_fase: string | null
-  descripcion: string; unidad: string; sistema: string | null
-  metrado_presup: number; metrado_proyec: number | null; hh_presup: number
-  hitos: Omit<Hito, 'id'>[]
-}
-interface CapturaHito {
-  hito_id: number; numero: number; descripcion: string; peso: number
-  es_principal: boolean; cant_anterior: number; cant_actual: number
-}
-interface CapturaPartida {
-  partida_id: number; codigo: string; otm_id: string | null; descripcion: string; unidad: string
-  metrado_proyec: number; hh_tareo: number; hh_semana: number; hitos: CapturaHito[]
-}
-interface ReporteFila {
-  partida_id: number; codigo: string; otm_id: string | null; fase: string; sistema: string | null
-  descripcion: string; unidad: string
-  metrado_proyec: number; cantidad_instalada: number; pct_avance: number
-  hh_presup: number; hh_proyec: number
-  hh_ganadas_sem: number; hh_ganadas_acum: number
-  hh_gastadas_sem: number; hh_gastadas_acum: number
-  pf_sem: number; pf_acum: number
-  prod_presup: number; prod_real: number
-  eac_hh: number; desvio_hh: number
-}
-interface ReporteGrupo {
-  grupo: string; hh_proyec: number; hh_ganadas: number; hh_gastadas: number
-  pct_avance: number; pf: number; eac_hh: number
-}
-interface Reporte {
-  semana: number
-  totales: {
-    hh_proyec: number; hh_ganadas_acum: number; hh_gastadas_acum: number
-    hh_ganadas_sem: number; hh_gastadas_sem: number
-    pct_avance: number; pf_acum: number; pf_sem: number
-    eac_hh: number; desvio_hh: number
-  }
-  por_fase: ReporteGrupo[]; por_sistema: ReporteGrupo[]; partidas: ReporteFila[]
-}
-interface PuntoCurvaFase { semana: number; [key: string]: number | null }
+# Zona horaria de Perú (UTC-5) — sin dependencias externas (no usar pytz)
+LIMA = timezone(timedelta(hours=-5))
+def _hoy_lima() -> date:
+    return datetime.now(LIMA).date()
 
-interface PuntoCurva {
-  semana: number; hh_ganadas_acum: number; hh_gastadas_acum: number
-  pf_acum: number | null; pf_sem: number | null
-}
+def _as_date(v) -> Optional[date]:
+    """Convierte v a date (o None). asyncpg exige date, no str, en parámetros
+    comparados con columnas date o casteados con ::date."""
+    if v is None or v == "":
+        return None
+    if isinstance(v, datetime):
+        return v.date()
+    if isinstance(v, date):
+        return v
+    return date.fromisoformat(str(v)[:10])
 
-// ---------------- Helpers ----------------
-const fmt = (n: number, d = 1) =>
-  n.toLocaleString('es-PE', { minimumFractionDigits: d, maximumFractionDigits: d })
-const pct = (n: number) => `${(n * 100).toFixed(1)}%`
-
-const INPUT =
-  'w-full bg-k-raised border border-k-border rounded-lg px-3 py-2 text-sm text-k-text outline-none focus:border-k-amber transition-colors'
-const LABEL = 'text-[11px] font-bold text-k-text3 uppercase tracking-wider block mb-1.5'
-const BTN_AMBER =
-  'bg-k-amber hover:bg-k-amber2 disabled:opacity-40 text-black font-bold text-sm px-4 py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2'
-const BTN_GHOST =
-  'bg-k-raised border border-k-border text-k-text2 font-bold text-sm px-4 py-2.5 rounded-lg hover:bg-k-border transition-colors flex items-center justify-center gap-2'
-const CARD = 'bg-k-surface border border-k-border rounded-xl p-5'
-const TH = 'py-2 px-3 text-[10px] font-bold text-k-text3 uppercase tracking-wider text-left'
-const TD = 'py-2 px-3 text-sm text-k-text2'
-
-function PFChip({ value }: { value: number }) {
-  if (!value) return <span className="text-k-text3 text-xs">—</span>
-  const cls = value >= 1
-    ? 'text-k-green bg-green-500/10 border-green-500/20'
-    : value >= 0.85
-      ? 'text-k-amber bg-amber-500/10 border-amber-500/20'
-      : 'text-k-red bg-red-500/10 border-red-500/20'
-  return (
-    <span className={`font-mono text-[11px] font-bold px-2 py-0.5 rounded border ${cls}`}>
-      {value.toFixed(2)}
-    </span>
-  )
-}
-
-const CustomTooltip = ({ active, payload, label }: any) => {
-  if (!active || !payload?.length) return null
-  return (
-    <div className="bg-k-raised border border-k-border2 rounded-lg px-3 py-2 text-xs">
-      <p className="text-k-text2 mb-1">Semana {label}</p>
-      {payload.map((p: any) => (
-        <p key={p.name} style={{ color: p.color }} className="font-mono font-bold">
-          {typeof p.value === 'number' ? fmt(p.value, p.value < 10 ? 2 : 0) : p.value} {p.name}
-        </p>
-      ))}
-    </div>
-  )
-}
-
-// ============================================================
-// Componente principal
-// ============================================================
-type Tab = 'resumen' | 'partidas' | 'isp' | 'diario' | 'rendimientos' | 'control-diario' | 'historico' | 'registro' | 'tareo' | 'config' | 'importar'
-
-export default function ValorGanado() {
-  const [tab, setTab] = useState<Tab>('resumen')
-  const [selectedOtm, setSelectedOtm] = useState<string>('')
-  const [semana, setSemana] = useState<number>(1)
-
-  // Datos para TabRendimientos
-  const { data: supervisores = [] } = useQuery<{ id: string; nombre: string }[]>({
-    queryKey: ['supervisores'],
-    queryFn: () => req('/api/supervisores'),
-    staleTime: 300_000,
-  })
-  const { data: trabajadores = [] } = useQuery<{ id: string; nombre: string; cargo: string }[]>({
-    queryKey: ['trabajadores'],
-    queryFn: () => req('/api/trabajadores'),
-    staleTime: 300_000,
-  })
-
-  // OTMs que tienen partidas en el módulo EV
-  const { data: otmsEV = [] } = useQuery<{otm_id: string; descripcion: string; estado: string; partidas: number}[]>({
-    queryKey: ['ev-otms'],
-    queryFn: () => req('/ev/otms'),
-    staleTime: 30_000,
-  })
-
-  interface SemanaAuto { semana: number; inicio: string; fin: string; hh: number; activa: boolean; label: string }
-  const { data: semanasAuto = [] } = useQuery<SemanaAuto[]>({
-    queryKey: ['ev-semanas-auto'],
-    queryFn: () => req('/ev/semanas-auto'),
-    refetchInterval: 5 * 60 * 1000,
-  })
-  const semanas = semanasAuto.map(s => s.semana)
-
-  useEffect(() => {
-    if (!semanasAuto.length) return
-    // Auto-seleccionar última semana activa cuando cargan los datos
-    const ultActiva = [...semanasAuto].reverse().find(s => s.activa)
-    setSemana(ultActiva ? ultActiva.semana : semanasAuto[semanasAuto.length - 1].semana)
-  }, [semanasAuto.length]) // solo cuando llegan datos por primera vez
-
-  // Ya no bloqueamos el render — si no hay semanas, mostramos semana 1
-
-  const TABS: { id: Tab; label: string; icon: typeof Target }[] = [
-    { id: 'resumen',       label: 'Resumen',          icon: BarChart3 },
-    { id: 'partidas',      label: 'Partidas',         icon: ClipboardList },
-    { id: 'isp',           label: 'ISP',              icon: Activity },
-    { id: 'diario',        label: 'Control Diario',   icon: CalendarDays },
-    { id: 'rendimientos',  label: 'Rendimientos',     icon: Users },
-    { id: 'control-diario', label: 'Asignar HH',      icon: Gauge },
-    { id: 'historico',      label: 'Carga Histórica',  icon: History },
-    { id: 'registro',      label: 'Registro semanal', icon: PenLine },
-    { id: 'tareo',         label: 'HH Tareo',         icon: Link2 },
-    { id: 'config',        label: 'Configuración',    icon: Settings2 },
-    { id: 'importar',      label: 'Importar',         icon: Upload },
-  ]
-
-  return (
-    <div className="space-y-5">
-
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="font-condensed font-extrabold text-2xl text-k-text tracking-wide flex items-center gap-2">
-            <Target size={22} className="text-k-amber" /> VALOR GANADO
-          </h1>
-          <p className="text-xs text-k-text3 mt-0.5">
-            Avance por hitos ponderados · HH Ganadas vs Gastadas · PF · Proyección EAC
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-[11px] font-bold text-k-text3 uppercase tracking-wider">Semana de corte</span>
-          <div className="flex items-center gap-3">
-            <select
-              value={selectedOtm}
-              onChange={e => setSelectedOtm(e.target.value)}
-              className="bg-k-raised border border-k-border rounded-lg px-3 py-2 text-sm text-k-text outline-none focus:border-k-amber transition-colors"
-            >
-              <option value="">Todas las OTMs</option>
-              {otmsEV.map(o => (
-                <option key={o.otm_id} value={o.otm_id}>
-                  {o.otm_id} — {o.descripcion?.slice(0, 28) || '—'} {o.partidas > 0 ? `(${o.partidas} partidas)` : '(sin partidas — importar)'}
-                </option>
-              ))}
-            </select>
-            <select
-              value={semana}
-              onChange={e => setSemana(Number(e.target.value))}
-              className="bg-k-raised border border-k-border rounded-lg px-3 py-2 text-sm text-k-text outline-none focus:border-k-amber transition-colors min-w-[240px]"
-            >
-              {semanasAuto.map(s => (
-                <option key={s.semana} value={s.semana} style={{ color: s.activa ? undefined : '#4e5a72' }}>
-                  {s.label}
-                </option>
-              ))}
-              {!semanas.includes(semana) && <option value={semana}>Sem {semana}</option>}
-            </select>
-          </div>
-          <button onClick={() => { setSemana(semana + 1); setTab('registro') }} className={BTN_AMBER}
-            title="Avanzar al registro de la siguiente semana">
-            <Plus size={14} /> Nueva semana ({semana + 1})
-          </button>
-        </div>
-      </div>
-
-      {/* Tabs */}
-      <div className="flex gap-2 flex-wrap">
-        {TABS.map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${
-              tab === t.id
-                ? 'bg-k-amber text-black'
-                : 'bg-k-surface border border-k-border text-k-text2 hover:text-k-text hover:border-k-border2'
-            }`}>
-            <t.icon size={14} /> {t.label}
-          </button>
-        ))}
-      </div>
-
-      {selectedOtm && otmsEV.find(o => o.otm_id === selectedOtm)?.partidas === 0 && (
-        <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-amber-500/30 bg-amber-500/10 text-sm text-k-amber">
-          <AlertTriangle size={16} className="flex-shrink-0" />
-          <span className="flex-1">
-            <strong>{selectedOtm}</strong> aún no tiene partidas importadas — el Valor Ganado no puede calcular nada para esta OTM.
-          </span>
-          <button onClick={() => setTab('importar')}
-            className="flex-shrink-0 bg-k-amber text-black font-bold text-xs px-3 py-1.5 rounded-lg hover:bg-k-amber2 transition-colors">
-            Importar partidas →
-          </button>
-        </div>
-      )}
-
-      {tab === 'resumen'  && <TabResumen semana={semana} otm={selectedOtm} />}
-      {tab === 'partidas' && <WBSArbol otm={selectedOtm} semana={semana} />}
-      {tab === 'isp'      && <TabISP semana={semana} otm={selectedOtm} />}
-      {tab === 'registro' && <TabRegistro semana={semana} otm={selectedOtm} />}
-      {tab === 'tareo'         && <AsignarHH otm={selectedOtm} />}
-      {tab === 'diario'        && (
-        <TabDiario
-          semana={semana}
-          onSemana={setSemana}
-          selectedOtm={selectedOtm}
-        />
-      )}
-      {tab === 'rendimientos'  && (
-        <TabRendimientos
-          semana={semana}
-          selectedOtm={selectedOtm}
-          supervisores={supervisores}
-          trabajadores={trabajadores}
-        />
-      )}
-      {tab === 'control-diario' && (
-        <ControlDiario
-          fecha={new Date().toISOString().slice(0, 10)}
-        />
-      )}
-      {tab === 'historico'      && (
-        <CargaHistorica
-          semana={semana}
-          selectedOtm={selectedOtm}
-        />
-      )}
-      {tab === 'config'        && <TabConfig />}
-      {tab === 'importar'      && <ImportarPartidas />}
-    </div>
-  )
-}
-
-// ============================================================
-// TAB 1: Resumen
-// ============================================================
-function TabResumen({ semana, otm }: { semana: number; otm?: string }) {
-  const { data: rep, isLoading } = useQuery<Reporte>({
-    queryKey: ['ev-reporte', semana, otm],
-    queryFn: () => req(`/ev/reporte?semana=${semana}${otm ? `&otm=${otm}` : ''}`),
-  })
-  const { data: curva = [] } = useQuery<PuntoCurva[]>({
-    queryKey: ['ev-curva', semana, otm],
-    queryFn: () => req(`/ev/curva?hasta=${semana}${otm ? `&otm=${otm}` : ''}`),
-  })
-
-  if (isLoading || !rep) {
-    return <p className="text-k-text3 text-sm flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Calculando…</p>
-  }
-  const t = rep.totales
-
-  const kpis = [
-    { label: '% Avance del proyecto', value: pct(t.pct_avance), icon: Gauge,
-      color: 'text-k-amber', bg: 'bg-amber-500/10', border: 'border-amber-500/20' },
-    { label: 'PF Acumulado (CPI)', value: t.pf_acum.toFixed(2), icon: Target,
-      color: t.pf_acum >= 1 ? 'text-k-green' : 'text-k-red',
-      bg: t.pf_acum >= 1 ? 'bg-green-500/10' : 'bg-red-500/10',
-      border: t.pf_acum >= 1 ? 'border-green-500/20' : 'border-red-500/20' },
-    { label: `HH Ganadas (sem ${fmt(t.hh_ganadas_sem, 0)})`, value: fmt(t.hh_ganadas_acum, 0), icon: TrendingUp,
-      color: 'text-k-green', bg: 'bg-green-500/10', border: 'border-green-500/20' },
-    { label: `HH Gastadas (sem ${fmt(t.hh_gastadas_sem, 0)})`, value: fmt(t.hh_gastadas_acum, 0), icon: Clock,
-      color: 'text-k-red', bg: 'bg-red-500/10', border: 'border-red-500/20' },
-    { label: `EAC · desvío ${t.desvio_hh >= 0 ? '+' : ''}${fmt(t.desvio_hh, 0)} HH`, value: fmt(t.eac_hh, 0), icon: BarChart3,
-      color: 'text-k-blue', bg: 'bg-blue-500/10', border: 'border-blue-500/20' },
-  ]
-
-  return (
-    <div className="space-y-5">
-
-      <div className="grid grid-cols-2 xl:grid-cols-5 gap-4">
-        {kpis.map(k => (
-          <div key={k.label} className={`bg-k-surface border ${k.border} rounded-xl p-5`}>
-            <div className={`w-10 h-10 rounded-xl ${k.bg} flex items-center justify-center mb-4`}>
-              <k.icon size={20} className={k.color} />
-            </div>
-            <div className={`font-mono text-3xl font-medium ${k.color} mb-1`}>{k.value}</div>
-            <div className="text-[11px] text-k-text3 uppercase tracking-wide">{k.label}</div>
-          </div>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-        <div className={CARD}>
-          <h3 className="text-[11px] font-bold text-k-text3 uppercase tracking-widest mb-4">
-            Curva S — HH Ganadas vs Gastadas
-          </h3>
-          <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={curva}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#252f45" />
-                <XAxis dataKey="semana" tick={{ fill: '#8a96ad', fontSize: 11 }} tickFormatter={s => `S${s}`} />
-                <YAxis tick={{ fill: '#8a96ad', fontSize: 11 }} />
-                <Tooltip content={<CustomTooltip />} />
-                <Legend wrapperStyle={{ fontSize: 11 }} />
-                <Area type="monotone" dataKey="hh_ganadas_acum" name="HH Ganadas (EV)"
-                      stroke="#10b981" fill="#10b981" fillOpacity={0.12} strokeWidth={2} />
-                <Line type="monotone" dataKey="hh_gastadas_acum" name="HH Gastadas (AC)"
-                      stroke="#ef4444" strokeWidth={2} dot={false} />
-              </ComposedChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        <div className={CARD}>
-          <h3 className="text-[11px] font-bold text-k-text3 uppercase tracking-widest mb-4">
-            Tendencia del PF (meta = 1.00)
-          </h3>
-          <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={curva}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#252f45" />
-                <XAxis dataKey="semana" tick={{ fill: '#8a96ad', fontSize: 11 }} tickFormatter={s => `S${s}`} />
-                <YAxis tick={{ fill: '#8a96ad', fontSize: 11 }} domain={[0, 'auto']} />
-                <Tooltip content={<CustomTooltip />} />
-                <Legend wrapperStyle={{ fontSize: 11 }} />
-                <ReferenceLine y={1} stroke="#f59e0b" strokeDasharray="5 5" />
-                <Line type="monotone" dataKey="pf_acum" name="PF Acumulado"
-                      stroke="#3b82f6" strokeWidth={2} connectNulls />
-                <Line type="monotone" dataKey="pf_sem" name="PF Semanal"
-                      stroke="#4e5a72" strokeDasharray="4 4" connectNulls />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-        <TablaGrupos titulo="Avance por fase / disciplina" grupos={rep.por_fase} />
-        <TablaGrupos titulo="Avance por sistema" grupos={rep.por_sistema} />
-      </div>
-
-      <CurvasFase semana={semana} />
-    </div>
-  )
-}
-
-function TablaGrupos({ titulo, grupos }: { titulo: string; grupos: ReporteGrupo[] }) {
-  return (
-    <div className={CARD}>
-      <h3 className="text-[11px] font-bold text-k-text3 uppercase tracking-widest mb-3">{titulo}</h3>
-      <div className="overflow-x-auto">
-        <table className="w-full">
-          <thead>
-            <tr className="border-b border-k-border">
-              <th className={TH}>Grupo</th>
-              <th className={`${TH} text-right`}>HH Proyec</th>
-              <th className={`${TH} text-right`}>Ganadas</th>
-              <th className={`${TH} text-right`}>Gastadas</th>
-              <th className={`${TH} text-right`}>% Avance</th>
-              <th className={`${TH} text-right`}>PF</th>
-            </tr>
-          </thead>
-          <tbody>
-            {grupos.map(g => (
-              <tr key={g.grupo} className="border-b border-k-border last:border-0">
-                <td className={`${TD} font-bold text-k-text`}>{g.grupo}</td>
-                <td className={`${TD} text-right font-mono`}>{fmt(g.hh_proyec, 0)}</td>
-                <td className={`${TD} text-right font-mono text-k-green`}>{fmt(g.hh_ganadas, 0)}</td>
-                <td className={`${TD} text-right font-mono text-k-red`}>{fmt(g.hh_gastadas, 0)}</td>
-                <td className={`${TD} text-right font-mono`}>{pct(g.pct_avance)}</td>
-                <td className={`${TD} text-right`}><PFChip value={g.pf} /></td>
-              </tr>
-            ))}
-            {grupos.length === 0 && (
-              <tr><td colSpan={6} className="py-6 text-center text-k-text3 text-sm">Sin datos aún</td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  )
-}
+_pool: Optional[asyncpg.Pool] = None
 
 
-// ============================================================
-// CURVAS POR FASE
-// ============================================================
-const FASE_COLORS: Record<string, string> = {
-  'SX-EW': '#3b82f6', 'Mina': '#10b981', 'C2 Area Seca': '#f59e0b',
-  'C2 Área Seca': '#f59e0b', 'Lixviacion': '#a78bfa', 'Lixviación': '#a78bfa',
-  'Aguas': '#22d3ee', 'GSC': '#94a3b8',
-}
-const COLOR_LIST = ['#3b82f6','#10b981','#f59e0b','#a78bfa','#22d3ee','#94a3b8','#ef4444','#ec4899']
+async def db() -> asyncpg.Pool:
+    global _pool
+    if _pool is None:
+        _pool = await asyncpg.create_pool(
+            os.environ["DATABASE_URL"], min_size=1, max_size=5
+        )
+    return _pool
 
-function CurvasFase({ semana }: { semana: number }) {
-  const { data, isLoading } = useQuery<{ fases: string[]; serie: PuntoCurvaFase[] }>({
-    queryKey: ['ev-curva-fase', semana],
-    queryFn: () => req(`/ev/curva-fase?hasta=${semana}`),
-    enabled: semana > 0,
-  })
 
-  if (isLoading) return (
-    <p className="text-k-text3 text-sm flex items-center gap-2">
-      <Loader2 size={14} className="animate-spin" /> Cargando curvas...
-    </p>
-  )
-  if (!data?.serie?.length) return (
-    <div className="bg-k-raised border border-k-border rounded-xl p-8 text-center text-k-text3 text-sm">
-      Sin datos de avance por fase aún — registra avances semanales primero
-    </div>
-  )
+# ---------------------- Modelos ----------------------
+class HitoIn(BaseModel):
+    numero: int = Field(ge=1, le=10)
+    descripcion: str = ""
+    peso: float = Field(gt=0, le=1)
+    es_principal: bool = False
 
-  const { fases, serie } = data
-  return (
-    <div className={CARD}>
-      <h3 className="text-[11px] font-bold text-k-text3 uppercase tracking-widest mb-1">
-        PF acumulado por fase / disciplina
-      </h3>
-      <p className="text-[11px] text-k-text3 mb-4">
-        Línea punteada = meta PF 1.00. Cada fase muestra su propio Factor de Productividad acumulado semana a semana.
-      </p>
-      <div className="h-80">
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={serie} margin={{ top: 4, right: 16, bottom: 0, left: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#252f45" />
-            <XAxis dataKey="semana" tick={{ fill: '#8a96ad', fontSize: 11 }} tickFormatter={s => `S${s}`} />
-            <YAxis tick={{ fill: '#8a96ad', fontSize: 11 }} domain={[0, 'auto']}
-                   tickFormatter={v => v.toFixed(2)} />
-            <Tooltip
-              contentStyle={{ background: '#1c2436', border: '1px solid #252f45', borderRadius: 8, fontSize: 12 }}
-              formatter={(v: any, name: string) => [Number(v).toFixed(3), name.replace('pf_', '')]}
-              labelFormatter={l => `Semana ${l}`}
-            />
-            <Legend wrapperStyle={{ fontSize: 11 }}
-                    formatter={(val: string) => val.replace('pf_', '')} />
-            <ReferenceLine y={1} stroke="#f59e0b" strokeDasharray="5 5" strokeWidth={1.5} />
-            {fases.map((f, i) => (
-              <Line key={f} type="monotone" dataKey={`pf_${f}`}
-                    name={`pf_${f}`}
-                    stroke={FASE_COLORS[f] ?? COLOR_LIST[i % COLOR_LIST.length]}
-                    strokeWidth={2} dot={false} connectNulls />
-            ))}
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
-      <div className="mt-3 flex flex-wrap gap-3">
-        {fases.map((f, i) => {
-          const ultimo = [...serie].reverse().find(p => p[`pf_${f}`] != null)
-          const pf = ultimo ? (ultimo[`pf_${f}`] as number) : null
-          const color = FASE_COLORS[f] ?? COLOR_LIST[i % COLOR_LIST.length]
-          return (
-            <div key={f} className="flex items-center gap-2 bg-k-raised border border-k-border rounded-lg px-3 py-2">
-              <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: color }} />
-              <span className="text-[11px] font-bold text-k-text">{f}</span>
-              {pf != null && (
-                <span className={`font-mono text-[11px] font-bold ml-1 ${
-                  pf >= 1 ? 'text-k-green' : pf >= 0.85 ? 'text-k-amber' : 'text-k-red'
-                }`}>PF {pf.toFixed(2)}</span>
-              )}
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
 
-// ============================================================
-// TAB 2: Partidas
-// ============================================================
-function TabPartidas({ semana }: { semana: number }) {
-  const { data: rep, isLoading } = useQuery<Reporte>({
-    queryKey: ['ev-reporte', semana, otm],
-    queryFn: () => req(`/ev/reporte?semana=${semana}${otm ? `&otm=${otm}` : ''}`),
-  })
-  const [search, setSearch] = useState('')
+class PartidaIn(BaseModel):
+    codigo: str
+    otm_id: Optional[str] = None
+    fase: str
+    sub_fase: Optional[str] = None
+    descripcion: str
+    unidad: str
+    sistema: Optional[str] = None
+    metrado_presup: float = 0
+    metrado_proyec: Optional[float] = None
+    hh_presup: float = 0
+    hitos: list[HitoIn]
 
-  const filas = useMemo(() => {
-    if (!rep) return []
-    const q = search.toLowerCase()
-    return rep.partidas.filter(f =>
-      f.codigo.toLowerCase().includes(q) ||
-      f.descripcion.toLowerCase().includes(q) ||
-      (f.sistema ?? '').toLowerCase().includes(q))
-  }, [rep, search])
 
-  if (isLoading || !rep) {
-    return <p className="text-k-text3 text-sm flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Calculando…</p>
-  }
+class AvanceIn(BaseModel):
+    hito_id: int
+    cantidad_acum: float = Field(ge=0)
 
-  return (
-    <div className="bg-k-surface border border-k-border rounded-xl overflow-hidden">
-      <div className="p-4 border-b border-k-border flex items-center justify-between gap-3">
-        <h3 className="text-[11px] font-bold text-k-text3 uppercase tracking-widest">
-          Detalle por partida — Semana {semana}
-        </h3>
-        <input type="text" placeholder="Buscar código, descripción o sistema…"
-          value={search} onChange={e => setSearch(e.target.value)}
-          className="max-w-xs bg-k-raised border border-k-border rounded-lg px-4 py-2 text-sm text-k-text placeholder:text-k-text3 outline-none focus:border-k-amber transition-colors" />
-      </div>
-      <div className="overflow-x-auto">
-        <table className="w-full whitespace-nowrap">
-          <thead>
-            <tr className="border-b border-k-border bg-k-raised/50">
-              <th className={TH}>Código</th>
-              <th className={TH}>Descripción</th>
-              <th className={`${TH} text-right`}>Metrado</th>
-              <th className={`${TH} text-right`}>Instalado</th>
-              <th className={`${TH} text-right`}>% Avance</th>
-              <th className={`${TH} text-right`}>HH Proyec</th>
-              <th className={`${TH} text-right`}>Ganadas</th>
-              <th className={`${TH} text-right`}>Gastadas</th>
-              <th className={`${TH} text-right`}>PF Sem</th>
-              <th className={`${TH} text-right`}>PF Acum</th>
-              <th className={`${TH} text-right`}>Prod. Ppto</th>
-              <th className={`${TH} text-right`}>Prod. Real</th>
-              <th className={`${TH} text-right`}>EAC HH</th>
-              <th className={`${TH} text-right`}>Desvío</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filas.map(f => (
-              <tr key={f.partida_id} className="border-b border-k-border last:border-0 hover:bg-k-raised/40 transition-colors">
-                <td className={`${TD} font-mono text-[11px] text-k-amber`}>{f.codigo}</td>
-                <td className={`${TD} max-w-[260px] truncate`} title={f.descripcion}>
-                  {f.descripcion}
-                  {f.sistema && <span className="ml-2 text-[10px] text-k-text3">[{f.sistema}]</span>}
-                </td>
-                <td className={`${TD} text-right font-mono`}>{fmt(f.metrado_proyec)} <span className="text-k-text3 text-[10px]">{f.unidad}</span></td>
-                <td className={`${TD} text-right font-mono`}>{fmt(f.cantidad_instalada)}</td>
-                <td className={`${TD} text-right font-mono font-bold text-k-text`}>{pct(f.pct_avance)}</td>
-                <td className={`${TD} text-right font-mono`}>{fmt(f.hh_proyec, 0)}</td>
-                <td className={`${TD} text-right font-mono text-k-green`}>{fmt(f.hh_ganadas_acum, 0)}</td>
-                <td className={`${TD} text-right font-mono text-k-red`}>{fmt(f.hh_gastadas_acum, 0)}</td>
-                <td className={`${TD} text-right`}><PFChip value={f.pf_sem} /></td>
-                <td className={`${TD} text-right`}><PFChip value={f.pf_acum} /></td>
-                <td className={`${TD} text-right font-mono`}>{fmt(f.prod_presup, 3)}</td>
-                <td className={`${TD} text-right font-mono`}>{fmt(f.prod_real, 3)}</td>
-                <td className={`${TD} text-right font-mono`}>{fmt(f.eac_hh, 0)}</td>
-                <td className={`${TD} text-right font-mono ${f.desvio_hh > 0 ? 'text-k-red' : 'text-k-green'}`}>
-                  {f.desvio_hh >= 0 ? '+' : ''}{fmt(f.desvio_hh, 0)}
-                </td>
-              </tr>
-            ))}
-            {filas.length === 0 && (
-              <tr><td colSpan={14} className="py-8 text-center text-k-text3 text-sm">
-                Sin partidas. Créalas en la pestaña Configuración.
-              </td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-      <div className="px-4 py-2 border-t border-k-border bg-k-raised">
-        <span className="text-[11px] text-k-text3">{filas.length} partidas</span>
-      </div>
-    </div>
-  )
-}
 
-// ============================================================
-// TAB 3: Registro semanal (reemplaza los 11 pasos del ISP)
-// ============================================================
+class HHIn(BaseModel):
+    partida_id: int
+    hh: float = Field(ge=0)
 
-const FASE_COLOR_REG: Record<string, string> = {
-  FAB:'#2DD4A8', EST:'#60A5FA', MEC:'#FB923C', ELE:'#FACC15',
-  TUB:'#A78BFA', INS:'#F472B6', CIV:'#94A3B8', AND:'#34D399',
-  APY:'#86EFAC', ING:'#FCD34D', COM:'#C4B5FD',
-}
-const FASE_NOMBRES: Record<string, string> = {
-  FAB:'Fabricación en Planta', EST:'Montaje de Estructuras', MEC:'Mecánico',
-  ELE:'Eléctrico', TUB:'Tuberías y Piping', INS:'Instrumentación',
-  CIV:'Civil', AND:'Andamios', APY:'Apoyo Constructivo', ING:'Ingeniería', COM:'Pre-comisionado',
-}
 
-function TabRegistro({ semana, otm }: { semana: number; otm?: string }) {
-  const qc = useQueryClient()
-  const [expanded, setExpanded] = useState<Set<number>>(new Set())
-  const [avances, setAvances] = useState<Record<number, string>>({})
-  const [hh, setHh] = useState<Record<number, string>>({})
-  const [msg, setMsg] = useState('')
+class CapturaIn(BaseModel):
+    semana: int
+    avances: list[AvanceIn] = []
+    hh_gastadas: list[HHIn] = []
 
-  const { data: todasCaptura = [], isLoading } = useQuery<CapturaPartida[]>({
-    queryKey: ['ev-captura', semana, otm],
-    queryFn: () => req(`/ev/captura?semana=${semana}${otm ? `&otm=${otm}` : ''}`),
-  })
-  const captura = todasCaptura.filter(p => p.hitos && p.hitos.length > 0)
 
-  useEffect(() => {
-    const a: Record<number, string> = {}
-    const h: Record<number, string> = {}
-    captura.forEach(p => {
-      h[p.partida_id] = String(p.hh_semana || 0)
-      p.hitos.forEach(x => { a[x.hito_id] = String(x.cant_actual ?? '') })
-    })
-    setAvances(a); setHh(h); setMsg('')
-  // eslint-disable-next-line
-  }, [captura.map(p=>p.partida_id).join(',')])
+class PlantillaIn(BaseModel):
+    tipo_actividad: str
+    hitos: list[HitoIn]
 
-  const guardar = useMutation({
-    mutationFn: () => req('/ev/captura', {
-      method: 'POST',
-      body: JSON.stringify({
-        semana,
-        avances: Object.entries(avances).map(([id, v]) => ({ hito_id: Number(id), cantidad_acum: Number(v) || 0 })),
-        hh_gastadas: Object.entries(hh).map(([id, v]) => ({ partida_id: Number(id), hh: Number(v) || 0 })),
-      }),
-    }),
-    onSuccess: () => {
-      setMsg(`✓ Semana ${semana} guardada`)
-      qc.invalidateQueries({ queryKey: ['ev-reporte'] })
-      qc.invalidateQueries({ queryKey: ['ev-arbol'] })
-      qc.invalidateQueries({ queryKey: ['ev-curva'] })
-    },
-    onError: (e: Error) => setMsg(`✗ ${e.message}`),
-  })
 
-  // Agrupar por Fase (código padre de la sub-fase, ej. "EST" de "EST.LIG")
-  const byFase = useMemo(() => {
-    const map: Record<string, CapturaPartida[]> = {}
-    captura.forEach(p => {
-      const f = (p.fase ?? '').split('.')[0] || 'SIN'
-      if (!map[f]) map[f] = []
-      map[f].push(p)
-    })
-    return Object.entries(map).sort(([a],[b]) => a.localeCompare(b))
-  }, [captura])
+class ImpPartida(BaseModel):
+    codigo: str
+    otm_id: Optional[str] = None
+    fase: Optional[str] = None           # None para nodos padre del WBS
+    sub_fase: Optional[str] = None
+    descripcion: str
+    unidad: Optional[str] = None         # None para nodos padre
+    sistema: Optional[str] = None
+    metrado_presup: float = 0
+    metrado_proyec: Optional[float] = None
+    hh_presup: float = 0
+    tipo_actividad: Optional[str] = None
+    hitos: Optional[list[HitoIn]] = None
+    nivel: Optional[int] = None          # profundidad en el WBS (calculado si None)
+    parent_codigo: Optional[str] = None  # código del nodo padre (calculado si None)
 
-  const toggleExp = (id: number) => setExpanded(prev => { const n = new Set(prev); n.has(id)?n.delete(id):n.add(id); return n })
 
-  if (isLoading) return <p className="text-k-text3 text-sm flex items-center gap-2"><Loader2 size={14} className="animate-spin"/>Cargando…</p>
+class ImpAvance(BaseModel):
+    codigo: str
+    semana: int
+    hito: int = Field(ge=1, le=10)
+    cantidad_acum: float = Field(ge=0)
 
-  if (!captura.length) return (
-    <div className={`${CARD} text-center py-10`}>
-      <p className="text-k-text3 text-sm">Sin actividades con avance para{otm ? ` ${otm}` : ' la selección'}.</p>
-      <p className="text-k-text3 text-xs mt-1">Importa partidas en la pestaña <strong>Importar</strong>.</p>
-    </div>
-  )
 
-  const totalHHTareo = captura.reduce((s,p) => s + (p.hh_tareo||0), 0)
-  const totalHHExtra = Object.values(hh).reduce((s,v) => s + (Number(v)||0), 0)
+class ImpHH(BaseModel):
+    codigo: str
+    semana: int
+    hh: float = Field(ge=0)
 
-  return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="text-xs text-k-text3">
-            Ingresa el <strong className="text-k-text2">acumulado a la fecha</strong> de cada actividad.
-            HH del tareo se calculan automáticamente — solo agrega HH extra si corresponde.
-          </p>
-          {msg && <p className={`mt-1 text-xs font-bold ${msg.startsWith('✓')?'text-k-green':'text-k-red'}`}>{msg}</p>}
-        </div>
-        <div className="flex items-center gap-3">
-          <div className="text-right">
-            <div className="text-[10px] text-k-text3 uppercase tracking-wider">HH Tareo auto</div>
-            <div className="font-mono text-sm font-bold text-k-green">{fmt(totalHHTareo)} HH</div>
-          </div>
-          {totalHHExtra > 0 && (
-            <div className="text-right">
-              <div className="text-[10px] text-k-text3 uppercase tracking-wider">HH Extra</div>
-              <div className="font-mono text-sm font-bold text-k-amber">{fmt(totalHHExtra)} HH</div>
-            </div>
-          )}
-          <button onClick={() => guardar.mutate()} disabled={guardar.isPending} className={BTN_AMBER}>
-            {guardar.isPending ? <Loader2 size={14} className="animate-spin"/> : <Save size={14}/>}
-            {guardar.isPending ? 'Guardando…' : `Guardar Sem ${semana}`}
-          </button>
-        </div>
-      </div>
 
-      <div className="rounded-xl border border-k-border overflow-hidden bg-k-surface">
-        <table className="w-full" style={{ fontSize:12 }}>
-          <thead>
-            <tr className="bg-k-raised border-b border-k-border">
-              {['Fase','Código','Descripción','Und','Meta','Anterior','Actual ↵','Δ Per.','HH Auto','+ Extra'].map((h,i) => (
-                <th key={h} className={`py-2 px-2 text-[10px] font-bold uppercase tracking-wider text-k-text3 ${ [6,9].includes(i)?'text-k-amber':[8].includes(i)?'text-k-green':i>=4?'text-right':''}`}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {byFase.map(([fase, parts]) => {
-              const c = FASE_COLOR_REG[fase] ?? '#888780'
-              return (
-                <Fragment key={fase}>
-                  <tr style={{ background:c+'15', borderTop:`1px solid ${c}40`, borderBottom:`0.5px solid ${c}30` }}>
-                    <td colSpan={10} className="py-1.5 px-3">
-                      <span style={{color:c}} className="text-[11px] font-bold uppercase tracking-wider">
-                        {fase} — {FASE_NOMBRES[fase] ?? fase}
-                      </span>
-                      <span className="ml-2 text-[10px] text-k-text3">{parts.length} actividad{parts.length!==1?'es':''}</span>
-                    </td>
-                  </tr>
-                  {parts.map(p => {
-                    const principal = p.hitos.find(x=>x.es_principal) ?? p.hitos[0]
-                    const tieneMulti = p.hitos.length > 1
-                    const isExp = expanded.has(p.partida_id)
-                    const actVal = principal ? Number(avances[principal.hito_id] ?? principal.cant_actual ?? 0) : 0
-                    const periodo = actVal - (principal?.cant_anterior ?? 0)
-                    return (
-                      <Fragment key={p.partida_id}>
-                        <tr className="border-b border-k-border" style={{background:'transparent'}} onMouseEnter={e=>(e.currentTarget.style.background='#1c2436')} onMouseLeave={e=>(e.currentTarget.style.background='transparent')}>
-                          <td className="py-1 px-2">
-                            <span style={{color:c,fontFamily:'var(--mono)',fontSize:10,fontWeight:700}}>{p.fase ?? '—'}</span>
-                          </td>
-                          <td className="py-1 px-2">
-                            <div className="flex items-center gap-1">
-                              {tieneMulti && (
-                                <button onClick={()=>toggleExp(p.partida_id)} className="text-k-text3 hover:text-k-amber" style={{fontSize:10,lineHeight:1,background:'none',border:'none',cursor:'pointer'}}>
-                                  {isExp?'▾':'▸'}
-                                </button>
-                              )}
-                              <span className="font-mono text-k-amber" style={{fontSize:10}}>{p.codigo}</span>
-                            </div>
-                          </td>
-                          <td className="py-1 px-2" style={{maxWidth:260}}>
-                            <span className="text-k-text2 truncate block" style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={p.descripcion}>{p.descripcion}</span>
-                          </td>
-                          <td className="py-1 px-2 text-center text-k-text3 font-mono" style={{fontSize:11}}>{p.unidad??'—'}</td>
-                          <td className="py-1 px-2 text-right font-mono text-k-text3" style={{fontSize:11}}>{fmt(p.metrado_proyec)}</td>
-                          <td className="py-1 px-2 text-right font-mono text-k-text3" style={{fontSize:11}}>{fmt(principal?.cant_anterior??0)}</td>
-                          <td className="py-1 px-1" style={{minWidth:90}}>
-                            {principal ? (
-                              <input type="number" step="0.01" min="0"
-                                value={avances[principal.hito_id] ?? ''}
-                                onChange={e => setAvances({...avances,[principal.hito_id]:e.target.value})}
-                                className="w-full bg-k-void border border-k-amber/40 focus:border-k-amber rounded px-2 py-1 text-k-text font-mono outline-none text-right transition-colors" style={{fontSize:12}} />
-                            ) : <span className="text-k-text3">—</span>}
-                          </td>
-                          <td className={`py-1 px-2 text-right font-mono font-bold ${periodo>0?'text-k-green':periodo<0?'text-k-red':'text-k-text3'}`} style={{fontSize:11}}>
-                            {periodo>0?'+':''}{fmt(periodo)}
-                          </td>
-                          <td className="py-1 px-2 text-right font-mono text-k-green" style={{fontSize:11}}>
-                            {p.hh_tareo>0?fmt(p.hh_tareo):'—'}
-                          </td>
-                          <td className="py-1 px-1" style={{minWidth:70}}>
-                            <input type="number" step="0.5" min="0"
-                              value={hh[p.partida_id]??''} placeholder="0"
-                              onChange={e => setHh({...hh,[p.partida_id]:e.target.value})}
-                              className="w-full bg-k-void border border-k-border focus:border-k-amber rounded px-2 py-1 text-k-text font-mono outline-none text-right transition-colors" style={{fontSize:12}} />
-                          </td>
-                        </tr>
-                        {tieneMulti && isExp && p.hitos.map(x => {
-                          const sub = Number(avances[x.hito_id]??x.cant_actual??0)
-                          const sp = sub - x.cant_anterior
-                          return (
-                            <tr key={x.hito_id} className="border-b border-k-border bg-k-raised/30">
-                              <td/><td className="py-1 px-2 pl-6"><span className="text-k-text3 font-bold" style={{fontSize:10}}>H{x.numero}</span></td>
-                              <td className="py-1 px-2" colSpan={2}><span className="text-k-text3" style={{fontSize:11}}>{x.descripcion} ({(x.peso*100).toFixed(0)}%)</span></td>
-                              <td className="py-1 px-2 text-right font-mono text-k-text3" style={{fontSize:11}}>{fmt(p.metrado_proyec)}</td>
-                              <td className="py-1 px-2 text-right font-mono text-k-text3" style={{fontSize:11}}>{fmt(x.cant_anterior)}</td>
-                              <td className="py-1 px-1">
-                                <input type="number" step="0.01" min="0"
-                                  value={avances[x.hito_id]??''} onChange={e=>setAvances({...avances,[x.hito_id]:e.target.value})}
-                                  className="w-full bg-k-void border border-k-amber/30 focus:border-k-amber rounded px-2 py-1 font-mono outline-none text-right transition-colors" style={{fontSize:11}} />
-                              </td>
-                              <td className={`py-1 px-2 text-right font-mono font-bold ${sp>0?'text-k-green':sp<0?'text-k-red':'text-k-text3'}`} style={{fontSize:10}}>{sp>0?'+':''}{fmt(sp)}</td>
-                              <td colSpan={2}/>
-                            </tr>
-                          )
-                        })}
-                      </Fragment>
+class ImportarIn(BaseModel):
+    partidas: list[ImpPartida]
+    avances: list[ImpAvance] = []
+    hh: list[ImpHH] = []
+
+
+class AsignarHHIn(BaseModel):
+    otm_id: str
+    fecha: date
+    partida_id: int
+
+
+def _validar_pesos(hitos: list[HitoIn]):
+    total = round(sum(h.peso for h in hitos), 4)
+    if abs(total - 1.0) > 0.0001:
+        raise HTTPException(400, f"Los pesos de los hitos deben sumar 1.00 (suman {total})")
+    if sum(1 for h in hitos if h.es_principal) != 1:
+        raise HTTPException(400, "Debe haber exactamente un hito principal")
+    numeros = [h.numero for h in hitos]
+    if len(numeros) != len(set(numeros)):
+        raise HTTPException(400, "Números de hito repetidos")
+
+
+# ---------------------- Config (fecha base) ----------------------
+async def _fecha_base(con) -> Optional[date]:
+    v = await con.fetchval("SELECT valor FROM ev_config WHERE clave='fecha_base'")
+    if v:
+        return date.fromisoformat(v)
+    # Auto: lunes de la semana del primer registro de tareo con HH
+    f = await con.fetchval(
+        "SELECT MIN(fecha) FROM registros WHERE hh IS NOT NULL AND hh > 0"
+    )
+    if f:
+        return f - timedelta(days=f.weekday())
+    return None
+
+
+def _semana_de(fecha: date, base: date) -> int:
+    return (fecha - base).days // 7 + 1
+
+
+@router.get("/config")
+async def get_config():
+    pool = await db()
+    async with pool.acquire() as con:
+        base = await _fecha_base(con)
+    return {"fecha_base": base.isoformat() if base else None}
+
+
+@router.put("/config")
+async def put_config(body: dict):
+    fb = body.get("fecha_base")
+    if not fb:
+        raise HTTPException(400, "fecha_base requerida (YYYY-MM-DD)")
+    date.fromisoformat(fb)  # valida formato
+    pool = await db()
+    async with pool.acquire() as con:
+        await con.execute(
+            """INSERT INTO ev_config (clave, valor) VALUES ('fecha_base', $1)
+               ON CONFLICT (clave) DO UPDATE SET valor=$1""", fb
+        )
+    return {"ok": True, "fecha_base": fb}
+
+
+# ---------------------- Plantillas de hitos ----------------------
+@router.get("/plantillas")
+async def listar_plantillas():
+    pool = await db()
+    async with pool.acquire() as con:
+        rows = await con.fetch("SELECT * FROM ev_plantillas_hitos ORDER BY tipo_actividad")
+    return [
+        {"tipo_actividad": r["tipo_actividad"], "hitos": json.loads(r["hitos"])}
+        for r in rows
+    ]
+
+
+@router.post("/plantillas")
+async def guardar_plantilla(body: PlantillaIn):
+    _validar_pesos(body.hitos)
+    pool = await db()
+    async with pool.acquire() as con:
+        await con.execute(
+            """INSERT INTO ev_plantillas_hitos (tipo_actividad, hitos) VALUES ($1, $2)
+               ON CONFLICT (tipo_actividad) DO UPDATE SET hitos=$2""",
+            body.tipo_actividad.strip().upper(),
+            json.dumps([h.model_dump() for h in body.hitos]),
+        )
+    return {"ok": True}
+
+
+# ---------------------- CRUD Partidas ----------------------
+@router.get("/partidas")
+async def listar_partidas(otm: Optional[str] = None):
+    pool = await db()
+    async with pool.acquire() as con:
+        if otm:
+            partidas = await con.fetch(
+                "SELECT * FROM ev_partidas WHERE activo AND otm_id=$1 ORDER BY codigo", otm
+            )
+        else:
+            partidas = await con.fetch("SELECT * FROM ev_partidas WHERE activo ORDER BY codigo")
+        hitos = await con.fetch("SELECT * FROM ev_hitos ORDER BY partida_id, numero")
+    por_partida = defaultdict(list)
+    for h in hitos:
+        por_partida[h["partida_id"]].append(dict(h))
+    return [{**dict(p), "hitos": por_partida.get(p["id"], [])} for p in partidas]
+
+
+@router.get("/otms")
+async def listar_otms_ev():
+    """TODAS las OTMs registradas, con su cantidad de partidas en el módulo EV (0 si aún no tiene)."""
+    pool = await db()
+    async with pool.acquire() as con:
+        rows = await con.fetch(
+            """SELECT o.id AS otm_id, o.descripcion, o.estado,
+                      COUNT(p.id) FILTER (WHERE p.activo) AS partidas
+               FROM otms o
+               LEFT JOIN ev_partidas p ON p.otm_id = o.id
+               GROUP BY o.id, o.descripcion, o.estado
+               ORDER BY o.id"""
+        )
+    return [dict(r) for r in rows]
+
+
+@router.post("/partidas")
+async def crear_partida(body: PartidaIn):
+    _validar_pesos(body.hitos)
+    pool = await db()
+    async with pool.acquire() as con:
+        async with con.transaction():
+            try:
+                pid = await con.fetchval(
+                    """INSERT INTO ev_partidas
+                       (codigo, otm_id, fase, sub_fase, descripcion, unidad, sistema,
+                        metrado_presup, metrado_proyec, hh_presup)
+                       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id""",
+                    body.codigo, body.otm_id, body.fase, body.sub_fase, body.descripcion,
+                    body.unidad, body.sistema, body.metrado_presup,
+                    body.metrado_proyec, body.hh_presup,
+                )
+            except asyncpg.UniqueViolationError:
+                raise HTTPException(409, f"Ya existe una partida con código {body.codigo}")
+            for h in body.hitos:
+                await con.execute(
+                    """INSERT INTO ev_hitos (partida_id, numero, descripcion, peso, es_principal)
+                       VALUES ($1,$2,$3,$4,$5)""",
+                    pid, h.numero, h.descripcion, h.peso, h.es_principal,
+                )
+    return {"id": pid, "ok": True}
+
+
+@router.put("/partidas/{partida_id}")
+async def actualizar_partida(partida_id: int, body: PartidaIn):
+    _validar_pesos(body.hitos)
+    pool = await db()
+    async with pool.acquire() as con:
+        async with con.transaction():
+            res = await con.execute(
+                """UPDATE ev_partidas SET codigo=$2, otm_id=$3, fase=$4, sub_fase=$5,
+                   descripcion=$6, unidad=$7, sistema=$8, metrado_presup=$9,
+                   metrado_proyec=$10, hh_presup=$11 WHERE id=$1""",
+                partida_id, body.codigo, body.otm_id, body.fase, body.sub_fase,
+                body.descripcion, body.unidad, body.sistema,
+                body.metrado_presup, body.metrado_proyec, body.hh_presup,
+            )
+            if res == "UPDATE 0":
+                raise HTTPException(404, "Partida no encontrada")
+            existentes = await con.fetch(
+                "SELECT id, numero FROM ev_hitos WHERE partida_id=$1", partida_id
+            )
+            por_numero = {e["numero"]: e["id"] for e in existentes}
+            nuevos = {h.numero for h in body.hitos}
+            for e in existentes:
+                if e["numero"] not in nuevos:
+                    await con.execute("DELETE FROM ev_hitos WHERE id=$1", e["id"])
+            for h in body.hitos:
+                if h.numero in por_numero:
+                    await con.execute(
+                        "UPDATE ev_hitos SET descripcion=$2, peso=$3, es_principal=$4 WHERE id=$1",
+                        por_numero[h.numero], h.descripcion, h.peso, h.es_principal,
                     )
-                  })}
-                </Fragment>
+                else:
+                    await con.execute(
+                        """INSERT INTO ev_hitos (partida_id, numero, descripcion, peso, es_principal)
+                           VALUES ($1,$2,$3,$4,$5)""",
+                        partida_id, h.numero, h.descripcion, h.peso, h.es_principal,
+                    )
+    return {"ok": True}
+
+
+@router.delete("/partidas/{partida_id}")
+async def eliminar_partida(partida_id: int):
+    pool = await db()
+    async with pool.acquire() as con:
+        await con.execute("UPDATE ev_partidas SET activo=FALSE WHERE id=$1", partida_id)
+    return {"ok": True}
+
+
+# ---------------------- Importador masivo ----------------------
+@router.post("/importar")
+async def importar(body: ImportarIn):
+    """Carga masiva en UNA transacción: partidas (upsert por código) +
+    histórico opcional de avances y HH. Si una fila falla, nada se guarda."""
+    pool = await db()
+    creadas, actualizadas = 0, 0
+    errores: list[str] = []
+
+    async with pool.acquire() as con:
+        pl_rows = await con.fetch("SELECT * FROM ev_plantillas_hitos")
+        plantillas = {r["tipo_actividad"]: json.loads(r["hitos"]) for r in pl_rows}
+
+        async with con.transaction():
+            codigo_a_id: dict[str, int] = {}
+
+            for i, p in enumerate(body.partidas, start=1):
+                # Calcular nivel y parent_codigo si no vienen en el payload
+                sep = '.' if '.' in p.codigo else ','
+                nivel = p.nivel or len(p.codigo.split(sep))
+                parent_codigo = p.parent_codigo
+                if parent_codigo is None and nivel > 1:
+                    parent_codigo = sep.join(p.codigo.split(sep)[:-1])
+
+                # Resolver hitos según tipo de nodo
+                if p.fase is None:
+                    # Nodo PADRE del WBS: sin hitos (rollup calculado desde hijos)
+                    hitos = []
+                elif p.hitos:
+                    try:
+                        hitos = [HitoIn(**h.model_dump()) for h in p.hitos]
+                        _validar_pesos(hitos)
+                    except HTTPException as e:
+                        errores.append(f"Fila {i} ({p.codigo}): {e.detail}"); continue
+                elif p.tipo_actividad:
+                    hitos_raw = plantillas.get(p.tipo_actividad.strip().upper())
+                    if hitos_raw is None:
+                        errores.append(
+                            f"Fila {i} ({p.codigo}): tipo_actividad '{p.tipo_actividad}' no existe"
+                        ); continue
+                    try:
+                        hitos = [HitoIn(**h) for h in hitos_raw]; _validar_pesos(hitos)
+                    except Exception as e:
+                        errores.append(f"Fila {i} ({p.codigo}): hitos inválidos ({e})"); continue
+                else:
+                    hitos_raw = plantillas.get("GENERICO", [
+                        {"numero": 1, "descripcion": "Ejecución", "peso": 1.0, "es_principal": True}
+                    ])
+                    try:
+                        hitos = [HitoIn(**h) for h in hitos_raw]; _validar_pesos(hitos)
+                    except Exception as e:
+                        errores.append(f"Fila {i} ({p.codigo}): {e}"); continue
+
+                existente = await con.fetchval(
+                    "SELECT id FROM ev_partidas WHERE codigo=$1", p.codigo
+                )
+                if existente:
+                    await con.execute(
+                        """UPDATE ev_partidas SET otm_id=$2, fase=$3, sub_fase=$4, descripcion=$5,
+                           unidad=$6, sistema=$7, metrado_presup=$8, metrado_proyec=$9,
+                           hh_presup=$10, nivel=$11, parent_codigo=$12, activo=TRUE WHERE id=$1""",
+                        existente, p.otm_id, p.fase, p.sub_fase, p.descripcion, p.unidad,
+                        p.sistema, p.metrado_presup, p.metrado_proyec, p.hh_presup,
+                        nivel, parent_codigo,
+                    )
+                    await con.execute("DELETE FROM ev_hitos WHERE partida_id=$1", existente)
+                    pid = existente; actualizadas += 1
+                else:
+                    pid = await con.fetchval(
+                        """INSERT INTO ev_partidas
+                           (codigo, otm_id, fase, sub_fase, descripcion, unidad, sistema,
+                            metrado_presup, metrado_proyec, hh_presup, nivel, parent_codigo)
+                           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id""",
+                        p.codigo, p.otm_id, p.fase, p.sub_fase, p.descripcion, p.unidad,
+                        p.sistema, p.metrado_presup, p.metrado_proyec, p.hh_presup,
+                        nivel, parent_codigo,
+                    )
+                    creadas += 1
+                codigo_a_id[p.codigo] = pid
+                for h in hitos:
+                    await con.execute(
+                        """INSERT INTO ev_hitos (partida_id, numero, descripcion, peso, es_principal)
+                           VALUES ($1,$2,$3,$4,$5)""",
+                        pid, h.numero, h.descripcion, h.peso, h.es_principal,
+                    )
+
+            if errores:
+                raise HTTPException(400, {"errores": errores})
+
+            # mapa hito (partida, numero) -> id para el histórico
+            hitos_db = await con.fetch("SELECT id, partida_id, numero FROM ev_hitos")
+            hito_id = {(h["partida_id"], h["numero"]): h["id"] for h in hitos_db}
+
+            av_ins, hist_err = 0, []
+            for a in body.avances:
+                pid = codigo_a_id.get(a.codigo) or await con.fetchval(
+                    "SELECT id FROM ev_partidas WHERE codigo=$1", a.codigo
+                )
+                if not pid:
+                    hist_err.append(f"Avance: código {a.codigo} no existe")
+                    continue
+                hid = hito_id.get((pid, a.hito))
+                if not hid:
+                    hist_err.append(f"Avance: {a.codigo} no tiene hito {a.hito}")
+                    continue
+                await con.execute(
+                    """INSERT INTO ev_avances (hito_id, semana, cantidad_acum)
+                       VALUES ($1,$2,$3)
+                       ON CONFLICT (hito_id, semana) DO UPDATE SET cantidad_acum=$3""",
+                    hid, a.semana, a.cantidad_acum,
+                )
+                av_ins += 1
+
+            hh_ins = 0
+            for r in body.hh:
+                pid = codigo_a_id.get(r.codigo) or await con.fetchval(
+                    "SELECT id FROM ev_partidas WHERE codigo=$1", r.codigo
+                )
+                if not pid:
+                    hist_err.append(f"HH: código {r.codigo} no existe")
+                    continue
+                await con.execute(
+                    """INSERT INTO ev_hh_gastadas (partida_id, semana, hh, fuente)
+                       VALUES ($1,$2,$3,'importado')
+                       ON CONFLICT (partida_id, semana) DO UPDATE SET hh=$3""",
+                    pid, r.semana, r.hh,
+                )
+                hh_ins += 1
+
+            if hist_err:
+                raise HTTPException(400, {"errores": hist_err})
+
+    return {
+        "ok": True,
+        "partidas_creadas": creadas,
+        "partidas_actualizadas": actualizadas,
+        "avances_importados": av_ins,
+        "hh_importadas": hh_ins,
+    }
+
+
+# ---------------------- Tareo QR → partida ----------------------
+@router.get("/hh-sin-asignar")
+async def hh_sin_asignar(desde: Optional[date] = None):
+    """Días × OTM con HH del tareo aún sin partida asignada."""
+    pool = await db()
+    async with pool.acquire() as con:
+        rows = await con.fetch(
+            """SELECT otm_id, fecha, SUM(hh) AS hh, COUNT(*) AS registros
+               FROM registros
+               WHERE partida_id IS NULL AND hh IS NOT NULL
+                 AND ($1::date IS NULL OR fecha >= $1)
+               GROUP BY otm_id, fecha ORDER BY fecha DESC, otm_id""",
+            desde,
+        )
+    return [
+        {"otm_id": r["otm_id"], "fecha": r["fecha"].isoformat(),
+         "hh": float(r["hh"]), "registros": r["registros"]}
+        for r in rows
+    ]
+
+
+@router.post("/asignar-hh")
+async def asignar_hh(body: AsignarHHIn):
+    """Etiqueta los registros del tareo de una OTM en una fecha con la partida trabajada."""
+    pool = await db()
+    async with pool.acquire() as con:
+        ok = await con.fetchval(
+            "SELECT id FROM ev_partidas WHERE id=$1 AND activo", body.partida_id
+        )
+        if not ok:
+            raise HTTPException(404, "Partida no encontrada")
+        res = await con.execute(
+            "UPDATE registros SET partida_id=$1 WHERE otm_id=$2 AND fecha=$3",
+            body.partida_id, body.otm_id, body.fecha,
+        )
+    return {"ok": True, "registros_actualizados": int(res.split()[-1])}
+
+
+# ---------------------- Captura semanal ----------------------
+@router.get("/semanas")
+async def semanas():
+    pool = await db()
+    async with pool.acquire() as con:
+        base = await _fecha_base(con)
+        rows = await con.fetch(
+            """SELECT DISTINCT semana FROM (
+                 SELECT semana FROM ev_avances
+                 UNION SELECT semana FROM ev_hh_gastadas
+               ) s"""
+        )
+        sem = {r["semana"] for r in rows}
+        if base:
+            tareo = await con.fetch("SELECT DISTINCT fecha FROM ev_hh_tareo")
+            for t in tareo:
+                sem.add(_semana_de(t["fecha"], base))
+    return sorted(sem)
+
+
+async def _hh_tareo_por_semana(con) -> dict:
+    """{(partida_id, semana): hh} — auto-distribuido desde registros por OTM.
+    Distribuye las HH de cada OTM proporcionalmente al presupuesto de cada partida.
+    Si no hay partidas para un OTM, sus HH no se asignan (no cuentan en EV).
+    """
+    base = await _fecha_base(con)
+    out: dict = defaultdict(float)
+    if not base:
+        return out
+
+    # HH registradas por OTM por día
+    rows_reg = await con.fetch("""
+        SELECT otm_id, fecha, SUM(hh) AS hh_total
+        FROM registros
+        WHERE hh IS NOT NULL AND hh > 0
+        GROUP BY otm_id, fecha
+    """)
+
+    # Peso de cada partida activa dentro de su OTM (proporcional a hh_presup)
+    rows_peso = await con.fetch("""
+        WITH hoja AS (
+            -- Solo nodos hoja: su codigo NO aparece como parent_codigo de nadie
+            SELECT id, otm_id, hh_presup
+            FROM ev_partidas p
+            WHERE activo = true AND hh_presup > 0
+              AND NOT EXISTS (
+                  SELECT 1 FROM ev_partidas ch
+                  WHERE ch.parent_codigo = p.codigo
+                    AND ch.otm_id = p.otm_id
+                    AND ch.activo = true
               )
-            })}
-          </tbody>
-          <tfoot>
-            <tr className="border-t border-k-border bg-k-raised">
-              <td colSpan={8} className="py-2 px-3 text-[11px] text-k-text3 font-bold">{captura.length} actividades</td>
-              <td className="py-2 px-2 text-right font-mono text-k-green font-bold" style={{fontSize:12}}>{totalHHTareo>0?fmt(totalHHTareo):'—'}</td>
-              <td className="py-2 px-2 text-right font-mono text-k-amber font-bold" style={{fontSize:12}}>{totalHHExtra>0?fmt(totalHHExtra):'—'}</td>
-            </tr>
-          </tfoot>
-        </table>
-      </div>
-    </div>
-  )
-}
+        )
+        SELECT id AS partida_id, otm_id,
+               hh_presup::float /
+               NULLIF(SUM(hh_presup) OVER (PARTITION BY otm_id), 0.0) AS peso
+        FROM hoja
+    """)
+
+    otm_pesos: dict = defaultdict(list)
+    for p in rows_peso:
+        otm_pesos[p['otm_id']].append((p['partida_id'], float(p['peso'] or 0)))
+
+    for r in rows_reg:
+        hh      = float(r['hh_total'])
+        semana  = _semana_de(r['fecha'], base)
+        for pid, peso in otm_pesos.get(r['otm_id'], []):
+            out[(pid, semana)] += round(hh * peso, 4)
+
+    return out
 
 
-// ============================================================
-// TAB 4: Configuración (hoja Fases: WBS + hitos ponderados)
-// ============================================================
-const PARTIDA_VACIA: PartidaInput = {
-  codigo: '', otm_id: null, fase: '', sub_fase: null, descripcion: '', unidad: '',
-  sistema: null, metrado_presup: 0, metrado_proyec: null, hh_presup: 0,
-  hitos: [{ numero: 1, descripcion: '', peso: 1, es_principal: true }],
-}
+async def _hh_real_por_semana(con) -> dict:
+    """{(partida_id, semana): hh} — HH EXACTAS del tareo de la app (tareo_partida).
+    La semana se recalcula desde la fecha con la misma base (lunes) que usa el
+    ISP, para no depender de tareo_partida.semana (que pudo guardarse con otra
+    lógica en filas antiguas)."""
+    out: dict = defaultdict(float)
+    base = await _fecha_base(con)
+    if not base:
+        return out
+    rows = await con.fetch(
+        """SELECT partida_id, fecha, SUM(hh) AS hh
+           FROM tareo_partida
+           WHERE hh IS NOT NULL
+           GROUP BY partida_id, fecha"""
+    )
+    for r in rows:
+        out[(r['partida_id'], _semana_de(r['fecha'], base))] += float(r['hh'])
+    return out
 
-function TabConfig() {
-  const qc = useQueryClient()
-  const { data: partidas = [], isLoading } = useQuery<Partida[]>({
-    queryKey: ['ev-partidas'],
-    queryFn: () => req('/ev/partidas'),
-  })
 
-  const [editando, setEditando] = useState<number | null>(null)
-  const [form, setForm] = useState<PartidaInput | null>(null)
-  const [errMsg, setErrMsg] = useState('')
+async def _hh_gastadas_unificada(con) -> dict:
+    """FUENTE ÚNICA de HH gastadas por (partida, semana) para árbol/ISP/reporte.
 
-  const invalidar = () => {
-    qc.invalidateQueries({ queryKey: ['ev-partidas'] })
-    qc.invalidateQueries({ queryKey: ['ev-reporte'] })
-    qc.invalidateQueries({ queryKey: ['ev-captura'] })
-    qc.invalidateQueries({ queryKey: ['ev-curva'] })
-  }
+    Precedencia (de mayor a menor):
+      1. override manual del residente  (ev_hh_gastadas fuente 'manual'/'distribucion')
+      2. tareo_partida REAL              (lo que captura la app — fuente principal)
+      3. migración histórica             (ev_hh_gastadas fuente 'historico'/'importado')
+      4. estimación proporcional         (desde registros, fallback legacy)
 
-  const guardar = useMutation({
-    mutationFn: (f: PartidaInput) =>
-      editando !== null
-        ? req(`/ev/partidas/${editando}`, { method: 'PUT', body: JSON.stringify(f) })
-        : req('/ev/partidas', { method: 'POST', body: JSON.stringify(f) }),
-    onSuccess: () => { invalidar(); setForm(null); setErrMsg('') },
-    onError: (e: Error) => setErrMsg(e.message),
-  })
+    Las filas 'diario'/'tareo' de ev_hh_gastadas (que producía el botón
+    "Volcar al ISP") se IGNORAN: ahora se lee tareo_partida directamente, así que
+    el volcado manual ya no es necesario y no hay doble conteo.
+    """
+    out: dict = {}
+    # 4) proporcional (más bajo)
+    for k, v in (await _hh_tareo_por_semana(con)).items():
+        out[k] = v
+    # separar overrides y migración de ev_hh_gastadas
+    rows = await con.fetch("SELECT partida_id, semana, hh, fuente FROM ev_hh_gastadas")
+    migr, override = {}, {}
+    for r in rows:
+        key = (r["partida_id"], r["semana"])
+        f = (r["fuente"] or "").lower()
+        if f in ("manual", "distribucion"):
+            override[key] = float(r["hh"])
+        elif f in ("historico", "importado"):
+            migr[key] = float(r["hh"])
+    # 3) migración histórica
+    for k, v in migr.items():
+        out[k] = v
+    # 2) tareo real (gana sobre proporcional y migración)
+    for k, v in (await _hh_real_por_semana(con)).items():
+        out[k] = v
+    # 1) override manual (gana sobre todo)
+    for k, v in override.items():
+        out[k] = v
+    return out
 
-  const eliminar = useMutation({
-    mutationFn: (id: number) => req(`/ev/partidas/${id}`, { method: 'DELETE' }),
-    onSuccess: invalidar,
-  })
 
-  const abrirEdicion = (p: Partida) => {
-    setEditando(p.id)
-    setErrMsg('')
-    setForm({
-      codigo: p.codigo, otm_id: p.otm_id, fase: p.fase, sub_fase: p.sub_fase,
-      descripcion: p.descripcion, unidad: p.unidad, sistema: p.sistema,
-      metrado_presup: Number(p.metrado_presup),
-      metrado_proyec: p.metrado_proyec !== null ? Number(p.metrado_proyec) : null,
-      hh_presup: Number(p.hh_presup),
-      hitos: p.hitos.map(h => ({
-        numero: h.numero, descripcion: h.descripcion,
-        peso: Number(h.peso), es_principal: h.es_principal,
-      })),
-    })
-  }
+@router.get("/captura")
+async def captura(semana: int):
+    pool = await db()
+    async with pool.acquire() as con:
+        partidas = await con.fetch("SELECT * FROM ev_partidas WHERE activo ORDER BY codigo")
+        hitos = await con.fetch("SELECT * FROM ev_hitos ORDER BY partida_id, numero")
+        avances = await con.fetch(
+            """SELECT hito_id, semana, cantidad_acum FROM ev_avances
+               WHERE semana <= $1 ORDER BY hito_id, semana""", semana
+        )
+        hh_man = await con.fetch(
+            "SELECT partida_id, semana, hh FROM ev_hh_gastadas WHERE semana = $1", semana
+        )
+        tareo = await _hh_tareo_por_semana(con)
 
-  if (isLoading) {
-    return <p className="text-k-text3 text-sm flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Cargando partidas…</p>
-  }
+    ult_av, av_actual = {}, {}
+    for a in avances:
+        if a["semana"] == semana:
+            av_actual[a["hito_id"]] = float(a["cantidad_acum"])
+        else:
+            ult_av[a["hito_id"]] = float(a["cantidad_acum"])
 
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-xs text-k-text3 max-w-2xl">
-          Define el WBS y los hitos ponderados (rules of credit). Los pesos de cada partida deben sumar
-          100% y debe existir un único hito principal — el que reporta la cantidad instalada oficial.
-        </p>
-        <button onClick={() => { setEditando(null); setErrMsg(''); setForm({ ...PARTIDA_VACIA, hitos: [...PARTIDA_VACIA.hitos] }) }}
-          className={BTN_AMBER}>
-          <Plus size={14} /> Nueva partida
-        </button>
-      </div>
+    hh_manual = {r["partida_id"]: float(r["hh"]) for r in hh_man}
 
-      <div className="bg-k-surface border border-k-border rounded-xl overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full whitespace-nowrap">
-            <thead>
-              <tr className="border-b border-k-border bg-k-raised/50">
-                <th className={TH}>OTM</th>
-                <th className={TH}>Código</th>
-                <th className={TH}>Descripción</th>
-                <th className={TH}>Und</th>
-                <th className={TH}>Sistema</th>
-                <th className={`${TH} text-right`}>Metrado Ppto</th>
-                <th className={`${TH} text-right`}>Metrado Proyec</th>
-                <th className={`${TH} text-right`}>HH Ppto</th>
-                <th className={TH}>Hitos</th>
-                <th className={`${TH} text-right`}>Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {partidas.map(p => (
-                <tr key={p.id} className="border-b border-k-border last:border-0 hover:bg-k-raised/40 transition-colors">
-                  <td className={`${TD} text-[11px]`}>{p.otm_id ?? '—'}</td>
-                  <td className={`${TD} font-mono text-[11px] text-k-amber`}>{p.codigo}</td>
-                  <td className={`${TD} max-w-[280px] truncate`} title={p.descripcion}>{p.descripcion}</td>
-                  <td className={TD}>{p.unidad}</td>
-                  <td className={TD}>{p.sistema ?? '—'}</td>
-                  <td className={`${TD} text-right font-mono`}>{fmt(Number(p.metrado_presup))}</td>
-                  <td className={`${TD} text-right font-mono`}>
-                    {p.metrado_proyec !== null ? fmt(Number(p.metrado_proyec)) : <span className="text-k-text3">= ppto</span>}
-                  </td>
-                  <td className={`${TD} text-right font-mono`}>{fmt(Number(p.hh_presup), 0)}</td>
-                  <td className={`${TD} text-[10px] text-k-text3 font-mono`}>
-                    {p.hitos.map(h => `${(Number(h.peso) * 100).toFixed(0)}%`).join(' / ')}
-                  </td>
-                  <td className={`${TD} text-right`}>
-                    <div className="inline-flex gap-1.5">
-                      <button onClick={() => abrirEdicion(p)}
-                        className="inline-flex items-center gap-1.5 text-[11px] font-bold text-k-blue bg-blue-500/10 border border-blue-500/20 hover:bg-blue-500/20 px-3 py-1.5 rounded-lg transition-colors">
-                        <Pencil size={11} /> Editar
-                      </button>
-                      <button
-                        onClick={() => {
-                          if (window.confirm(`¿Desactivar la partida ${p.codigo}? Sus avances históricos se conservan.`)) {
-                            eliminar.mutate(p.id)
-                          }
-                        }}
-                        className="inline-flex items-center gap-1.5 text-[11px] font-bold text-k-red bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 px-3 py-1.5 rounded-lg transition-colors">
-                        <Trash2 size={11} /> Eliminar
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {partidas.length === 0 && (
-                <tr><td colSpan={10} className="py-8 text-center text-k-text3 text-sm">
-                  Sin partidas. Crea la primera con el botón "Nueva partida".
-                </td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-        <div className="px-4 py-2 border-t border-k-border bg-k-raised">
-          <span className="text-[11px] text-k-text3">{partidas.length} partidas activas</span>
-        </div>
-      </div>
+    por_partida = defaultdict(list)
+    for h in hitos:
+        por_partida[h["partida_id"]].append(h)
 
-      {form && (
-        <ModalPartida
-          form={form}
-          setForm={setForm}
-          editando={editando}
-          errMsg={errMsg}
-          guardando={guardar.isPending}
-          onGuardar={() => guardar.mutate(form)}
-          onCerrar={() => { setForm(null); setErrMsg('') }}
-        />
-      )}
-    </div>
-  )
-}
+    out = []
+    for p in partidas:
+        out.append({
+            "partida_id": p["id"],
+            "codigo": p["codigo"],
+            "otm_id": p["otm_id"],
+            "descripcion": p["descripcion"],
+            "unidad": p["unidad"],
+            "metrado_proyec": float(p["metrado_proyec"] or p["metrado_presup"]),
+            "hh_tareo": round(tareo.get((p["id"], semana), 0.0), 2),
+            "hh_semana": hh_manual.get(p["id"], 0.0),
+            "hitos": [
+                {
+                    "hito_id": h["id"], "numero": h["numero"],
+                    "descripcion": h["descripcion"], "peso": float(h["peso"]),
+                    "es_principal": h["es_principal"],
+                    "cant_anterior": ult_av.get(h["id"], 0.0),
+                    "cant_actual": av_actual.get(h["id"], ult_av.get(h["id"], 0.0)),
+                }
+                for h in por_partida.get(p["id"], [])
+            ],
+        })
+    return out
 
-function ModalPartida({ form, setForm, editando, errMsg, guardando, onGuardar, onCerrar }: {
-  form: PartidaInput
-  setForm: (f: PartidaInput) => void
-  editando: number | null
-  errMsg: string
-  guardando: boolean
-  onGuardar: () => void
-  onCerrar: () => void
-}) {
-  const sumaPesos = form.hitos.reduce((s, h) => s + (Number(h.peso) || 0), 0)
-  const pesosOk = Math.abs(sumaPesos - 1) < 0.0001
-  const principalOk = form.hitos.filter(h => h.es_principal).length === 1
-  const camposOk = !!(form.codigo && form.fase && form.descripcion && form.unidad)
 
-  const setHito = (i: number, campo: keyof Omit<Hito, 'id'>, valor: unknown) => {
-    const hitos = form.hitos.map((h, idx) => {
-      if (campo === 'es_principal' && valor === true) return { ...h, es_principal: idx === i }
-      return idx === i ? { ...h, [campo]: valor } : h
-    })
-    setForm({ ...form, hitos })
-  }
+@router.post("/captura")
+async def guardar_captura(body: CapturaIn):
+    pool = await db()
+    async with pool.acquire() as con:
+        async with con.transaction():
+            for a in body.avances:
+                await con.execute(
+                    """INSERT INTO ev_avances (hito_id, semana, cantidad_acum)
+                       VALUES ($1,$2,$3)
+                       ON CONFLICT (hito_id, semana)
+                       DO UPDATE SET cantidad_acum=$3, registrado_en=now()""",
+                    a.hito_id, body.semana, a.cantidad_acum,
+                )
+            for r in body.hh_gastadas:
+                await con.execute(
+                    """INSERT INTO ev_hh_gastadas (partida_id, semana, hh, fuente)
+                       VALUES ($1,$2,$3,'manual')
+                       ON CONFLICT (partida_id, semana) DO UPDATE SET hh=$3""",
+                    r.partida_id, body.semana, r.hh,
+                )
+    return {"ok": True}
 
-  return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-k-surface border border-k-border2 rounded-2xl p-6 w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl">
 
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h2 className="font-condensed font-bold text-xl text-k-text">
-              {editando !== null ? 'Editar partida' : 'Nueva partida'}
-            </h2>
-            {editando !== null && (
-              <p className="text-xs text-k-amber font-mono mt-0.5">{form.codigo}</p>
-            )}
-          </div>
-          <button onClick={onCerrar} className="text-k-text3 hover:text-k-text"><X size={18} /></button>
-        </div>
+# ---------------------- Motor de cálculo ----------------------
+def _acum_a_semana(avances, semana: int) -> dict:
+    acum = {}
+    for a in avances:
+        if a["semana"] <= semana:
+            acum[a["hito_id"]] = float(a["cantidad_acum"])
+    return acum
 
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-          <div>
-            <label className={LABEL}>OTM</label>
-            <input type="text" placeholder="OTM-014" value={form.otm_id ?? ''}
-              onChange={e => setForm({ ...form, otm_id: e.target.value || null })} className={INPUT} />
-          </div>
-          <div>
-            <label className={LABEL}>Código *</label>
-            <input type="text" placeholder="40,01,01" value={form.codigo}
-              onChange={e => setForm({ ...form, codigo: e.target.value })} className={INPUT} />
-          </div>
-          <div>
-            <label className={LABEL}>Fase *</label>
-            <input type="text" placeholder="40" value={form.fase}
-              onChange={e => setForm({ ...form, fase: e.target.value })} className={INPUT} />
-          </div>
-          <div>
-            <label className={LABEL}>Sub fase</label>
-            <input type="text" placeholder="40,01" value={form.sub_fase ?? ''}
-              onChange={e => setForm({ ...form, sub_fase: e.target.value || null })} className={INPUT} />
-          </div>
-          <div className="col-span-2">
-            <label className={LABEL}>Descripción *</label>
-            <input type="text" value={form.descripcion}
-              onChange={e => setForm({ ...form, descripcion: e.target.value })} className={INPUT} />
-          </div>
-          <div>
-            <label className={LABEL}>Unidad *</label>
-            <input type="text" placeholder="m3 / kg / glb" value={form.unidad}
-              onChange={e => setForm({ ...form, unidad: e.target.value })} className={INPUT} />
-          </div>
-          <div>
-            <label className={LABEL}>Sistema (ej. MOV01)</label>
-            <input type="text" value={form.sistema ?? ''}
-              onChange={e => setForm({ ...form, sistema: e.target.value || null })} className={INPUT} />
-          </div>
-          <div>
-            <label className={LABEL}>Metrado presupuestado</label>
-            <input type="number" step="0.01" value={form.metrado_presup}
-              onChange={e => setForm({ ...form, metrado_presup: Number(e.target.value) })} className={INPUT} />
-          </div>
-          <div>
-            <label className={LABEL}>Metrado proyectado (vacío = ppto)</label>
-            <input type="number" step="0.01" value={form.metrado_proyec ?? ''}
-              onChange={e => setForm({
-                ...form,
-                metrado_proyec: e.target.value === '' ? null : Number(e.target.value),
-              })} className={INPUT} />
-          </div>
-          <div>
-            <label className={LABEL}>HH presupuestadas</label>
-            <input type="number" step="0.01" value={form.hh_presup}
-              onChange={e => setForm({ ...form, hh_presup: Number(e.target.value) })} className={INPUT} />
-          </div>
-        </div>
 
-        <div className="mt-6 space-y-3">
-          <div className="flex items-center justify-between">
-            <span className={LABEL.replace('block mb-1.5', '')}>Hitos ponderados (rules of credit)</span>
-            <div className="flex items-center gap-2">
-              <span className={`font-mono text-[11px] font-bold px-2 py-0.5 rounded border ${
-                pesosOk
-                  ? 'text-k-green bg-green-500/10 border-green-500/20'
-                  : 'text-k-red bg-red-500/10 border-red-500/20'
-              }`}>
-                Σ pesos: {(sumaPesos * 100).toFixed(1)}%
-              </span>
-              <button
-                disabled={form.hitos.length >= 10}
-                onClick={() => setForm({
-                  ...form,
-                  hitos: [...form.hitos, {
-                    numero: Math.max(...form.hitos.map(h => h.numero)) + 1,
-                    descripcion: '', peso: 0, es_principal: false,
-                  }],
-                })}
-                className="inline-flex items-center gap-1.5 text-[11px] font-bold text-k-amber bg-amber-500/10 border border-amber-500/20 hover:bg-amber-500/20 disabled:opacity-40 px-3 py-1.5 rounded-lg transition-colors">
-                <Plus size={11} /> Hito
-              </button>
-            </div>
-          </div>
+def _calcular(partidas, hitos, avances, hh_rows, tareo, semana: int):
+    """hh_rows: ev_hh_gastadas (manual/importado). tareo: {(pid,sem):hh} del QR.
+    HH gastadas totales = manual + tareo."""
+    por_partida = defaultdict(list)
+    for h in hitos:
+        por_partida[h["partida_id"]].append(h)
 
-          {form.hitos.map((h, i) => (
-            <div key={i} className="grid grid-cols-12 gap-2 items-center">
-              <input type="number" min={1} max={10} value={h.numero}
-                onChange={e => setHito(i, 'numero', Number(e.target.value))}
-                className={`${INPUT} col-span-2 md:col-span-1 font-mono text-center`} />
-              <input type="text" placeholder="Descripción del hito" value={h.descripcion}
-                onChange={e => setHito(i, 'descripcion', e.target.value)}
-                className={`${INPUT} col-span-10 md:col-span-6`} />
-              <input type="number" step="0.01" min={0} max={1} placeholder="Peso 0-1" value={h.peso}
-                onChange={e => setHito(i, 'peso', Number(e.target.value))}
-                className={`${INPUT} col-span-4 md:col-span-2 font-mono`} />
-              <label className="col-span-6 md:col-span-2 flex items-center gap-1.5 text-[11px] text-k-text2 cursor-pointer">
-                <input type="radio" name="hito-principal" checked={h.es_principal}
-                  onChange={() => setHito(i, 'es_principal', true)}
-                  className="accent-amber-500" />
-                Principal
-              </label>
-              <button disabled={form.hitos.length <= 1}
-                onClick={() => setForm({ ...form, hitos: form.hitos.filter((_, idx) => idx !== i) })}
-                className="col-span-2 md:col-span-1 text-k-red hover:bg-red-500/10 disabled:opacity-30 rounded-lg py-2 flex items-center justify-center transition-colors">
-                <X size={14} />
-              </button>
-            </div>
-          ))}
+    acum_s = _acum_a_semana(avances, semana)
+    acum_prev = _acum_a_semana(avances, semana - 1)
 
-          {!principalOk && (
-            <p className="text-[11px] text-k-red">Debe haber exactamente un hito principal.</p>
-          )}
-        </div>
+    hh_acum, hh_sem = defaultdict(float), defaultdict(float)
+    # Claves (partida_id, semana) con entrada manual — evita doble-conteo con tareo auto
+    manual_keys: set = set()
+    for r in hh_rows:
+        if r["semana"] <= semana:
+            hh_acum[r["partida_id"]] += float(r["hh"])
+            manual_keys.add((r["partida_id"], r["semana"]))
+        if r["semana"] == semana:
+            hh_sem[r["partida_id"]] += float(r["hh"])
+    # Solo agregar tareo automático cuando NO existe entrada manual para esa partida/semana
+    for (pid, s), v in tareo.items():
+        if (pid, s) not in manual_keys:
+            if s <= semana:
+                hh_acum[pid] += v
+            if s == semana:
+                hh_sem[pid] += v
 
-        {errMsg && (
-          <p className="mt-4 text-xs px-3 py-2 rounded-lg border text-k-red bg-red-500/10 border-red-500/20">
-            ✗ {errMsg}
-          </p>
-        )}
+    filas = []
+    for p in partidas:
+        pid = p["id"]
+        mp = float(p["metrado_proyec"] or p["metrado_presup"])
+        m_presup = float(p["metrado_presup"])
+        hh_presup = float(p["hh_presup"])
+        prod_presup = (hh_presup / m_presup) if m_presup > 0 else 0.0
+        hh_proyec = mp * prod_presup
 
-        <div className="flex gap-3 mt-6">
-          <button onClick={onCerrar} className={`flex-1 ${BTN_GHOST}`}>Cancelar</button>
-          <button onClick={onGuardar}
-            disabled={guardando || !pesosOk || !principalOk || !camposOk}
-            className={`flex-1 ${BTN_AMBER}`}>
-            {guardando ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-            {guardando ? 'Guardando…' : 'Guardar partida'}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
+        pct, pct_prev, cant_inst = 0.0, 0.0, 0.0
+        for h in por_partida.get(pid, []):
+            avance_h = (acum_s.get(h["id"], 0.0) / mp) if mp > 0 else 0.0
+            avance_h_prev = (acum_prev.get(h["id"], 0.0) / mp) if mp > 0 else 0.0
+            pct += float(h["peso"]) * min(avance_h, 1.0)
+            pct_prev += float(h["peso"]) * min(avance_h_prev, 1.0)
+            if h["es_principal"]:
+                cant_inst = acum_s.get(h["id"], 0.0)
+
+        ganadas_acum = pct * hh_proyec
+        ganadas_sem = ganadas_acum - (pct_prev * hh_proyec)
+        gastadas_acum = hh_acum.get(pid, 0.0)
+        gastadas_sem = hh_sem.get(pid, 0.0)
+
+        pf_acum = (ganadas_acum / gastadas_acum) if gastadas_acum > 0 else 0.0
+        pf_sem = (ganadas_sem / gastadas_sem) if gastadas_sem > 0 else 0.0
+        prod_real = (gastadas_acum / cant_inst) if cant_inst > 0 else 0.0
+        saldo_met = max(mp - cant_inst, 0.0)
+        eac_hh = (prod_real * saldo_met + gastadas_acum) if cant_inst > 0 else hh_proyec
+
+        filas.append({
+            "partida_id": pid,
+            "codigo": p["codigo"],
+            "otm_id": p["otm_id"],
+            "fase": p["fase"],
+            "sistema": p["sistema"],
+            "descripcion": p["descripcion"],
+            "unidad": p["unidad"],
+            "metrado_proyec": round(mp, 2),
+            "cantidad_instalada": round(cant_inst, 2),
+            "pct_avance": round(pct, 4),
+            "hh_presup": round(hh_presup, 2),
+            "hh_proyec": round(hh_proyec, 2),
+            "hh_ganadas_sem": round(ganadas_sem, 2),
+            "hh_ganadas_acum": round(ganadas_acum, 2),
+            "hh_gastadas_sem": round(gastadas_sem, 2),
+            "hh_gastadas_acum": round(gastadas_acum, 2),
+            "pf_sem": round(pf_sem, 3),
+            "pf_acum": round(pf_acum, 3),
+            "prod_presup": round(prod_presup, 4),
+            "prod_real": round(prod_real, 4),
+            "eac_hh": round(eac_hh, 2),
+            "desvio_hh": round(eac_hh - hh_proyec, 2),
+        })
+    return filas
+
+
+def _agrupar(filas, clave):
+    grupos = defaultdict(lambda: {"hh_proyec": 0.0, "ganadas": 0.0, "gastadas": 0.0, "eac": 0.0})
+    for f in filas:
+        k = f[clave] or "SIN ASIGNAR"
+        g = grupos[k]
+        g["hh_proyec"] += f["hh_proyec"]
+        g["ganadas"] += f["hh_ganadas_acum"]
+        g["gastadas"] += f["hh_gastadas_acum"]
+        g["eac"] += f["eac_hh"]
+    out = []
+    for k, g in sorted(grupos.items()):
+        out.append({
+            "grupo": k,
+            "hh_proyec": round(g["hh_proyec"], 2),
+            "hh_ganadas": round(g["ganadas"], 2),
+            "hh_gastadas": round(g["gastadas"], 2),
+            "pct_avance": round(g["ganadas"] / g["hh_proyec"], 4) if g["hh_proyec"] > 0 else 0,
+            "pf": round(g["ganadas"] / g["gastadas"], 3) if g["gastadas"] > 0 else 0,
+            "eac_hh": round(g["eac"], 2),
+        })
+    return out
+
+
+async def _datos_base(semana: int, otm: Optional[str] = None):
+    pool = await db()
+    async with pool.acquire() as con:
+        if otm:
+            partidas = await con.fetch(
+                "SELECT * FROM ev_partidas WHERE activo AND otm_id=$1 ORDER BY codigo", otm
+            )
+        else:
+            partidas = await con.fetch("SELECT * FROM ev_partidas WHERE activo ORDER BY codigo")
+        hitos = await con.fetch("SELECT * FROM ev_hitos ORDER BY partida_id, numero")
+        avances = await con.fetch(
+            "SELECT hito_id, semana, cantidad_acum FROM ev_avances WHERE semana <= $1 ORDER BY semana",
+            semana,
+        )
+        hh = await con.fetch(
+            "SELECT partida_id, semana, hh FROM ev_hh_gastadas WHERE semana <= $1", semana
+        )
+        tareo = await _hh_gastadas_unificada(con)
+    # hh_rows se devuelve vacío: las HH gastadas ya vienen unificadas en `tareo`
+    # (manual > tareo_partida real > histórico > proporcional). Ver _hh_gastadas_unificada.
+    return partidas, hitos, avances, [], tareo
+
+
+
+@router.get("/semanas-auto")
+async def semanas_auto():
+    """Semanas reales del proyecto (Lun-Dom) desde el primer registro de tareo.
+    Incluye semanas sin actividad para mostrar la línea de tiempo completa."""
+    pool = await db()
+    async with pool.acquire() as con:
+        base = await _fecha_base(con)
+        if not base:
+            return []
+
+        hh_rows = await con.fetch("""
+            SELECT DATE_TRUNC('week', fecha)::date AS lunes, SUM(hh) AS hh_total
+            FROM registros WHERE hh IS NOT NULL AND hh > 0
+            GROUP BY DATE_TRUNC('week', fecha)::date
+            ORDER BY lunes
+        """)
+        if not hh_rows:
+            # Sin registros aún — devolver semana 1 para que el panel no quede colgado
+            lunes0  = base
+            dom0    = lunes0 + timedelta(days=6)
+            def _fm(d): return f"{d.day} {['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'][d.month-1]}"
+            return [{
+                "semana": 1, "inicio": lunes0.isoformat(), "fin": dom0.isoformat(),
+                "hh": 0.0, "activa": False,
+                "label": f"Sem 1  ·  {_fm(lunes0)} – {_fm(dom0)}  (sin actividad aún)"
+            }]
+
+        hh_map: dict = {}
+        for r in hh_rows:
+            n = _semana_de(r['lunes'], base)
+            hh_map[n] = float(r['hh_total'])
+
+        today = date.today()
+        current_monday = today - timedelta(days=today.weekday())
+        total = max(_semana_de(current_monday, base), max(hh_map.keys()))
+
+        MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
+        def fmt(d: date) -> str:
+            return f"{d.day} {MESES[d.month-1]}"
+
+        result = []
+        for n in range(1, total + 1):
+            lunes  = base + timedelta(weeks=n - 1)
+            domingo = lunes + timedelta(days=6)
+            hh     = hh_map.get(n, 0.0)
+            result.append({
+                "semana": n,
+                "inicio": lunes.isoformat(),
+                "fin":    domingo.isoformat(),
+                "hh":     round(hh, 1),
+                "activa": hh > 0,
+                "label":  f"Sem {n}  ·  {fmt(lunes)} – {fmt(domingo)}"
+                          + ("" if hh > 0 else "  (sin actividad)"),
+            })
+        return result
+
+
+
+@router.get("/arbol")
+async def arbol_wbs(otm: Optional[str] = None, semana: int = 1):
+    """Árbol WBS completo (padre + hoja) con valores EV calculados.
+    Nodos padre tienen hh_ganadas/gastadas = 0 — el rollup lo hace el frontend."""
+    try:
+        pool = await db()
+        async with pool.acquire() as con:
+            if otm:
+                partidas = await con.fetch(
+                    "SELECT * FROM ev_partidas WHERE activo AND otm_id=$1 ORDER BY codigo", otm
+                )
+            else:
+                partidas = await con.fetch(
+                    "SELECT * FROM ev_partidas WHERE activo ORDER BY codigo"
+                )
+            hitos   = await con.fetch("SELECT * FROM ev_hitos ORDER BY partida_id, numero")
+            avances = await con.fetch(
+                "SELECT hito_id, semana, cantidad_acum FROM ev_avances WHERE semana <= $1", semana
+            )
+            tareo   = await _hh_gastadas_unificada(con)
+
+        filas_ev = _calcular(list(partidas), list(hitos), list(avances), [], tareo, semana)
+        ev_por_id = {f["partida_id"]: f for f in filas_ev}
+
+        result = []
+        for p in partidas:
+            ev = ev_por_id.get(p["id"], {})
+            result.append({
+                "id":              p["id"],
+                "codigo":          p["codigo"],
+                "otm_id":          p["otm_id"],
+                "fase":            p["fase"],
+                "sub_fase":        p["sub_fase"],
+                "descripcion":     p["descripcion"],
+                "unidad":          p["unidad"],
+                "hh_presup":       float(p["hh_presup"] or 0),
+                "metrado_presup":  float(p["metrado_presup"] or 0),
+                "metrado_proyec":  float(p["metrado_proyec"]) if p["metrado_proyec"] is not None else None,
+                "nivel":           int(p["nivel"] or 1),
+                "parent_codigo":   p["parent_codigo"],
+                "es_hoja":         p["fase"] is not None,
+                "hh_ganadas_acum": ev.get("hh_ganadas_acum", 0.0),
+                "hh_gastadas_acum":ev.get("hh_gastadas_acum", 0.0),
+                "pct_avance":      ev.get("pct_avance", 0.0),
+                "pf_acum":         ev.get("pf_acum", 0.0),
+            })
+        return {"semana": semana, "otm": otm, "filas": result}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"Error calculando árbol WBS: {e}")
+
+
+
+@router.post("/distribuir-hh")
+async def distribuir_hh(body: dict):
+    """Distribuye las HH de un OTM/fecha entre múltiples partidas.
+    Reemplaza la distribución automática proporcional para ese OTM/fecha/semana.
+    
+    Body: {otm_id, fecha, distribuciones: [{partida_id, hh}]}
+    """
+    otm_id       = str(body.get("otm_id", "")).strip()
+    fecha_str    = str(body.get("fecha", _hoy_lima().isoformat()))
+    distribs     = body.get("distribuciones", [])
+    if not otm_id or not distribs:
+        raise HTTPException(400, "otm_id y distribuciones son requeridos")
+
+    pool = await db()
+    async with pool.acquire() as con:
+        base = await _fecha_base(con)
+        if not base:
+            raise HTTPException(400, "No hay semanas configuradas")
+        from datetime import date
+        fecha = date.fromisoformat(fecha_str)
+        semana = _semana_de(fecha, base)
+
+        asignados = 0
+        for d in distribs:
+            pid = int(d.get("partida_id", 0))
+            hh  = float(d.get("hh", 0))
+            if pid <= 0 or hh <= 0:
+                continue
+            await con.execute(
+                """INSERT INTO ev_hh_gastadas (partida_id, semana, hh, fuente)
+                   VALUES ($1, $2, $3, 'distribucion')
+                   ON CONFLICT (partida_id, semana) DO UPDATE SET hh=$3, fuente='distribucion'""",
+                pid, semana, hh
+            )
+            asignados += 1
+
+    return {"ok": True, "semana": semana, "asignados": asignados}
+
+
+
+@router.get("/isp")
+async def isp_reporte(otm: Optional[str] = None):
+    """ISP completo estilo Fluor: ResPorSubFase + Productividades + Resumen.
+    Devuelve datos por partida × semana para el periodo completo del proyecto."""
+    try:
+        pool = await db()
+        async with pool.acquire() as con:
+            base = await _fecha_base(con)
+            if not base:
+                return {"semanas": [], "partidas": []}
+            today = date.today()
+            total = max(_semana_de(today, base), 1)
+
+            if otm:
+                partidas = await con.fetch(
+                    "SELECT * FROM ev_partidas WHERE activo AND otm_id=$1 ORDER BY codigo", otm
+                )
+            else:
+                partidas = await con.fetch(
+                    "SELECT * FROM ev_partidas WHERE activo ORDER BY codigo"
+                )
+            hitos   = await con.fetch("SELECT * FROM ev_hitos ORDER BY partida_id, numero")
+            avances = await con.fetch("SELECT * FROM ev_avances ORDER BY semana")
+            tareo   = await _hh_gastadas_unificada(con)
+
+        # Calcular EV para cada semana (una llamada por semana, datos cargados en memoria)
+        result_por_partida: dict = {}
+        for p in partidas:
+            pid = p["id"]
+            mp  = float(p["metrado_proyec"] or p["metrado_presup"] or 0)
+            hp  = float(p["hh_presup"] or 0)
+            fc  = round(hp / mp, 4) if mp > 0 else 0.0
+            result_por_partida[pid] = {
+                "partida_id":   pid,
+                "codigo":       p["codigo"],
+                "otm_id":       p["otm_id"],
+                "descripcion":  p["descripcion"],
+                "unidad":       p["unidad"],
+                "fase":         p["fase"],
+                "hh_presup":    hp,
+                "metrado_presup": float(p["metrado_presup"] or 0),
+                "metrado_proyec": mp,
+                "factor_conv":  fc,
+                "es_hoja":      p["fase"] is not None,
+                "semanas":      {},
+            }
+
+        for s in range(1, total + 1):
+            filas = _calcular(list(partidas), list(hitos), list(avances), [], tareo, s)
+            for f in filas:
+                pid = f["partida_id"]
+                if pid in result_por_partida:
+                    result_por_partida[pid]["semanas"][s] = {
+                        "hh_gan_acum":  round(f["hh_ganadas_acum"],   2),
+                        "hh_gan_sem":   round(f["hh_ganadas_sem"],    2),
+                        "hh_gast_acum": round(f["hh_gastadas_acum"],  2),
+                        "hh_gast_sem":  round(f["hh_gastadas_sem"],   2),
+                        "pf_acum":      round(f["pf_acum"],           4),
+                        "pf_sem":       round(f["pf_sem"],            4),
+                        "pct_avance":   round(f["pct_avance"],        4),
+                        "cant_acum":    round(
+                            f["hh_ganadas_acum"] / (result_por_partida[pid]["factor_conv"] or 1), 2
+                        ) if result_por_partida[pid]["factor_conv"] > 0 else 0,
+                    }
+
+        # Semanas con labels
+        MESES = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"]
+        def fmt(d: date) -> str: return f"{d.day} {MESES[d.month-1]}"
+        semanas_out = []
+        for n in range(1, total + 1):
+            lunes  = base + timedelta(weeks=n-1)
+            domingo = lunes + timedelta(days=6)
+            semanas_out.append({
+                "semana": n,
+                "label": f"Sem {n}",
+                "inicio": lunes.isoformat(),
+                "fin": domingo.isoformat(),
+                "label_full": f"Sem {n} · {fmt(lunes)}–{fmt(domingo)}",
+            })
+
+        return {"semanas": semanas_out, "partidas": list(result_por_partida.values())}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"Error calculando ISP: {e}")
+
+
+@router.get("/reporte")
+async def reporte(semana: int, otm: Optional[str] = None):
+    partidas, hitos, avances, hh, tareo = await _datos_base(semana, otm)
+    filas = _calcular(partidas, hitos, avances, hh, tareo, semana)
+
+    tot_proyec = sum(f["hh_proyec"] for f in filas)
+    tot_ganadas = sum(f["hh_ganadas_acum"] for f in filas)
+    tot_gastadas = sum(f["hh_gastadas_acum"] for f in filas)
+    tot_gan_sem = sum(f["hh_ganadas_sem"] for f in filas)
+    tot_gas_sem = sum(f["hh_gastadas_sem"] for f in filas)
+    tot_eac = sum(f["eac_hh"] for f in filas)
+
+    return {
+        "semana": semana,
+        "otm": otm,
+        "totales": {
+            "hh_proyec": round(tot_proyec, 2),
+            "hh_ganadas_acum": round(tot_ganadas, 2),
+            "hh_gastadas_acum": round(tot_gastadas, 2),
+            "hh_ganadas_sem": round(tot_gan_sem, 2),
+            "hh_gastadas_sem": round(tot_gas_sem, 2),
+            "pct_avance": round(tot_ganadas / tot_proyec, 4) if tot_proyec > 0 else 0,
+            "pf_acum": round(tot_ganadas / tot_gastadas, 3) if tot_gastadas > 0 else 0,
+            "pf_sem": round(tot_gan_sem / tot_gas_sem, 3) if tot_gas_sem > 0 else 0,
+            "eac_hh": round(tot_eac, 2),
+            "desvio_hh": round(tot_eac - tot_proyec, 2),
+        },
+        "por_otm": _agrupar(filas, "otm_id"),
+        "por_fase": _agrupar(filas, "fase"),
+        "por_sistema": _agrupar(filas, "sistema"),
+        "partidas": filas,
+    }
+
+
+@router.get("/curva")
+async def curva(hasta: int, otm: Optional[str] = None):
+    partidas, hitos, avances, hh, tareo = await _datos_base(hasta, otm)
+    semanas_set = sorted(
+        {a["semana"] for a in avances} | {r["semana"] for r in hh}
+        | {s for (_, s) in tareo.keys()} | {hasta}
+    )
+    serie = []
+    for s in semanas_set:
+        if s > hasta:
+            continue
+        filas = _calcular(partidas, hitos, avances, hh, tareo, s)
+        g = sum(f["hh_ganadas_acum"] for f in filas)
+        c = sum(f["hh_gastadas_acum"] for f in filas)
+        gs = sum(f["hh_ganadas_sem"] for f in filas)
+        cs = sum(f["hh_gastadas_sem"] for f in filas)
+        serie.append({
+            "semana": s,
+            "hh_ganadas_acum": round(g, 2),
+            "hh_gastadas_acum": round(c, 2),
+            "pf_acum": round(g / c, 3) if c > 0 else None,
+            "pf_sem": round(gs / cs, 3) if cs > 0 else None,
+        })
+    return serie
+
+
+@router.get("/curva-fase")
+async def curva_fase(hasta: int, otm: Optional[str] = None):
+    """Serie semanal de PF acumulado por fase — gráficos por disciplina."""
+    partidas, hitos, avances, hh, tareo = await _datos_base(hasta, otm)
+    semanas_set = sorted(
+        {a["semana"] for a in avances} | {r["semana"] for r in hh}
+        | {s for (_, s) in tareo.keys()} | {hasta}
+    )
+    fases = sorted({p["fase"] for p in partidas})
+    serie = []
+    for s in semanas_set:
+        if s > hasta:
+            continue
+        filas = _calcular(partidas, hitos, avances, hh, tareo, s)
+        punto: dict = {"semana": s}
+        for fase in fases:
+            ff = [f for f in filas if f["fase"] == fase]
+            g = sum(f["hh_ganadas_acum"] for f in ff)
+            c = sum(f["hh_gastadas_acum"] for f in ff)
+            punto[f"pf_{fase}"] = round(g / c, 3) if c > 0 else None
+        serie.append(punto)
+    return {"fases": fases, "serie": serie}
+
+
+# ═══════════════════════════════════════════════════════════════
+# SPRINT 2: Control diario por partida
+# ═══════════════════════════════════════════════════════════════
+
+@router.get("/semana-grid")
+async def semana_grid(
+    semana: int,
+    otm: Optional[str] = None,
+    lunes: Optional[str] = None,   # ISO date del lunes — override de fecha_base
+):
+    """
+    Grilla semanal: partidas × días (Lun-Dom).
+    Incluye HH reales (tareo_partida), HH estimadas (registros histórico)
+    y cant_ejecutada (ev_avances_diarios).
+    """
+    try:
+        pool = await db()
+        async with pool.acquire() as con:
+            # ── Fechas del período ───────────────────────────────
+            if lunes:
+                lunes_date = date.fromisoformat(lunes)
+            else:
+                base = await _fecha_base(con)
+                if not base:
+                    raise HTTPException(
+                        400,
+                        "Fecha base no configurada. Ve a Configuración en el panel, "
+                        "o pasa ?lunes=YYYY-MM-DD como parámetro."
+                    )
+                lunes_date = base + timedelta(weeks=semana - 1)
+
+            domingo_date = lunes_date + timedelta(days=6)
+            fechas = [lunes_date + timedelta(days=i) for i in range(7)]
+            fechas_str = [f.isoformat() for f in fechas]
+
+            # ── Partidas hoja de la OTM ──────────────────────────
+            q = """
+                SELECT p.id, p.codigo, p.descripcion, p.fase, p.sub_fase,
+                       p.unidad, p.hh_presup, p.metrado_presup,
+                       CASE WHEN p.metrado_presup > 0
+                            THEN p.hh_presup / p.metrado_presup
+                            ELSE 0 END AS factor_conv
+                FROM ev_partidas p
+                WHERE p.activo = true AND p.fase IS NOT NULL
+            """
+            args: list = []
+            if otm:
+                args.append(otm)
+                q += f" AND p.otm_id = ${len(args)}"
+            q += " ORDER BY p.codigo"
+
+            partidas = await con.fetch(q, *args)
+            if not partidas:
+                return {
+                    "semana":   semana,
+                    "otm":      otm,
+                    "lunes":    lunes_date.isoformat(),
+                    "fechas":   fechas_str,
+                    "partidas": [],
+                }
+
+            p_ids         = [p["id"] for p in partidas]
+            total_hh_pres = sum(float(p["hh_presup"] or 0) for p in partidas)
+
+            # ── HH exactas: tareo_partida (nuevo flujo) ──────────
+            hh_rows = await con.fetch(
+                """SELECT partida_id, fecha::text AS f, SUM(hh) AS hh_total
+                   FROM tareo_partida
+                   WHERE partida_id = ANY($1)
+                     AND fecha >= $2::date AND fecha <= $3::date
+                     AND hh IS NOT NULL
+                   GROUP BY partida_id, fecha""",
+                p_ids,
+                lunes_date,
+                domingo_date,
+            )
+            hh_map = {
+                (r["partida_id"], r["f"]): float(r["hh_total"] or 0)
+                for r in hh_rows
+            }
+
+            # ── HH estimadas: registros histórico (fallback) ─────
+            # Total HH del OTM por día (tareo viejo, sin asignación a partida)
+            fallback_by_date: dict = {}
+            if otm and total_hh_pres > 0:
+                fb = await con.fetch(
+                    """SELECT fecha::text AS f, SUM(hh) AS hh_dia
+                       FROM registros
+                       WHERE otm_id = $1
+                         AND fecha >= $2::date AND fecha <= $3::date
+                         AND hh IS NOT NULL AND hh > 0
+                       GROUP BY fecha""",
+                    otm,
+                    lunes_date,
+                    domingo_date,
+                )
+                fallback_by_date = {r["f"]: float(r["hh_dia"] or 0) for r in fb}
+
+            # ── Avances diarios (cant_ejecutada) ─────────────────
+            cant_rows = await con.fetch(
+                """SELECT partida_id, fecha::text AS f, cantidad_dia
+                   FROM ev_avances_diarios
+                   WHERE partida_id = ANY($1)
+                     AND fecha >= $2::date AND fecha <= $3::date""",
+                p_ids,
+                lunes_date,
+                domingo_date,
+            )
+            cant_map   = {(r["partida_id"], r["f"]): float(r["cantidad_dia"] or 0) for r in cant_rows}
+            cant_exist = {(r["partida_id"], r["f"]) for r in cant_rows}
+
+            # ── Construir resultado ───────────────────────────────
+            result = []
+            for p in partidas:
+                pid    = p["id"]
+                factor = float(p["factor_conv"] or 0)
+                hh_p   = float(p["hh_presup"]  or 0)
+                dias   = {}
+
+                for fecha in fechas:
+                    fs  = fecha.isoformat()
+                    key = (pid, fs)
+
+                    # HH real (nuevo tareo)
+                    hh_real = hh_map.get(key, 0)
+
+                    # HH estimada (tareo viejo proporcional)
+                    hh_est = 0.0
+                    if hh_real == 0 and hh_p > 0 and total_hh_pres > 0:
+                        hh_dia_otm = fallback_by_date.get(fs, 0)
+                        if hh_dia_otm > 0:
+                            hh_est = round(hh_p / total_hh_pres * hh_dia_otm, 2)
+
+                    # Cant ejecutada
+                    cant       = cant_map.get(key, None) if key in cant_exist else None
+                    hh_activa  = hh_real if hh_real > 0 else hh_est
+                    hh_ganadas = round(cant * factor, 4) if cant is not None and factor > 0 else None
+                    pf         = round(hh_ganadas / hh_activa, 3) if hh_ganadas and hh_activa > 0 else None
+
+                    if hh_real > 0 or hh_est > 0 or key in cant_exist:
+                        dias[fs] = {
+                            "hh_gastadas":    round(hh_real, 2),   # nuevo tareo (exacto)
+                            "hh_estimada":    hh_est,               # tareo viejo (proporcional)
+                            "cant_ejecutada": cant,                  # None = no ingresada aún
+                            "hh_ganadas":     hh_ganadas,
+                            "pf":             pf,
+                        }
+
+                result.append({
+                    "id":             pid,
+                    "codigo":         p["codigo"],
+                    "descripcion":    p["descripcion"],
+                    "fase":           p["fase"],
+                    "sub_fase":       p["sub_fase"],
+                    "unidad":         p["unidad"],
+                    "factor_conv":    round(factor, 4),
+                    "hh_presup":      float(p["hh_presup"]      or 0),
+                    "metrado_presup": float(p["metrado_presup"] or 0),
+                    "dias":           dias,
+                })
+
+            return {
+                "semana":   semana,
+                "otm":      otm,
+                "lunes":    lunes_date.isoformat(),
+                "fechas":   fechas_str,
+                "partidas": result,
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"Error calculando grilla diaria: {e}")
+
+
+@router.post("/avance-diario")
+async def guardar_avance_diario(data: dict):
+    """Guarda o actualiza la cantidad ejecutada de una partida en un día."""
+    partida_id   = data.get("partida_id")
+    fecha_str    = data.get("fecha")
+    cantidad_dia = data.get("cantidad_dia")  # puede ser None para borrar
+    notas        = data.get("notas")
+    if not partida_id or not fecha_str:
+        raise HTTPException(400, "partida_id y fecha son requeridos")
+
+    pool = await db()
+    async with pool.acquire() as con:
+        base = await _fecha_base(con)
+        semana = 1
+        if base:
+            delta  = (date.fromisoformat(fecha_str) - base).days
+            semana = max(1, delta // 7 + 1)
+
+        await con.execute(
+            """INSERT INTO ev_avances_diarios
+                 (partida_id, fecha, semana, cantidad_dia, notas, registrado_en)
+               VALUES ($1, $2::date, $3, $4, $5, NOW())
+               ON CONFLICT (partida_id, fecha)
+               DO UPDATE SET cantidad_dia=$4, notas=$5, registrado_en=NOW()""",
+            partida_id, _as_date(fecha_str), semana, cantidad_dia, notas
+        )
+    return {"ok": True}
+
+
+
+
+@router.post("/volcar-diario-a-isp")
+async def volcar_diario_a_isp(data: dict):
+    """
+    Agrega las HH del control diario (tareo_partida) hacia ev_hh_gastadas,
+    que es la tabla que alimenta el ISP semanal y el PF.
+    Solo vuelca si hay datos reales en tareo_partida (no estimaciones).
+    Devuelve cuántas partidas fueron volcadas.
+    """
+    semana = data.get("semana")
+    otm    = data.get("otm")
+    lunes  = data.get("lunes")  # solo para validar rango de fechas alternativo
+
+    if not semana:
+        raise HTTPException(400, "semana es requerido")
+
+    pool = await db()
+    async with pool.acquire() as con:
+        # Sumar HH por partida para la semana
+        if otm:
+            rows = await con.fetch(
+                """SELECT partida_id, SUM(hh) AS hh_total
+                   FROM tareo_partida
+                   WHERE semana = $1 AND otm_id = $2 AND hh IS NOT NULL
+                   GROUP BY partida_id""",
+                semana, otm
+            )
+        else:
+            rows = await con.fetch(
+                """SELECT partida_id, SUM(hh) AS hh_total
+                   FROM tareo_partida
+                   WHERE semana = $1 AND hh IS NOT NULL
+                   GROUP BY partida_id""",
+                semana
+            )
+
+        if not rows:
+            raise HTTPException(
+                404,
+                f"Sin datos de tareo_partida para semana {semana}"
+                + (f" / {otm}" if otm else "")
+                + ". ¿El nuevo flujo de la app ya está en uso?"
+            )
+
+        volcados = 0
+        async with con.transaction():
+            for r in rows:
+                await con.execute(
+                    """INSERT INTO ev_hh_gastadas (partida_id, semana, hh, fuente)
+                       VALUES ($1, $2, $3, 'diario')
+                       ON CONFLICT (partida_id, semana)
+                       DO UPDATE SET hh = $3, fuente = 'diario'""",
+                    r["partida_id"], semana, round(float(r["hh_total"]), 2)
+                )
+                volcados += 1
+
+        return {
+            "ok":              True,
+            "semana":          semana,
+            "otm":             otm,
+            "partidas_volcadas": volcados,
+            "mensaje": f"{volcados} partidas volcadas al ISP semana {semana}. "
+                       "Los valores del ISP se actualizarán en el siguiente cálculo."
+        }
+
+@router.get("/rendimiento-trabajador")
+async def rendimiento_trabajador(
+    trabajador_id: str,
+    desde: Optional[str] = None,
+    hasta: Optional[str] = None,
+):
+    """HH y PF de un trabajador desglosado por partida."""
+    pool = await db()
+    async with pool.acquire() as con:
+        conds = ["tp.trabajador_id = $1"]
+        args: list = [trabajador_id]
+        if desde:
+            args.append(_as_date(desde))
+            conds.append(f"tp.fecha >= ${len(args)}::date")
+        if hasta:
+            args.append(_as_date(hasta))
+            conds.append(f"tp.fecha <= ${len(args)}::date")
+        where = " AND ".join(conds)
+
+        # Info del trabajador
+        trab = await con.fetchrow(
+            "SELECT nombre, cargo FROM trabajadores WHERE id = $1", trabajador_id
+        )
+
+        rows = await con.fetch(
+            f"""SELECT p.id AS partida_id, p.codigo, p.descripcion,
+                       p.fase, p.unidad,
+                       CASE WHEN p.metrado_presup > 0
+                            THEN p.hh_presup / p.metrado_presup ELSE 0
+                       END AS factor_presup,
+                       SUM(tp.hh)              AS hh_total,
+                       COUNT(DISTINCT tp.fecha) AS dias_trabajados
+                FROM tareo_partida tp
+                JOIN ev_partidas p ON p.id = tp.partida_id
+                WHERE {where} AND tp.hh IS NOT NULL
+                GROUP BY p.id, p.codigo, p.descripcion, p.fase, p.unidad,
+                         p.hh_presup, p.metrado_presup
+                ORDER BY hh_total DESC""",
+            *args
+        )
+
+        # Cant ejecutada acumulada por partida en el mismo rango de fechas.
+        # OJO: se deduplica (partida, fecha) ANTES de unir con ev_avances_diarios;
+        # de lo contrario la cantidad del día se multiplicaría por cada trabajador.
+        cant_rows = await con.fetch(
+            f"""SELECT d.partida_id,
+                       SUM(COALESCE(ad.cantidad_dia, 0)) AS cant_acum
+                FROM (
+                    SELECT DISTINCT tp.partida_id, tp.fecha
+                    FROM tareo_partida tp
+                    WHERE {where}
+                ) d
+                LEFT JOIN ev_avances_diarios ad
+                  ON ad.partida_id = d.partida_id AND ad.fecha = d.fecha
+                GROUP BY d.partida_id""",
+            *args
+        )
+        cant_by_pid = {r["partida_id"]: float(r["cant_acum"] or 0)
+                       for r in cant_rows}
+
+        partidas = []
+        for r in rows:
+            hh      = float(r["hh_total"] or 0)
+            factor  = float(r["factor_presup"] or 0)
+            cant    = cant_by_pid.get(r["partida_id"], 0)
+            hh_gan  = round(cant * factor, 2) if factor > 0 else None
+            pf      = round(hh_gan / hh, 3) if hh_gan and hh > 0 else None
+            partidas.append({
+                "partida_id":     r["partida_id"],
+                "codigo":         r["codigo"],
+                "descripcion":    r["descripcion"],
+                "fase":           r["fase"],
+                "unidad":         r["unidad"],
+                "factor_presup":  round(factor, 4),
+                "hh_total":       round(hh, 2),
+                "cant_acum":      round(cant, 2),
+                "hh_ganadas":     hh_gan,
+                "pf_promedio":    pf,
+                "dias_trabajados": int(r["dias_trabajados"]),
+            })
+
+        return {
+            "trabajador_id": trabajador_id,
+            "nombre":  trab["nombre"] if trab else "—",
+            "cargo":   trab["cargo"]  if trab else "—",
+            "partidas": partidas,
+            "hh_total_global": round(sum(p["hh_total"] for p in partidas), 2),
+        }
+
+
+@router.get("/rendimiento-cuadrillas")
+async def rendimiento_cuadrillas(
+    semana:        Optional[int] = None,
+    supervisor_id: Optional[str] = None,
+):
+    """Comparativa de PF por cuadrilla (supervisor) y partida."""
+    pool = await db()
+    async with pool.acquire() as con:
+        conds = ["tp.hh IS NOT NULL"]
+        args: list = []
+        if semana:
+            args.append(semana)
+            conds.append(f"tp.semana = ${len(args)}")
+        if supervisor_id:
+            args.append(supervisor_id)
+            conds.append(f"tp.supervisor_id = ${len(args)}")
+        where = " AND ".join(conds)
+
+        rows = await con.fetch(
+            f"""SELECT tp.supervisor_id,
+                       s.nombre AS supervisor_nombre,
+                       p.id AS partida_id, p.codigo, p.descripcion,
+                       p.fase, p.unidad,
+                       CASE WHEN p.metrado_presup > 0
+                            THEN p.hh_presup / p.metrado_presup ELSE 0
+                       END AS factor_presup,
+                       SUM(tp.hh) AS hh_total,
+                       COUNT(DISTINCT tp.trabajador_id) AS n_trabajadores,
+                       COUNT(DISTINCT tp.fecha) AS dias
+                FROM tareo_partida tp
+                JOIN ev_partidas p  ON p.id  = tp.partida_id
+                JOIN supervisores s ON s.id  = tp.supervisor_id
+                WHERE {where}
+                GROUP BY tp.supervisor_id, s.nombre, p.id, p.codigo,
+                         p.descripcion, p.fase, p.unidad,
+                         p.hh_presup, p.metrado_presup
+                ORDER BY tp.supervisor_id, p.codigo""",
+            *args
+        )
+
+        # Cant ejecutada por (supervisor, partida) en el rango.
+        # Se deduplica (supervisor, partida, fecha) ANTES de unir con
+        # ev_avances_diarios para no multiplicar la cantidad del día por el
+        # número de trabajadores de la cuadrilla.
+        cant_args = list(args)
+        cant_rows = await con.fetch(
+            f"""SELECT d.supervisor_id, d.partida_id,
+                       SUM(COALESCE(ad.cantidad_dia, 0)) AS cant_acum
+                FROM (
+                    SELECT DISTINCT tp.supervisor_id, tp.partida_id, tp.fecha
+                    FROM tareo_partida tp
+                    WHERE {where}
+                ) d
+                LEFT JOIN ev_avances_diarios ad
+                  ON ad.partida_id = d.partida_id AND ad.fecha = d.fecha
+                GROUP BY d.supervisor_id, d.partida_id""",
+            *cant_args
+        )
+        cant_map = {(r["supervisor_id"], r["partida_id"]): float(r["cant_acum"] or 0)
+                    for r in cant_rows}
+
+        # Agrupar por supervisor
+        por_sup: dict = {}
+        for r in rows:
+            sid = r["supervisor_id"]
+            if sid not in por_sup:
+                por_sup[sid] = {"supervisor_id": sid,
+                                "nombre": r["supervisor_nombre"],
+                                "partidas": []}
+            hh     = float(r["hh_total"] or 0)
+            factor = float(r["factor_presup"] or 0)
+            cant   = cant_map.get((sid, r["partida_id"]), 0)
+            hh_gan = round(cant * factor, 2) if factor > 0 else None
+            pf     = round(hh_gan / hh, 3) if hh_gan and hh > 0 else None
+            por_sup[sid]["partidas"].append({
+                "partida_id":    r["partida_id"],
+                "codigo":        r["codigo"],
+                "descripcion":   r["descripcion"],
+                "fase":          r["fase"],
+                "unidad":        r["unidad"],
+                "hh_total":      round(hh, 2),
+                "cant_acum":     round(cant, 2),
+                "hh_ganadas":    hh_gan,
+                "pf":            pf,
+                "n_trabajadores": int(r["n_trabajadores"]),
+                "dias":          int(r["dias"]),
+            })
+
+        return list(por_sup.values())
+
+
+# ═══════════════════════════════════════════════════════════════
+# FASE 1 — Control Maestro: Cuadrillas + Asignación + Histórico
+# ═══════════════════════════════════════════════════════════════
+
+# ── Cuadrillas típicas por OTM ────────────────────────────────
+
+@router.get("/cuadrillas-plantilla")
+async def listar_cuadrillas_plantilla(
+    supervisor_id: str,
+    otm_id: str,
+):
+    """Devuelve las cuadrillas típicas del supervisor para esa OTM."""
+    pool = await db()
+    async with pool.acquire() as con:
+        rows = await con.fetch(
+            """SELECT c.trabajador_id, t.nombre, t.cargo,
+                      COALESCE(t.tipo,'DIRECTO') AS tipo,
+                      c.nombre AS plantilla, c.orden
+               FROM cuadrilla_otm c
+               JOIN trabajadores t ON t.id = c.trabajador_id
+               WHERE c.supervisor_id = $1 AND c.otm_id = $2 AND c.activo = TRUE
+               ORDER BY c.nombre, c.orden""",
+            supervisor_id, otm_id
+        )
+        plantillas: dict = {}
+        for r in rows:
+            n = r["plantilla"]
+            if n not in plantillas:
+                plantillas[n] = []
+            plantillas[n].append({
+                "trabajador_id": r["trabajador_id"],
+                "nombre":        r["nombre"],
+                "cargo":         r["cargo"],
+                "tipo":          r["tipo"],
+                "orden":         r["orden"],
+            })
+        return plantillas
+
+
+@router.post("/cuadrillas-plantilla")
+async def guardar_cuadrilla_plantilla(data: dict):
+    """Crea o reemplaza una cuadrilla típica para supervisor+OTM."""
+    supervisor_id = data.get("supervisor_id")
+    otm_id        = data.get("otm_id")
+    nombre        = data.get("nombre", "Principal")
+    trabajadores  = data.get("trabajadores", [])
+
+    if not supervisor_id or not otm_id:
+        raise HTTPException(400, "supervisor_id y otm_id son requeridos")
+
+    pool = await db()
+    async with pool.acquire() as con:
+        async with con.transaction():
+            await con.execute(
+                "DELETE FROM cuadrilla_otm WHERE supervisor_id=$1 AND otm_id=$2 AND nombre=$3",
+                supervisor_id, otm_id, nombre
+            )
+            for idx, tid in enumerate(trabajadores):
+                await con.execute(
+                    """INSERT INTO cuadrilla_otm
+                         (supervisor_id, otm_id, nombre, trabajador_id, orden)
+                       VALUES ($1,$2,$3,$4,$5)""",
+                    supervisor_id, otm_id, nombre, str(tid), idx
+                )
+    return {"ok": True, "nombre": nombre, "total": len(trabajadores)}
+
+
+# ── Sesiones del día para asignación a partidas ───────────────
+
+@router.get("/sesiones-sin-asignar")
+async def sesiones_sin_asignar(
+    fecha:  Optional[str] = None,
+    otm_id: Optional[str] = None,
+):
+    """Sesiones enviadas del día con detalle de trabajadores y partidas."""
+    pool = await db()
+    async with pool.acquire() as con:
+        if not fecha:
+            fecha = _hoy_lima().isoformat()
+
+        conds = ["s.estado = 'enviada'", "s.fecha = $1"]
+        args: list = [_as_date(fecha)]
+        if otm_id:
+            args.append(otm_id)
+            conds.append(f"s.otm_id = ${len(args)}")
+        where = " AND ".join(conds)
+
+        rows = await con.fetch(
+            f"""SELECT s.id AS sesion_id, s.supervisor_id,
+                       sup.nombre AS supervisor,
+                       s.otm_id, s.fecha::text,
+                       s.hh_turno,
+                       COUNT(st.id)  AS n_trabajadores,
+                       s.hh_turno * COUNT(st.id) AS hh_total,
+                       COALESCE(SUM(stp.hh), 0)  AS hh_asignadas
+                FROM sesiones s
+                JOIN supervisores sup ON sup.id = s.supervisor_id
+                LEFT JOIN sesion_trabajadores st  ON st.sesion_id = s.id
+                LEFT JOIN sesion_trabajador_partidas stp ON stp.sesion_id = s.id
+                WHERE {where}
+                GROUP BY s.id, s.supervisor_id, sup.nombre,
+                         s.otm_id, s.fecha, s.hh_turno
+                ORDER BY s.id DESC""",
+            *args
+        )
+
+        result = []
+        for r in rows:
+            hh_total = float(r["hh_total"] or 0)
+            hh_asig  = float(r["hh_asignadas"] or 0)
+
+            # Trabajadores con HH ya asignadas
+            trab_rows = await con.fetch(
+                """SELECT st.trab_id AS trabajador_id,
+                          t.nombre, t.cargo,
+                          COALESCE(t.tipo,'DIRECTO') AS tipo,
+                          COALESCE(st.hh_override, s.hh_turno, 9.5) AS hh_registradas,
+                          COALESCE(SUM(stp.hh), 0) AS hh_asignadas
+                   FROM sesion_trabajadores st
+                   JOIN sesiones s    ON s.id  = st.sesion_id
+                   JOIN trabajadores t ON t.id = st.trab_id
+                   LEFT JOIN sesion_trabajador_partidas stp
+                     ON stp.sesion_id     = st.sesion_id
+                    AND stp.trabajador_id = st.trab_id
+                   WHERE st.sesion_id = $1
+                   GROUP BY st.trab_id, t.nombre, t.cargo, t.tipo,
+                            st.hh_override, s.hh_turno
+                   ORDER BY t.nombre""",
+                r["sesion_id"]
+            )
+
+            # Partidas hoja de la OTM
+            part_rows = await con.fetch(
+                """SELECT id, codigo, descripcion, fase, unidad,
+                          hh_presup, metrado_presup
+                   FROM ev_partidas
+                   WHERE otm_id = $1 AND fase IS NOT NULL AND activo = TRUE
+                   ORDER BY codigo""",
+                r["otm_id"]
+            )
+
+            trabajadores = []
+            for t in trab_rows:
+                hh_reg  = float(t["hh_registradas"] or 9.5)
+                hh_asig_t = float(t["hh_asignadas"] or 0)
+                trabajadores.append({
+                    "trabajador_id": t["trabajador_id"],
+                    "nombre":        t["nombre"],
+                    "cargo":         t["cargo"],
+                    "tipo":          t["tipo"],
+                    "hh_registradas": round(hh_reg, 2),
+                    "hh_asignadas":   round(hh_asig_t, 2),
+                    "hh_pendientes":  round(hh_reg - hh_asig_t, 2),
+                })
+
+            result.append({
+                "sesion_id":   r["sesion_id"],
+                "supervisor":  r["supervisor"],
+                "supervisor_id": r["supervisor_id"],
+                "otm_id":      r["otm_id"],
+                "fecha":       r["fecha"],
+                "hh_turno":    float(r["hh_turno"] or 9.5),
+                "hh_total":    round(hh_total, 2),
+                "hh_asignadas": round(hh_asig, 2),
+                "hh_pendientes": round(hh_total - hh_asig, 2),
+                "trabajadores": trabajadores,
+                "partidas":     [dict(p) for p in part_rows],
+            })
+
+        return result
+
+
+@router.post("/asignar-sesion-partidas")
+async def asignar_sesion_partidas(data: dict):
+    """Guarda la asignación de HH de una sesión → partidas específicas."""
+    sesion_id    = data.get("sesion_id")
+    asignaciones = data.get("asignaciones", [])  # [{trabajador_id, partida_id, hh}]
+
+    if not sesion_id:
+        raise HTTPException(400, "sesion_id es requerido")
+
+    pool = await db()
+    async with pool.acquire() as con:
+        ses = await con.fetchrow(
+            "SELECT id, fecha, supervisor_id, otm_id FROM sesiones WHERE id=$1",
+            sesion_id
+        )
+        if not ses:
+            raise HTTPException(404, "Sesión no encontrada")
+
+        async with con.transaction():
+            # Borrar asignaciones previas
+            await con.execute(
+                "DELETE FROM sesion_trabajador_partidas WHERE sesion_id=$1",
+                sesion_id
+            )
+            for a in asignaciones:
+                hh = float(a.get("hh", 0))
+                if hh <= 0:
+                    continue
+                await con.execute(
+                    """INSERT INTO sesion_trabajador_partidas
+                         (sesion_id, trabajador_id, partida_id, hh,
+                          fecha, supervisor_id, otm_id)
+                       VALUES ($1,$2,$3,$4,$5,$6,$7)""",
+                    sesion_id,
+                    str(a["trabajador_id"]),
+                    a.get("partida_id"),
+                    hh,
+                    ses["fecha"],
+                    ses["supervisor_id"],
+                    ses["otm_id"],
+                )
+
+            # Detectar conflictos de HH duplicadas
+            for a in asignaciones:
+                tid   = str(a["trabajador_id"])
+                total = await con.fetchval(
+                    """SELECT COALESCE(SUM(hh),0)
+                       FROM sesion_trabajador_partidas
+                       WHERE trabajador_id=$1 AND fecha=$2""",
+                    tid, ses["fecha"]
+                )
+                if float(total or 0) > 11:   # umbral razonable
+                    otras = await con.fetch(
+                        """SELECT DISTINCT s.supervisor_id
+                           FROM sesion_trabajador_partidas stp
+                           JOIN sesiones s ON s.id = stp.sesion_id
+                           WHERE stp.trabajador_id=$1 AND stp.fecha=$2
+                             AND stp.sesion_id != $3 LIMIT 1""",
+                        tid, ses["fecha"], sesion_id
+                    )
+                    if otras:
+                        await con.execute(
+                            """INSERT INTO hh_conflictos
+                                 (trabajador_id, fecha,
+                                  supervisor_id_1, supervisor_id_2, hh_1, hh_2)
+                               VALUES ($1,$2,$3,$4,$5,$6)
+                               ON CONFLICT DO NOTHING""",
+                            tid, ses["fecha"],
+                            otras[0]["supervisor_id"], ses["supervisor_id"],
+                            9.5, float(total or 0) - 9.5
+                        )
+
+    return {"ok": True, "sesion_id": sesion_id, "asignados": len(asignaciones)}
+
+
+# ── Validación HH duplicadas ──────────────────────────────────
+
+@router.get("/hh-trabajador-dia")
+async def hh_trabajador_dia(trabajador_id: str, fecha: str):
+    """HH registradas para un trabajador en un día específico."""
+    pool = await db()
+    async with pool.acquire() as con:
+        rows = await con.fetch(
+            """SELECT s.id AS sesion_id, s.supervisor_id,
+                      sup.nombre AS supervisor,
+                      s.otm_id, stp.partida_id, p.codigo, p.descripcion,
+                      stp.hh
+               FROM sesion_trabajador_partidas stp
+               JOIN sesiones s    ON s.id  = stp.sesion_id
+               JOIN supervisores sup ON sup.id = s.supervisor_id
+               LEFT JOIN ev_partidas p ON p.id = stp.partida_id
+               WHERE stp.trabajador_id=$1 AND stp.fecha=$2::date
+               ORDER BY s.id""",
+            trabajador_id, _as_date(fecha)
+        )
+        total = sum(float(r["hh"] or 0) for r in rows)
+        return {
+            "trabajador_id": trabajador_id,
+            "fecha":  fecha,
+            "hh_total": round(total, 2),
+            "alerta": total > 11,
+            "detalle": [dict(r) for r in rows],
+        }
+
+
+# ── Carga histórica manual ────────────────────────────────────
+
+@router.post("/historico/cargar")
+async def cargar_historico(data: dict):
+    """
+    Carga acumulados históricos de HH y cantidades para una OTM/semana.
+    Popula ev_hh_gastadas (fuente='historico') y ev_avances (hito principal).
+    """
+    otm_id = data.get("otm_id")
+    semana = data.get("semana")
+    filas  = data.get("filas", [])   # [{partida_id, hh_gastadas_acum, cantidad_ejecutada_acum}]
+
+    if not otm_id or not semana:
+        raise HTTPException(400, "otm_id y semana son requeridos")
+
+    pool = await db()
+    async with pool.acquire() as con:
+        async with con.transaction():
+            for fila in filas:
+                pid  = fila["partida_id"]
+                hh   = float(fila.get("hh_gastadas_acum", 0))
+                cant = float(fila.get("cantidad_ejecutada_acum", 0))
+
+                # ev_historico_carga (trazabilidad)
+                await con.execute(
+                    """INSERT INTO ev_historico_carga
+                         (otm_id, partida_id, semana,
+                          hh_gastadas_acum, cantidad_ejecutada_acum)
+                       VALUES ($1,$2,$3,$4,$5)
+                       ON CONFLICT (otm_id, partida_id, semana)
+                       DO UPDATE SET
+                         hh_gastadas_acum        = EXCLUDED.hh_gastadas_acum,
+                         cantidad_ejecutada_acum = EXCLUDED.cantidad_ejecutada_acum,
+                         fecha_carga             = NOW()""",
+                    otm_id, pid, semana, hh, cant
+                )
+
+                # ev_hh_gastadas (fuente='historico' — puede ser sobreescrito por manual)
+                await con.execute(
+                    """INSERT INTO ev_hh_gastadas (partida_id, semana, hh, fuente)
+                       VALUES ($1,$2,$3,'historico')
+                       ON CONFLICT (partida_id, semana)
+                       DO UPDATE SET hh=$3, fuente='historico'
+                       WHERE ev_hh_gastadas.fuente NOT IN ('manual')""",
+                    pid, semana, hh
+                )
+
+                # ev_avances con el hito principal (para cálculo de % avance)
+                hito = await con.fetchrow(
+                    """SELECT id FROM ev_hitos
+                       WHERE partida_id=$1
+                       ORDER BY peso DESC NULLS LAST, id
+                       LIMIT 1""",
+                    pid
+                )
+                if hito and cant > 0:
+                    await con.execute(
+                        """INSERT INTO ev_avances (hito_id, semana, cantidad_acum)
+                           VALUES ($1,$2,$3)
+                           ON CONFLICT (hito_id, semana)
+                           DO UPDATE SET cantidad_acum=$3""",
+                        hito["id"], semana, cant
+                    )
+
+    return {"ok": True, "otm_id": otm_id, "semana": semana, "partidas": len(filas)}
+
+
+@router.get("/historico/lista")
+async def listar_historico(otm_id: str, semana: int):
+    pool = await db()
+    async with pool.acquire() as con:
+        rows = await con.fetch(
+            """SELECT h.*, p.codigo, p.descripcion, p.fase, p.unidad
+               FROM ev_historico_carga h
+               JOIN ev_partidas p ON p.id = h.partida_id
+               WHERE h.otm_id=$1 AND h.semana=$2
+               ORDER BY p.codigo""",
+            otm_id, semana
+        )
+        return [dict(r) for r in rows]
+
+
+# ── Conflictos HH duplicadas ──────────────────────────────────
+
+@router.get("/conflictos")
+async def listar_conflictos(
+    estado: Optional[str] = None,
+    fecha:  Optional[str] = None,
+):
+    pool = await db()
+    async with pool.acquire() as con:
+        conds, args = ["1=1"], []
+        if estado:
+            args.append(estado);  conds.append(f"c.estado = ${len(args)}")
+        if fecha:
+            args.append(_as_date(fecha));   conds.append(f"c.fecha  = ${len(args)}::date")
+        where = " AND ".join(conds)
+        rows = await con.fetch(
+            f"""SELECT c.*,
+                       t.nombre   AS trabajador_nombre,
+                       s1.nombre  AS sup1_nombre,
+                       s2.nombre  AS sup2_nombre
+                FROM hh_conflictos c
+                JOIN trabajadores t   ON t.id  = c.trabajador_id
+                LEFT JOIN supervisores s1 ON s1.id = c.supervisor_id_1
+                LEFT JOIN supervisores s2 ON s2.id = c.supervisor_id_2
+                WHERE {where}
+                ORDER BY c.fecha DESC, c.created_at DESC""",
+            *args
+        )
+        return [dict(r) for r in rows]
+
+
+@router.post("/conflictos/resolver")
+async def resolver_conflicto(data: dict):
+    pool = await db()
+    async with pool.acquire() as con:
+        await con.execute(
+            """UPDATE hh_conflictos
+               SET estado='RESUELTO', resolucion=$1, notas=$2
+               WHERE id=$3""",
+            data.get("resolucion"), data.get("notas"), data.get("conflicto_id")
+        )
+    return {"ok": True}
