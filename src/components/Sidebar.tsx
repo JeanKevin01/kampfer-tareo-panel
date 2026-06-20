@@ -32,6 +32,7 @@ const NAV: NavGroup[] = [
     items: [
       { path: '/registros',    label: 'Registros y HH', icon: Table2 },
       { path: '/reportes',     label: 'Analytics',      icon: BarChart3 },
+      { path: '/monitor-tareo', label: 'Monitor',       icon: Activity },
     ],
   },
   {

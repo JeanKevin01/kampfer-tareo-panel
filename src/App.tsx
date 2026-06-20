@@ -17,6 +17,7 @@ import QRs from '@/pages/QRs'
 import RegistrosHH from '@/pages/RegistrosHH'
 import Reportes from '@/pages/Reportes'
 import Monitor from '@/pages/Monitor'
+import MonitorTareo from '@/pages/MonitorTareo'
 
 const qc = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
@@ -37,6 +38,7 @@ export default function App() {
             <Route path="impresion-qr" element={<ImpresionQR />} />
             <Route path="registros"    element={<RegistrosHH />} />
             <Route path="reportes"     element={<Reportes />} />
+            <Route path="monitor-tareo" element={<MonitorTareo />} />
             <Route path="otms"         element={<OTMs />} />
             <Route path="rdc"          element={<GenerarRDC />} />
             <Route path="valor-ganado" element={<ValorGanado />} />

@@ -906,7 +906,7 @@ interface JornadaResp {
 function JornadaConfig() {
   const qc = useQueryClient()
   const { data } = useQuery<JornadaResp>({ queryKey: ['jornada'], queryFn: () => req('/api/jornada') })
-  const [abierto, setAbierto] = useState(false)
+  const [abierto, setAbierto] = useState(true)
   const [desde, setDesde] = useState(() => new Date().toISOString().slice(0, 10))
   const [hh, setHh] = useState<Record<number, string>>({})
   const [pFecha, setPFecha] = useState(''); const [pHh, setPHh] = useState(''); const [pNota, setPNota] = useState('')
