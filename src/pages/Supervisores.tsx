@@ -373,11 +373,9 @@ export default function Supervisores() {
       <div className="bg-k-raised border border-k-border rounded-xl p-4">
         <p className="text-[11px] text-k-text3 leading-relaxed">
           <span className="text-k-amber font-bold">ℹ️ Para agregar nuevos supervisores: </span>
-          accede a{' '}
-          <a href="https://adminer.apps1.astraera.space" target="_blank" rel="noopener noreferrer"
-            className="text-k-blue hover:underline">Adminer</a>
-          {' '}→ tabla <span className="font-mono text-k-text">supervisores</span> → Nuevo registro.
-          Formato ID: <span className="font-mono text-k-text">SUP-006</span>.
+          usa el botón <span className="font-mono text-k-text">+ Nuevo supervisor</span> de esta
+          página (formato ID <span className="font-mono text-k-text">SUP-006</span>). La
+          administración directa de la base de datos debe hacerse solo desde la red interna.
         </p>
       </div>
     </div>
