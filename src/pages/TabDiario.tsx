@@ -98,7 +98,7 @@ export default function TabDiario({ semana, lunes, onSemana, selectedOtm }: Prop
 
   // ── toast ──────────────────────────────────────────────
   const [toast,    setToast]  = useState<{msg: string; ok: boolean} | null>(null)
-  const toastTimer = useRef<ReturnType<typeof setTimeout>>()
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const showToast = (msg: string, ok = true) => {
     setToast({ msg, ok })
     clearTimeout(toastTimer.current)
