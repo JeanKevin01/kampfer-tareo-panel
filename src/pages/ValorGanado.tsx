@@ -18,7 +18,9 @@ import {
   Target, BarChart3, ClipboardList, PenLine, Settings2,
   Plus, Pencil, Trash2, X, Save, Loader2, TrendingUp, Clock, Gauge,
   Upload, CalendarDays, Users, History, AlertTriangle, Activity,
+  ChevronRight, ChevronDown,
 } from 'lucide-react'
+import { buildWbsTree, flattenVisible, nivelStyle, NIVEL_LABELS, faseColor } from '@/lib/wbs'
 import ImportarPartidas from '@/pages/ImportarPartidas'
 
 const API = 'https://api.apps1.astraera.space'
@@ -39,9 +41,10 @@ interface Hito {
   peso: number; es_principal: boolean
 }
 interface Partida {
-  id: number; codigo: string; otm_id: string | null; fase: string; sub_fase: string | null
+  id: number; codigo: string; otm_id: string | null; fase: string | null; sub_fase: string | null
   descripcion: string; unidad: string; sistema: string | null
   metrado_presup: number; metrado_proyec: number | null; hh_presup: number
+  nivel: number; parent_codigo: string | null
   hitos: Hito[]
 }
 interface PartidaInput {
@@ -56,6 +59,8 @@ interface CapturaHito {
 }
 interface CapturaPartida {
   partida_id: number; codigo: string; otm_id: string | null; descripcion: string; unidad: string
+  fase: string | null; sub_fase: string | null; nivel: number; parent_codigo: string | null
+  es_hoja: boolean; hh_presup: number
   metrado_proyec: number; hh_tareo: number; hh_semana: number; hitos: CapturaHito[]
 }
 interface ReporteFila {
@@ -105,6 +110,25 @@ const BTN_GHOST =
 const CARD = 'bg-k-surface border border-k-border rounded-xl p-5'
 const TH = 'py-2 px-3 text-[10px] font-bold text-k-text3 uppercase tracking-wider text-left'
 const TD = 'py-2 px-3 text-sm text-k-text2'
+
+// Leyenda de niveles WBS (compartida por Configuración y Avances)
+function NivelLeyenda() {
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2 rounded-lg" style={{ background: '#141926', border: '0.5px solid #252f45' }}>
+      <span className="text-[10px]" style={{ color: '#4e5a72' }}>NIVEL:</span>
+      {NIVEL_LABELS.map(([n, c, lbl]) => (
+        <span key={n} className="flex items-center gap-1 text-[10px]">
+          <span style={{ width: 10, height: 10, borderRadius: 2, background: c, display: 'inline-block' }} />
+          <span style={{ color: c }}>{n}. {lbl}</span>
+        </span>
+      ))}
+      <span className="flex items-center gap-1 text-[10px]">
+        <span style={{ width: 10, height: 10, borderRadius: 2, background: '#60A5FA', display: 'inline-block' }} />
+        <span style={{ color: '#c8d0e0' }}>Hoja (actividad)</span>
+      </span>
+    </div>
+  )
+}
 
 function PFChip({ value }: { value: number }) {
   if (!value) return <span className="text-k-text3 text-xs">—</span>
@@ -626,17 +650,6 @@ function TabPartidas({ semana }: { semana: number }) {
 // TAB 3: Registro semanal (reemplaza los 11 pasos del ISP)
 // ============================================================
 
-const FASE_COLOR_REG: Record<string, string> = {
-  FAB:'#2DD4A8', EST:'#60A5FA', MEC:'#FB923C', ELE:'#FACC15',
-  TUB:'#A78BFA', INS:'#F472B6', CIV:'#94A3B8', AND:'#34D399',
-  APY:'#86EFAC', ING:'#FCD34D', COM:'#C4B5FD',
-}
-const FASE_NOMBRES: Record<string, string> = {
-  FAB:'Fabricación en Planta', EST:'Montaje de Estructuras', MEC:'Mecánico',
-  ELE:'Eléctrico', TUB:'Tuberías y Piping', INS:'Instrumentación',
-  CIV:'Civil', AND:'Andamios', APY:'Apoyo Constructivo', ING:'Ingeniería', COM:'Pre-comisionado',
-}
-
 function TabRegistro({ semana, otm }: { semana: number; otm?: string }) {
   const qc = useQueryClient()
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
@@ -679,16 +692,24 @@ function TabRegistro({ semana, otm }: { semana: number; otm?: string }) {
     onError: (e: Error) => setMsg(`✗ ${e.message}`),
   })
 
-  // Agrupar por Fase (código padre de la sub-fase, ej. "EST" de "EST.LIG")
-  const byFase = useMemo(() => {
-    const map: Record<string, CapturaPartida[]> = {}
-    captura.forEach(p => {
-      const f = (p.fase ?? '').split('.')[0] || 'SIN'
-      if (!map[f]) map[f] = []
-      map[f].push(p)
-    })
-    return Object.entries(map).sort(([a],[b]) => a.localeCompare(b))
-  }, [captura])
+  // Árbol WBS (incluye nodos de agrupación) + rollup de HH auto por nodo
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  const tree = useMemo(() => buildWbsTree(todasCaptura), [todasCaptura])
+  const visibles = useMemo(() => flattenVisible(tree, collapsed), [tree, collapsed])
+  const padres = useMemo(() => new Set(todasCaptura.filter(p => todasCaptura.some(c => c.parent_codigo === p.codigo)).map(p => p.codigo)), [todasCaptura])
+  const toggleNivel = (c: string) => setCollapsed(prev => { const n = new Set(prev); n.has(c) ? n.delete(c) : n.add(c); return n })
+  const hhRollup = useMemo(() => {
+    const memo = new Map<string, number>()
+    const byCode = new Map(todasCaptura.map(p => [p.codigo, p]))
+    const calc = (code: string): number => {
+      if (memo.has(code)) return memo.get(code)!
+      const hijos = todasCaptura.filter(c => c.parent_codigo === code)
+      const v = hijos.length ? hijos.reduce((s, c) => s + calc(c.codigo), 0) : (byCode.get(code)?.hh_tareo ?? 0)
+      memo.set(code, v); return v
+    }
+    todasCaptura.forEach(p => calc(p.codigo))
+    return memo
+  }, [todasCaptura])
 
   const toggleExp = (id: number) => setExpanded(prev => { const n = new Set(prev); n.has(id)?n.delete(id):n.add(id); return n })
 
@@ -732,6 +753,15 @@ function TabRegistro({ semana, otm }: { semana: number; otm?: string }) {
         </div>
       </div>
 
+      <div className="flex items-center gap-2">
+        <button onClick={() => setCollapsed(new Set())}
+          className="text-[11px] text-k-text3 bg-k-raised border border-k-border rounded-lg px-3 py-1.5 hover:text-k-text transition-colors">Expandir todo</button>
+        <button onClick={() => setCollapsed(new Set(padres))}
+          className="text-[11px] text-k-text3 bg-k-raised border border-k-border rounded-lg px-3 py-1.5 hover:text-k-text transition-colors">Colapsar todo</button>
+      </div>
+
+      <NivelLeyenda />
+
       <div className="rounded-xl border border-k-border overflow-hidden bg-k-surface">
         <table className="w-full" style={{ fontSize:12 }}>
           <thead>
@@ -742,87 +772,101 @@ function TabRegistro({ semana, otm }: { semana: number; otm?: string }) {
             </tr>
           </thead>
           <tbody>
-            {byFase.map(([fase, parts]) => {
-              const c = FASE_COLOR_REG[fase] ?? '#888780'
+            {visibles.map(node => {
+              const p = node.item
+              const isLeaf = node.children.length === 0
+              const st = nivelStyle(node.nivel, isLeaf, p.fase)
+              const indent = (node.nivel - 1) * 14
+
+              // Nodo de agrupación (padre)
+              if (!isLeaf) {
+                const hhN = hhRollup.get(p.codigo) ?? 0
+                return (
+                  <tr key={`n-${p.partida_id}`} style={{ background: st.bg, borderLeft: `3px solid ${st.border}`, borderBottom: '0.5px solid #1c2436' }}>
+                    <td />
+                    <td className="py-1.5 px-2" colSpan={2}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingLeft: indent }}>
+                        <button onClick={() => toggleNivel(p.codigo)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: st.text, display: 'flex', padding: 0 }}>
+                          {collapsed.has(p.codigo) ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
+                        </button>
+                        <span style={{ fontFamily: 'var(--mono)', fontSize: 10, fontWeight: st.bold ? 700 : 600, color: st.text }}>{p.codigo}</span>
+                        <span style={{ fontSize: 11, fontWeight: st.bold ? 600 : 400, fontStyle: 'italic', color: st.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={p.descripcion}>{p.descripcion}</span>
+                      </div>
+                    </td>
+                    <td colSpan={5} />
+                    <td className="py-1.5 px-2 text-right font-mono text-k-green" style={{ fontSize: 11 }}>{hhN > 0 ? fmt(hhN) : '—'}</td>
+                    <td />
+                  </tr>
+                )
+              }
+
+              // Hoja (actividad con hitos)
+              const c = faseColor(p.fase)
+              const principal = p.hitos.find(x => x.es_principal) ?? p.hitos[0]
+              const tieneMulti = p.hitos.length > 1
+              const isExp = expanded.has(p.partida_id)
+              const actVal = principal ? Number(avances[principal.hito_id] ?? principal.cant_actual ?? 0) : 0
+              const periodo = actVal - (principal?.cant_anterior ?? 0)
               return (
-                <Fragment key={fase}>
-                  <tr style={{ background:c+'15', borderTop:`1px solid ${c}40`, borderBottom:`0.5px solid ${c}30` }}>
-                    <td colSpan={10} className="py-1.5 px-3">
-                      <span style={{color:c}} className="text-[11px] font-bold uppercase tracking-wider">
-                        {fase} — {FASE_NOMBRES[fase] ?? fase}
-                      </span>
-                      <span className="ml-2 text-[10px] text-k-text3">{parts.length} actividad{parts.length!==1?'es':''}</span>
+                <Fragment key={p.partida_id}>
+                  <tr className="border-b border-k-border" style={{ background: 'transparent', borderLeft: `3px solid ${c}` }} onMouseEnter={e => (e.currentTarget.style.background = '#1c2436')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                    <td className="py-1 px-2">
+                      <span style={{ color: c, fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 700 }}>{(p.fase ?? '—')}</span>
+                    </td>
+                    <td className="py-1 px-2">
+                      <div className="flex items-center gap-1" style={{ paddingLeft: indent }}>
+                        {tieneMulti && (
+                          <button onClick={() => toggleExp(p.partida_id)} className="text-k-text3 hover:text-k-amber" style={{ fontSize: 10, lineHeight: 1, background: 'none', border: 'none', cursor: 'pointer' }}>
+                            {isExp ? '▾' : '▸'}
+                          </button>
+                        )}
+                        <span className="font-mono text-k-amber" style={{ fontSize: 10 }}>{p.codigo}</span>
+                      </div>
+                    </td>
+                    <td className="py-1 px-2" style={{ maxWidth: 260 }}>
+                      <span className="text-k-text2 truncate block" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={p.descripcion}>{p.descripcion}</span>
+                    </td>
+                    <td className="py-1 px-2 text-center text-k-text3 font-mono" style={{ fontSize: 11 }}>{p.unidad ?? '—'}</td>
+                    <td className="py-1 px-2 text-right font-mono text-k-text3" style={{ fontSize: 11 }}>{fmt(p.metrado_proyec)}</td>
+                    <td className="py-1 px-2 text-right font-mono text-k-text3" style={{ fontSize: 11 }}>{fmt(principal?.cant_anterior ?? 0)}</td>
+                    <td className="py-1 px-1" style={{ minWidth: 90 }}>
+                      {principal ? (
+                        <input type="number" step="0.01" min="0"
+                          value={avances[principal.hito_id] ?? ''}
+                          onChange={e => setAvances({ ...avances, [principal.hito_id]: e.target.value })}
+                          className="w-full bg-k-void border border-k-amber/40 focus:border-k-amber rounded px-2 py-1 text-k-text font-mono outline-none text-right transition-colors" style={{ fontSize: 12 }} />
+                      ) : <span className="text-k-text3">—</span>}
+                    </td>
+                    <td className={`py-1 px-2 text-right font-mono font-bold ${periodo > 0 ? 'text-k-green' : periodo < 0 ? 'text-k-red' : 'text-k-text3'}`} style={{ fontSize: 11 }}>
+                      {periodo > 0 ? '+' : ''}{fmt(periodo)}
+                    </td>
+                    <td className="py-1 px-2 text-right font-mono text-k-green" style={{ fontSize: 11 }}>
+                      {p.hh_tareo > 0 ? fmt(p.hh_tareo) : '—'}
+                    </td>
+                    <td className="py-1 px-1" style={{ minWidth: 70 }}>
+                      <input type="number" step="0.5" min="0"
+                        value={hh[p.partida_id] ?? ''} placeholder="0"
+                        onChange={e => setHh({ ...hh, [p.partida_id]: e.target.value })}
+                        className="w-full bg-k-void border border-k-border focus:border-k-amber rounded px-2 py-1 text-k-text font-mono outline-none text-right transition-colors" style={{ fontSize: 12 }} />
                     </td>
                   </tr>
-                  {parts.map(p => {
-                    const principal = p.hitos.find(x=>x.es_principal) ?? p.hitos[0]
-                    const tieneMulti = p.hitos.length > 1
-                    const isExp = expanded.has(p.partida_id)
-                    const actVal = principal ? Number(avances[principal.hito_id] ?? principal.cant_actual ?? 0) : 0
-                    const periodo = actVal - (principal?.cant_anterior ?? 0)
+                  {tieneMulti && isExp && p.hitos.map(x => {
+                    const sub = Number(avances[x.hito_id] ?? x.cant_actual ?? 0)
+                    const sp = sub - x.cant_anterior
                     return (
-                      <Fragment key={p.partida_id}>
-                        <tr className="border-b border-k-border" style={{background:'transparent'}} onMouseEnter={e=>(e.currentTarget.style.background='#1c2436')} onMouseLeave={e=>(e.currentTarget.style.background='transparent')}>
-                          <td className="py-1 px-2">
-                            <span style={{color:c,fontFamily:'var(--mono)',fontSize:10,fontWeight:700}}>{p.fase ?? '—'}</span>
-                          </td>
-                          <td className="py-1 px-2">
-                            <div className="flex items-center gap-1">
-                              {tieneMulti && (
-                                <button onClick={()=>toggleExp(p.partida_id)} className="text-k-text3 hover:text-k-amber" style={{fontSize:10,lineHeight:1,background:'none',border:'none',cursor:'pointer'}}>
-                                  {isExp?'▾':'▸'}
-                                </button>
-                              )}
-                              <span className="font-mono text-k-amber" style={{fontSize:10}}>{p.codigo}</span>
-                            </div>
-                          </td>
-                          <td className="py-1 px-2" style={{maxWidth:260}}>
-                            <span className="text-k-text2 truncate block" style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={p.descripcion}>{p.descripcion}</span>
-                          </td>
-                          <td className="py-1 px-2 text-center text-k-text3 font-mono" style={{fontSize:11}}>{p.unidad??'—'}</td>
-                          <td className="py-1 px-2 text-right font-mono text-k-text3" style={{fontSize:11}}>{fmt(p.metrado_proyec)}</td>
-                          <td className="py-1 px-2 text-right font-mono text-k-text3" style={{fontSize:11}}>{fmt(principal?.cant_anterior??0)}</td>
-                          <td className="py-1 px-1" style={{minWidth:90}}>
-                            {principal ? (
-                              <input type="number" step="0.01" min="0"
-                                value={avances[principal.hito_id] ?? ''}
-                                onChange={e => setAvances({...avances,[principal.hito_id]:e.target.value})}
-                                className="w-full bg-k-void border border-k-amber/40 focus:border-k-amber rounded px-2 py-1 text-k-text font-mono outline-none text-right transition-colors" style={{fontSize:12}} />
-                            ) : <span className="text-k-text3">—</span>}
-                          </td>
-                          <td className={`py-1 px-2 text-right font-mono font-bold ${periodo>0?'text-k-green':periodo<0?'text-k-red':'text-k-text3'}`} style={{fontSize:11}}>
-                            {periodo>0?'+':''}{fmt(periodo)}
-                          </td>
-                          <td className="py-1 px-2 text-right font-mono text-k-green" style={{fontSize:11}}>
-                            {p.hh_tareo>0?fmt(p.hh_tareo):'—'}
-                          </td>
-                          <td className="py-1 px-1" style={{minWidth:70}}>
-                            <input type="number" step="0.5" min="0"
-                              value={hh[p.partida_id]??''} placeholder="0"
-                              onChange={e => setHh({...hh,[p.partida_id]:e.target.value})}
-                              className="w-full bg-k-void border border-k-border focus:border-k-amber rounded px-2 py-1 text-k-text font-mono outline-none text-right transition-colors" style={{fontSize:12}} />
-                          </td>
-                        </tr>
-                        {tieneMulti && isExp && p.hitos.map(x => {
-                          const sub = Number(avances[x.hito_id]??x.cant_actual??0)
-                          const sp = sub - x.cant_anterior
-                          return (
-                            <tr key={x.hito_id} className="border-b border-k-border bg-k-raised/30">
-                              <td/><td className="py-1 px-2 pl-6"><span className="text-k-text3 font-bold" style={{fontSize:10}}>H{x.numero}</span></td>
-                              <td className="py-1 px-2" colSpan={2}><span className="text-k-text3" style={{fontSize:11}}>{x.descripcion} ({(x.peso*100).toFixed(0)}%)</span></td>
-                              <td className="py-1 px-2 text-right font-mono text-k-text3" style={{fontSize:11}}>{fmt(p.metrado_proyec)}</td>
-                              <td className="py-1 px-2 text-right font-mono text-k-text3" style={{fontSize:11}}>{fmt(x.cant_anterior)}</td>
-                              <td className="py-1 px-1">
-                                <input type="number" step="0.01" min="0"
-                                  value={avances[x.hito_id]??''} onChange={e=>setAvances({...avances,[x.hito_id]:e.target.value})}
-                                  className="w-full bg-k-void border border-k-amber/30 focus:border-k-amber rounded px-2 py-1 font-mono outline-none text-right transition-colors" style={{fontSize:11}} />
-                              </td>
-                              <td className={`py-1 px-2 text-right font-mono font-bold ${sp>0?'text-k-green':sp<0?'text-k-red':'text-k-text3'}`} style={{fontSize:10}}>{sp>0?'+':''}{fmt(sp)}</td>
-                              <td colSpan={2}/>
-                            </tr>
-                          )
-                        })}
-                      </Fragment>
+                      <tr key={x.hito_id} className="border-b border-k-border bg-k-raised/30">
+                        <td /><td className="py-1 px-2 pl-6"><span className="text-k-text3 font-bold" style={{ fontSize: 10 }}>H{x.numero}</span></td>
+                        <td className="py-1 px-2" colSpan={2}><span className="text-k-text3" style={{ fontSize: 11 }}>{x.descripcion} ({(x.peso * 100).toFixed(0)}%)</span></td>
+                        <td className="py-1 px-2 text-right font-mono text-k-text3" style={{ fontSize: 11 }}>{fmt(p.metrado_proyec)}</td>
+                        <td className="py-1 px-2 text-right font-mono text-k-text3" style={{ fontSize: 11 }}>{fmt(x.cant_anterior)}</td>
+                        <td className="py-1 px-1">
+                          <input type="number" step="0.01" min="0"
+                            value={avances[x.hito_id] ?? ''} onChange={e => setAvances({ ...avances, [x.hito_id]: e.target.value })}
+                            className="w-full bg-k-void border border-k-amber/30 focus:border-k-amber rounded px-2 py-1 font-mono outline-none text-right transition-colors" style={{ fontSize: 11 }} />
+                        </td>
+                        <td className={`py-1 px-2 text-right font-mono font-bold ${sp > 0 ? 'text-k-green' : sp < 0 ? 'text-k-red' : 'text-k-text3'}`} style={{ fontSize: 10 }}>{sp > 0 ? '+' : ''}{fmt(sp)}</td>
+                        <td colSpan={2} />
+                      </tr>
                     )
                   })}
                 </Fragment>
@@ -852,6 +896,122 @@ const PARTIDA_VACIA: PartidaInput = {
   hitos: [{ numero: 1, descripcion: '', peso: 1, es_principal: true }],
 }
 
+// ── Jornada: HH por día configurable con vigencia ──────────
+const DIAS_LBL = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
+interface JornadaResp {
+  vigentes: { dia_semana: number; dia: string; hh: number }[]
+  puntuales: { id: number; desde: string; hh: number; nota: string | null }[]
+  semanal: { id: number; desde: string; dia_semana: number; hh: number; nota: string | null }[]
+}
+function JornadaConfig() {
+  const qc = useQueryClient()
+  const { data } = useQuery<JornadaResp>({ queryKey: ['jornada'], queryFn: () => req('/api/jornada') })
+  const [abierto, setAbierto] = useState(false)
+  const [desde, setDesde] = useState(() => new Date().toISOString().slice(0, 10))
+  const [hh, setHh] = useState<Record<number, string>>({})
+  const [pFecha, setPFecha] = useState(''); const [pHh, setPHh] = useState(''); const [pNota, setPNota] = useState('')
+  const [msg, setMsg] = useState('')
+
+  useEffect(() => {
+    if (data) { const m: Record<number, string> = {}; data.vigentes.forEach(v => m[v.dia_semana] = String(v.hh)); setHh(m) }
+  }, [data])
+
+  const guardarSemanal = useMutation({
+    mutationFn: () => req('/api/jornada', { method: 'POST', body: JSON.stringify({ tipo: 'semanal', desde, dias: Object.fromEntries(Object.entries(hh).map(([k, v]) => [k, Number(v) || 0])) }) }),
+    onSuccess: () => { setMsg(`✓ Jornada vigente desde ${desde}`); qc.invalidateQueries({ queryKey: ['jornada'] }) },
+    onError: (e: Error) => setMsg(`✗ ${e.message}`),
+  })
+  const addPuntual = useMutation({
+    mutationFn: () => req('/api/jornada', { method: 'POST', body: JSON.stringify({ tipo: 'puntual', fecha: pFecha, hh: Number(pHh) || 0, nota: pNota || null }) }),
+    onSuccess: () => { setPFecha(''); setPHh(''); setPNota(''); setMsg('✓ Excepción agregada'); qc.invalidateQueries({ queryKey: ['jornada'] }) },
+    onError: (e: Error) => setMsg(`✗ ${e.message}`),
+  })
+  const delRegla = useMutation({
+    mutationFn: (id: number) => req(`/api/jornada/${id}`, { method: 'DELETE' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['jornada'] }),
+  })
+
+  const resumen = (data?.vigentes ?? []).map(v => `${DIAS_LBL[v.dia_semana]} ${v.hh}`).join(' · ')
+
+  return (
+    <div className={CARD}>
+      <button onClick={() => setAbierto(a => !a)} className="w-full flex items-center justify-between gap-2">
+        <span className="flex items-center gap-2 text-sm font-bold text-k-text">
+          <Clock size={15} className="text-k-amber" /> Jornada — HH por día
+        </span>
+        <span className="flex items-center gap-2">
+          <span className="text-[11px] font-mono text-k-text3 hidden md:inline">{resumen}</span>
+          {abierto ? <ChevronDown size={16} className="text-k-text3" /> : <ChevronRight size={16} className="text-k-text3" />}
+        </span>
+      </button>
+
+      {abierto && (
+        <div className="mt-4 grid md:grid-cols-2 gap-5">
+          {/* Regla semanal */}
+          <div>
+            <p className="text-[11px] text-k-text3 mb-2">
+              HH por día de semana. Al guardar, rige <strong className="text-k-text2">desde la fecha indicada</strong> en adelante
+              (el supervisor lo verá como referencial al registrar).
+            </p>
+            <div className="grid grid-cols-7 gap-1.5 mb-3">
+              {DIAS_LBL.map((d, i) => (
+                <div key={i} className="text-center">
+                  <div className="text-[10px] text-k-text3 mb-1">{d}</div>
+                  <input value={hh[i] ?? ''} onChange={e => setHh({ ...hh, [i]: e.target.value })}
+                    inputMode="decimal"
+                    className="w-full bg-k-void border border-k-border focus:border-k-amber rounded px-1 py-1 text-center font-mono text-k-text outline-none transition-colors" style={{ fontSize: 12 }} />
+                </div>
+              ))}
+            </div>
+            <div className="flex items-end gap-2">
+              <div className="flex-1">
+                <label className={LABEL}>Vigente desde</label>
+                <input type="date" value={desde} onChange={e => setDesde(e.target.value)} className={INPUT} />
+              </div>
+              <button onClick={() => guardarSemanal.mutate()} disabled={guardarSemanal.isPending} className={BTN_AMBER}>
+                {guardarSemanal.isPending ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Guardar
+              </button>
+            </div>
+          </div>
+
+          {/* Excepciones puntuales */}
+          <div>
+            <p className="text-[11px] text-k-text3 mb-2">
+              Excepciones por fecha exacta (ej. turno extendido de 12 HH). Tienen prioridad sobre la regla semanal.
+            </p>
+            <div className="flex items-end gap-2 mb-3">
+              <div className="flex-1">
+                <label className={LABEL}>Fecha</label>
+                <input type="date" value={pFecha} onChange={e => setPFecha(e.target.value)} className={INPUT} />
+              </div>
+              <div style={{ width: 70 }}>
+                <label className={LABEL}>HH</label>
+                <input value={pHh} onChange={e => setPHh(e.target.value)} inputMode="decimal" placeholder="12" className={INPUT} />
+              </div>
+              <button onClick={() => addPuntual.mutate()} disabled={addPuntual.isPending || !pFecha || !pHh} className={BTN_GHOST}>
+                <Plus size={14} /> Agregar
+              </button>
+            </div>
+            <input value={pNota} onChange={e => setPNota(e.target.value)} placeholder="Nota (opcional)" className={`${INPUT} mb-3`} />
+            <div className="space-y-1 max-h-40 overflow-y-auto">
+              {(data?.puntuales ?? []).length === 0 && <p className="text-[11px] text-k-text3">Sin excepciones.</p>}
+              {(data?.puntuales ?? []).map(r => (
+                <div key={r.id} className="flex items-center gap-2 text-[11px] bg-k-raised rounded px-2 py-1">
+                  <span className="font-mono text-k-text2">{r.desde}</span>
+                  <span className="font-mono font-bold text-k-amber">{r.hh} HH</span>
+                  <span className="text-k-text3 flex-1 truncate">{r.nota ?? ''}</span>
+                  <button onClick={() => delRegla.mutate(r.id)} className="text-k-red hover:text-red-400"><Trash2 size={12} /></button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+      {msg && <p className={`mt-3 text-xs font-bold ${msg.startsWith('✓') ? 'text-k-green' : 'text-k-red'}`}>{msg}</p>}
+    </div>
+  )
+}
+
 function TabConfig() {
   const qc = useQueryClient()
   const { data: partidas = [], isLoading } = useQuery<Partida[]>({
@@ -862,6 +1022,12 @@ function TabConfig() {
   const [editando, setEditando] = useState<number | null>(null)
   const [form, setForm] = useState<PartidaInput | null>(null)
   const [errMsg, setErrMsg] = useState('')
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+
+  const tree = useMemo(() => buildWbsTree(partidas), [partidas])
+  const visibles = useMemo(() => flattenVisible(tree, collapsed), [tree, collapsed])
+  const toggle = (c: string) => setCollapsed(prev => { const n = new Set(prev); n.has(c) ? n.delete(c) : n.add(c); return n })
+  const padres = useMemo(() => new Set(partidas.filter(p => partidas.some(c => c.parent_codigo === p.codigo)).map(p => p.codigo)), [partidas])
 
   const invalidar = () => {
     qc.invalidateQueries({ queryKey: ['ev-partidas'] })
@@ -888,7 +1054,7 @@ function TabConfig() {
     setEditando(p.id)
     setErrMsg('')
     setForm({
-      codigo: p.codigo, otm_id: p.otm_id, fase: p.fase, sub_fase: p.sub_fase,
+      codigo: p.codigo, otm_id: p.otm_id, fase: p.fase ?? '', sub_fase: p.sub_fase,
       descripcion: p.descripcion, unidad: p.unidad, sistema: p.sistema,
       metrado_presup: Number(p.metrado_presup),
       metrado_proyec: p.metrado_proyec !== null ? Number(p.metrado_proyec) : null,
@@ -906,16 +1072,25 @@ function TabConfig() {
 
   return (
     <div className="space-y-4">
+      <JornadaConfig />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-xs text-k-text3 max-w-2xl">
           Define el WBS y los hitos ponderados (rules of credit). Los pesos de cada partida deben sumar
           100% y debe existir un único hito principal — el que reporta la cantidad instalada oficial.
         </p>
-        <button onClick={() => { setEditando(null); setErrMsg(''); setForm({ ...PARTIDA_VACIA, hitos: [...PARTIDA_VACIA.hitos] }) }}
-          className={BTN_AMBER}>
-          <Plus size={14} /> Nueva partida
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setCollapsed(new Set())}
+            className="text-[11px] text-k-text3 bg-k-raised border border-k-border rounded-lg px-3 py-2 hover:text-k-text transition-colors">Expandir todo</button>
+          <button onClick={() => setCollapsed(new Set(padres))}
+            className="text-[11px] text-k-text3 bg-k-raised border border-k-border rounded-lg px-3 py-2 hover:text-k-text transition-colors">Colapsar todo</button>
+          <button onClick={() => { setEditando(null); setErrMsg(''); setForm({ ...PARTIDA_VACIA, hitos: [...PARTIDA_VACIA.hitos] }) }}
+            className={BTN_AMBER}>
+            <Plus size={14} /> Nueva partida
+          </button>
+        </div>
       </div>
+
+      <NivelLeyenda />
 
       <div className="bg-k-surface border border-k-border rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
@@ -935,40 +1110,59 @@ function TabConfig() {
               </tr>
             </thead>
             <tbody>
-              {partidas.map(p => (
-                <tr key={p.id} className="border-b border-k-border last:border-0 hover:bg-k-raised/40 transition-colors">
-                  <td className={`${TD} text-[11px]`}>{p.otm_id ?? '—'}</td>
-                  <td className={`${TD} font-mono text-[11px] text-k-amber`}>{p.codigo}</td>
-                  <td className={`${TD} max-w-[280px] truncate`} title={p.descripcion}>{p.descripcion}</td>
-                  <td className={TD}>{p.unidad}</td>
-                  <td className={TD}>{p.sistema ?? '—'}</td>
-                  <td className={`${TD} text-right font-mono`}>{fmt(Number(p.metrado_presup))}</td>
-                  <td className={`${TD} text-right font-mono`}>
-                    {p.metrado_proyec !== null ? fmt(Number(p.metrado_proyec)) : <span className="text-k-text3">= ppto</span>}
-                  </td>
-                  <td className={`${TD} text-right font-mono`}>{fmt(Number(p.hh_presup), 0)}</td>
-                  <td className={`${TD} text-[10px] text-k-text3 font-mono`}>
-                    {p.hitos.map(h => `${(Number(h.peso) * 100).toFixed(0)}%`).join(' / ')}
-                  </td>
-                  <td className={`${TD} text-right`}>
-                    <div className="inline-flex gap-1.5">
-                      <button onClick={() => abrirEdicion(p)}
-                        className="inline-flex items-center gap-1.5 text-[11px] font-bold text-k-blue bg-blue-500/10 border border-blue-500/20 hover:bg-blue-500/20 px-3 py-1.5 rounded-lg transition-colors">
-                        <Pencil size={11} /> Editar
-                      </button>
-                      <button
-                        onClick={() => {
-                          if (window.confirm(`¿Desactivar la partida ${p.codigo}? Sus avances históricos se conservan.`)) {
-                            eliminar.mutate(p.id)
-                          }
-                        }}
-                        className="inline-flex items-center gap-1.5 text-[11px] font-bold text-k-red bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 px-3 py-1.5 rounded-lg transition-colors">
-                        <Trash2 size={11} /> Eliminar
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {visibles.map(node => {
+                const p = node.item
+                const isLeaf = node.children.length === 0
+                const st = nivelStyle(node.nivel, isLeaf, p.fase)
+                const indent = (node.nivel - 1) * 16
+                return (
+                  <tr key={p.id} className="border-b border-k-border last:border-0"
+                      style={{ background: st.bg, borderLeft: `3px solid ${st.border}` }}>
+                    <td className={`${TD} text-[11px]`} style={{ color: '#8a96ad' }}>{p.otm_id ?? '—'}</td>
+                    <td className={`${TD} font-mono text-[11px]`} style={{ whiteSpace: 'nowrap' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4, paddingLeft: indent }}>
+                        {!isLeaf
+                          ? <button onClick={() => toggle(p.codigo)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: st.text, display: 'flex', padding: 0 }}>
+                              {collapsed.has(p.codigo) ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
+                            </button>
+                          : <span style={{ display: 'inline-block', width: 17 }} />}
+                        <span style={{ color: st.text, fontWeight: st.bold ? 700 : 600 }}>{p.codigo}</span>
+                      </div>
+                    </td>
+                    <td className={`${TD} max-w-[280px] truncate`} title={p.descripcion}
+                        style={{ color: isLeaf ? '#e8edf5' : st.text, fontWeight: st.bold ? 600 : 400, fontStyle: !isLeaf ? 'italic' : 'normal' }}>
+                      {p.descripcion}
+                    </td>
+                    <td className={TD}>{p.unidad || '—'}</td>
+                    <td className={TD}>{p.sistema ?? '—'}</td>
+                    <td className={`${TD} text-right font-mono`}>{Number(p.metrado_presup) > 0 ? fmt(Number(p.metrado_presup)) : '—'}</td>
+                    <td className={`${TD} text-right font-mono`}>
+                      {p.metrado_proyec !== null ? fmt(Number(p.metrado_proyec)) : <span className="text-k-text3">= ppto</span>}
+                    </td>
+                    <td className={`${TD} text-right font-mono`}>{Number(p.hh_presup) > 0 ? fmt(Number(p.hh_presup), 0) : '—'}</td>
+                    <td className={`${TD} text-[10px] text-k-text3 font-mono`}>
+                      {p.hitos.map(h => `${(Number(h.peso) * 100).toFixed(0)}%`).join(' / ')}
+                    </td>
+                    <td className={`${TD} text-right`}>
+                      <div className="inline-flex gap-1.5">
+                        <button onClick={() => abrirEdicion(p)}
+                          className="inline-flex items-center gap-1.5 text-[11px] font-bold text-k-blue bg-blue-500/10 border border-blue-500/20 hover:bg-blue-500/20 px-3 py-1.5 rounded-lg transition-colors">
+                          <Pencil size={11} /> Editar
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (window.confirm(`¿Desactivar la partida ${p.codigo}? Sus avances históricos se conservan.`)) {
+                              eliminar.mutate(p.id)
+                            }
+                          }}
+                          className="inline-flex items-center gap-1.5 text-[11px] font-bold text-k-red bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 px-3 py-1.5 rounded-lg transition-colors">
+                          <Trash2 size={11} /> Eliminar
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
               {partidas.length === 0 && (
                 <tr><td colSpan={10} className="py-8 text-center text-k-text3 text-sm">
                   Sin partidas. Crea la primera con el botón "Nueva partida".
@@ -978,7 +1172,7 @@ function TabConfig() {
           </table>
         </div>
         <div className="px-4 py-2 border-t border-k-border bg-k-raised">
-          <span className="text-[11px] text-k-text3">{partidas.length} partidas activas</span>
+          <span className="text-[11px] text-k-text3">{partidas.length} partidas · {padres.size} nodos de agrupación</span>
         </div>
       </div>
 
