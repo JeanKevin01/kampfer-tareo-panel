@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { Activity, AlertTriangle, CalendarDays, Clock, RefreshCw, CheckCircle, ArrowDown, ArrowUp } from 'lucide-react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { Activity, AlertTriangle, CalendarDays, Clock, RefreshCw, CheckCircle, ArrowDown, ArrowUp, ShieldCheck, Users, GitMerge, Copy } from 'lucide-react'
 
 const API = 'https://api.apps1.astraera.space'
 const req = (p: string) => fetch(`${API}${p}`).then(r => { if (!r.ok) throw new Error(`${r.status}`); return r.json() })
@@ -35,7 +35,7 @@ const EST = {
 } as const
 
 export default function MonitorTareo() {
-  const [tab, setTab] = useState<'hh' | 'anom'>('hh')
+  const [tab, setTab] = useState<'hh' | 'anom' | 'integridad'>('hh')
 
   return (
     <div className="space-y-4">
@@ -56,9 +56,13 @@ export default function MonitorTareo() {
           className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold border transition-colors ${tab === 'anom' ? 'bg-k-amber text-k-void border-k-amber' : 'bg-k-surface text-k-text2 border-k-border hover:border-k-amber/40'}`}>
           <AlertTriangle size={15} /> Anomalías / PF
         </button>
+        <button onClick={() => setTab('integridad')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold border transition-colors ${tab === 'integridad' ? 'bg-k-amber text-k-void border-k-amber' : 'bg-k-surface text-k-text2 border-k-border hover:border-k-amber/40'}`}>
+          <ShieldCheck size={15} /> Integridad
+        </button>
       </div>
 
-      {tab === 'hh' ? <TabHHDiario /> : <TabAnomalias />}
+      {tab === 'hh' ? <TabHHDiario /> : tab === 'anom' ? <TabAnomalias /> : <TabIntegridad />}
     </div>
   )
 }
@@ -217,6 +221,151 @@ function TabAnomalias() {
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+// ════════════════════════ Integridad de datos ════════════════════════
+interface Conflicto {
+  id: number; trabajador_id: string; trabajador_nombre: string; fecha: string
+  sup1_nombre: string | null; sup2_nombre: string | null; hh_1: number; hh_2: number; estado: string
+}
+interface DupMiembro { id: string; nombre: string; cargo: string | null; activo: boolean; n_tareo: number; n_reg: number }
+interface DupGrupo { nombre: string; miembros: DupMiembro[] }
+interface DupResp { total_grupos: number; grupos: DupGrupo[] }
+interface DobleHH { trab_id: string; nombre: string; n_sesiones: number; n_supervisores: number; n_otms: number; total_hh: number }
+interface DobleResp { fecha: string; total: number; filas: DobleHH[] }
+
+const post = (p: string, body: unknown) =>
+  fetch(`${API}${p}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    .then(async r => { const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.detail || `${r.status}`); return j })
+
+function TabIntegridad() {
+  const qc = useQueryClient()
+  const [fecha, setFecha] = useState(hoyISO())
+  const { data: conflictos } = useQuery<Conflicto[]>({ queryKey: ['conflictos'], queryFn: () => req('/ev/conflictos') })
+  const { data: dups } = useQuery<DupResp>({ queryKey: ['dups-trab'], queryFn: () => req('/api/trabajadores/duplicados') })
+  const { data: doble } = useQuery<DobleResp>({ queryKey: ['doble-hh', fecha], queryFn: () => req(`/api/monitor/duplicados-hh?fecha=${fecha}`) })
+  const [keep, setKeep] = useState<Record<string, string>>({})  // nombreGrupo -> id a conservar
+  const [msg, setMsg] = useState('')
+
+  const resolver = useMutation({
+    mutationFn: (id: number) => post('/ev/conflictos/resolver', { conflicto_id: id, resolucion: 'revisado', notas: 'Resuelto desde el Monitor' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['conflictos'] }),
+  })
+  const merge = useMutation({
+    mutationFn: (v: { from_id: string; to_id: string }) => post('/api/trabajadores/merge', v),
+    onSuccess: (_d, v) => { setMsg(`✓ ${v.from_id} fusionado en ${v.to_id}`); qc.invalidateQueries({ queryKey: ['dups-trab'] }) },
+    onError: (e: Error) => setMsg(`✗ ${e.message}`),
+  })
+
+  const pendientes = (conflictos ?? []).filter(c => c.estado !== 'RESUELTO')
+
+  const mejorId = (g: DupGrupo) => g.miembros.slice().sort((a, b) => (b.n_tareo + b.n_reg) - (a.n_tareo + a.n_reg))[0]?.id
+  const fusionarGrupo = (g: DupGrupo) => {
+    const to = keep[g.nombre] || mejorId(g)
+    const otros = g.miembros.filter(m => m.id !== to)
+    if (!to || !otros.length) return
+    if (!window.confirm(`Fusionar ${otros.map(o => o.id).join(', ')} → ${to} (${g.nombre})?\nSe reasignan todas las HH y se desactiva(n) el/los duplicado(s).`)) return
+    otros.forEach(o => merge.mutate({ from_id: o.id, to_id: to }))
+  }
+
+  return (
+    <div className="space-y-6">
+      {msg && <p className={`text-xs font-bold ${msg.startsWith('✓') ? 'text-k-green' : 'text-k-red'}`}>{msg}</p>}
+
+      {/* Trabajadores duplicados */}
+      <section>
+        <h2 className="flex items-center gap-2 text-sm font-bold text-k-text mb-2"><Users size={15} className="text-k-amber" /> Trabajadores duplicados</h2>
+        {(dups?.grupos.length ?? 0) === 0 ? (
+          <p className="text-xs text-k-text3">No se detectaron nombres repetidos con distinto ID. ✓</p>
+        ) : (
+          <div className="space-y-2">
+            {dups!.grupos.map(g => {
+              const to = keep[g.nombre] || mejorId(g)
+              return (
+                <div key={g.nombre} className="rounded-lg border border-k-border bg-k-surface p-3">
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <span className="text-xs font-bold text-k-text2">{g.nombre}</span>
+                    <button onClick={() => fusionarGrupo(g)} disabled={merge.isPending}
+                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-k-amber text-k-void text-[11px] font-bold disabled:opacity-50">
+                      <GitMerge size={12} /> Fusionar duplicados
+                    </button>
+                  </div>
+                  <div className="space-y-1">
+                    {g.miembros.map(m => (
+                      <label key={m.id} className={`flex items-center gap-2 text-[11px] px-2 py-1 rounded cursor-pointer ${m.id === to ? 'bg-k-green/10 border border-k-green/25' : 'bg-k-raised'}`}>
+                        <input type="radio" name={`keep-${g.nombre}`} checked={m.id === to} onChange={() => setKeep({ ...keep, [g.nombre]: m.id })} />
+                        <span className="font-mono text-k-amber">{m.id}</span>
+                        <span className="text-k-text2 flex-1">{m.cargo ?? '—'}</span>
+                        <span className="text-k-text3">tareo: <b className="text-k-text2">{m.n_tareo}</b></span>
+                        <span className="text-k-text3">reg: <b className="text-k-text2">{m.n_reg}</b></span>
+                        {!m.activo && <span className="text-[9px] text-k-red">inactivo</span>}
+                        {m.id === to && <span className="text-[9px] text-k-green font-bold">CONSERVAR</span>}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </section>
+
+      {/* Conflictos de HH */}
+      <section>
+        <h2 className="flex items-center gap-2 text-sm font-bold text-k-text mb-2"><AlertTriangle size={15} className="text-k-amber" /> Conflictos de HH (multi-supervisor)</h2>
+        {pendientes.length === 0 ? (
+          <p className="text-xs text-k-text3">Sin conflictos pendientes. ✓</p>
+        ) : (
+          <div className="rounded-xl border border-k-border overflow-hidden bg-k-surface">
+            <table className="w-full" style={{ fontSize: 12 }}>
+              <thead>
+                <tr className="bg-k-raised border-b border-k-border text-[10px] uppercase tracking-wider text-k-text3">
+                  <th className="text-left py-2 px-3">Trabajador</th><th className="text-left py-2 px-3">Fecha</th>
+                  <th className="text-left py-2 px-3">Supervisores</th><th className="text-right py-2 px-3">HH</th><th className="py-2 px-3"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {pendientes.map(c => (
+                  <tr key={c.id} className="border-b border-k-border/60">
+                    <td className="py-2 px-3 text-k-text">{c.trabajador_nombre}</td>
+                    <td className="py-2 px-3 font-mono text-k-text3">{c.fecha}</td>
+                    <td className="py-2 px-3 text-k-text2">{c.sup1_nombre ?? '—'} ↔ {c.sup2_nombre ?? '—'}</td>
+                    <td className="py-2 px-3 text-right font-mono text-k-red">{fmt(c.hh_1)} + {fmt(c.hh_2)}</td>
+                    <td className="py-2 px-3 text-right">
+                      <button onClick={() => resolver.mutate(c.id)} className="px-2 py-1 rounded-md bg-k-surface border border-k-border text-k-text2 text-[11px] hover:border-k-green/40">Marcar resuelto</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      {/* Doble registro de HH */}
+      <section>
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <h2 className="flex items-center gap-2 text-sm font-bold text-k-text"><Copy size={15} className="text-k-amber" /> Doble registro de HH (mismo día, varias sesiones)</h2>
+          <input type="date" value={fecha} onChange={e => setFecha(e.target.value)}
+            className="bg-k-void border border-k-border focus:border-k-amber rounded-lg px-2 py-1 text-xs text-k-text font-mono outline-none" />
+        </div>
+        {(doble?.filas.length ?? 0) === 0 ? (
+          <p className="text-xs text-k-text3">Nadie con HH en más de una sesión ese día. ✓</p>
+        ) : (
+          <div className="space-y-1">
+            {doble!.filas.map(d => (
+              <div key={d.trab_id} className="flex items-center gap-3 text-[11px] bg-k-surface border border-red-500/20 rounded px-3 py-2">
+                <span className="font-mono text-k-amber">{d.trab_id}</span>
+                <span className="text-k-text flex-1">{d.nombre}</span>
+                <span className="text-k-text3">{d.n_sesiones} sesiones · {d.n_supervisores} sup · {d.n_otms} OTM</span>
+                <span className="font-mono font-bold text-k-red">{fmt(d.total_hh)} HH</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
     </div>
   )
 }
