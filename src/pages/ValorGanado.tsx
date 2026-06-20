@@ -83,7 +83,8 @@ interface Reporte {
   totales: {
     hh_proyec: number; hh_ganadas_acum: number; hh_gastadas_acum: number
     hh_ganadas_sem: number; hh_gastadas_sem: number
-    pct_avance: number; pf_acum: number; pf_sem: number
+    hh_gastadas_dir_acum: number; hh_gastadas_ind_acum: number
+    pct_avance: number; pf_acum: number; pf_dir_acum: number; pf_sem: number
     eac_hh: number; desvio_hh: number
   }
   por_fase: ReporteGrupo[]; por_sistema: ReporteGrupo[]; partidas: ReporteFila[]
@@ -351,13 +352,17 @@ function TabResumen({ semana, otm }: { semana: number; otm?: string }) {
   const kpis = [
     { label: '% Avance del proyecto', value: pct(t.pct_avance), icon: Gauge,
       color: 'text-k-amber', bg: 'bg-amber-500/10', border: 'border-amber-500/20' },
-    { label: 'PF Acumulado (CPI)', value: t.pf_acum.toFixed(2), icon: Target,
+    { label: 'PF Total (CPI)', value: t.pf_acum.toFixed(2), icon: Target,
       color: t.pf_acum >= 1 ? 'text-k-green' : 'text-k-red',
       bg: t.pf_acum >= 1 ? 'bg-green-500/10' : 'bg-red-500/10',
       border: t.pf_acum >= 1 ? 'border-green-500/20' : 'border-red-500/20' },
+    { label: 'PF Directo (solo MO directa)', value: (t.pf_dir_acum || 0).toFixed(2), icon: Target,
+      color: (t.pf_dir_acum || 0) >= 1 ? 'text-k-green' : 'text-k-red',
+      bg: (t.pf_dir_acum || 0) >= 1 ? 'bg-green-500/10' : 'bg-red-500/10',
+      border: (t.pf_dir_acum || 0) >= 1 ? 'border-green-500/20' : 'border-red-500/20' },
     { label: `HH Ganadas (sem ${fmt(t.hh_ganadas_sem, 0)})`, value: fmt(t.hh_ganadas_acum, 0), icon: TrendingUp,
       color: 'text-k-green', bg: 'bg-green-500/10', border: 'border-green-500/20' },
-    { label: `HH Gastadas (sem ${fmt(t.hh_gastadas_sem, 0)})`, value: fmt(t.hh_gastadas_acum, 0), icon: Clock,
+    { label: `HH Gastadas · D ${fmt(t.hh_gastadas_dir_acum || 0, 0)} / I ${fmt(t.hh_gastadas_ind_acum || 0, 0)}`, value: fmt(t.hh_gastadas_acum, 0), icon: Clock,
       color: 'text-k-red', bg: 'bg-red-500/10', border: 'border-red-500/20' },
     { label: `EAC · desvío ${t.desvio_hh >= 0 ? '+' : ''}${fmt(t.desvio_hh, 0)} HH`, value: fmt(t.eac_hh, 0), icon: BarChart3,
       color: 'text-k-blue', bg: 'bg-blue-500/10', border: 'border-blue-500/20' },
@@ -366,7 +371,7 @@ function TabResumen({ semana, otm }: { semana: number; otm?: string }) {
   return (
     <div className="space-y-5">
 
-      <div className="grid grid-cols-2 xl:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 xl:grid-cols-6 gap-4">
         {kpis.map(k => (
           <div key={k.label} className={`bg-k-surface border ${k.border} rounded-xl p-5`}>
             <div className={`w-10 h-10 rounded-xl ${k.bg} flex items-center justify-center mb-4`}>
