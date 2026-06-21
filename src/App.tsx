@@ -19,6 +19,7 @@ import Reportes from '@/pages/Reportes'
 import Monitor from '@/pages/Monitor'
 import MonitorTareo from '@/pages/MonitorTareo'
 import Login from '@/pages/Login'
+import Usuarios from '@/pages/Usuarios'
 import { currentUser } from '@/lib/auth'
 
 const qc = new QueryClient({
@@ -60,6 +61,7 @@ export default function App() {
             <Route path="edicion"      element={<EdicionDatos />} />
             <Route path="monitor"      element={<Monitor />} />
             <Route path="bitacora"     element={<Bitacora />} />
+            <Route path="usuarios"     element={<Usuarios />} />
           </Route>
         </Routes>
       </BrowserRouter>

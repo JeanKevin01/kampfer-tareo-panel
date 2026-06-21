@@ -3,12 +3,12 @@ import {
   LayoutDashboard, UserCheck, Users, Upload, QrCode, Printer,
   Table2, BarChart3, ClipboardList, FileSpreadsheet, Package,
   Receipt, TrendingUp, PenLine, Activity, History, ChevronRight, Target,
-  FileText, LogOut,
+  FileText, LogOut, ShieldCheck,
   type LucideIcon,
 } from 'lucide-react'
 import { currentUser, logout } from '@/lib/auth'
 
-interface NavItem  { path: string; label: string; icon: LucideIcon }
+interface NavItem  { path: string; label: string; icon: LucideIcon; adminOnly?: boolean }
 interface NavGroup { label: string; items: NavItem[] }
 
 const NAV: NavGroup[] = [
@@ -55,11 +55,13 @@ const NAV: NavGroup[] = [
       { path: '/edicion',      label: 'Edición Datos',  icon: PenLine },
       { path: '/monitor',      label: 'Monitor',        icon: Activity },
       { path: '/bitacora',     label: 'Bitácora',       icon: History },
+      { path: '/usuarios',     label: 'Usuarios',       icon: ShieldCheck, adminOnly: true },
     ],
   },
 ]
 
 export default function Sidebar() {
+  const esAdmin = currentUser()?.rol === 'admin'
   return (
     <aside className="w-60 bg-k-void border-r border-k-border flex flex-col flex-shrink-0">
 
@@ -82,7 +84,7 @@ export default function Sidebar() {
             <p className="text-[9px] font-bold text-k-text3 uppercase tracking-[.15em] px-3 mb-1">
               {group.label}
             </p>
-            {group.items.map((item) => (
+            {group.items.filter((item) => !item.adminOnly || esAdmin).map((item) => (
               <NavLink
                 key={item.path}
                 to={item.path}
