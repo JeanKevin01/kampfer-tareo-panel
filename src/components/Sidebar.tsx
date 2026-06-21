@@ -3,9 +3,10 @@ import {
   LayoutDashboard, UserCheck, Users, Upload, QrCode, Printer,
   Table2, BarChart3, ClipboardList, FileSpreadsheet, Package,
   Receipt, TrendingUp, PenLine, Activity, History, ChevronRight, Target,
-  FileText,
+  FileText, LogOut,
   type LucideIcon,
 } from 'lucide-react'
+import { currentUser, logout } from '@/lib/auth'
 
 interface NavItem  { path: string; label: string; icon: LucideIcon }
 interface NavGroup { label: string; items: NavItem[] }
@@ -107,6 +108,23 @@ export default function Sidebar() {
           </div>
         ))}
       </nav>
+
+      {/* Usuario + cerrar sesión */}
+      <div className="border-t border-k-border px-3 py-2.5 flex-shrink-0">
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-full bg-amber-500/15 text-k-amber flex items-center justify-center text-[11px] font-bold flex-shrink-0">
+            {(currentUser()?.nombre || currentUser()?.username || '?').charAt(0).toUpperCase()}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-[11px] font-bold text-k-text truncate">{currentUser()?.nombre || currentUser()?.username}</div>
+            <div className="text-[9px] text-k-text3 uppercase tracking-wider">{currentUser()?.rol}</div>
+          </div>
+          <button onClick={logout} title="Cerrar sesión"
+            className="text-k-text3 hover:text-k-red transition-colors p-1.5 rounded-lg hover:bg-k-raised">
+            <LogOut size={15} />
+          </button>
+        </div>
+      </div>
 
       {/* Footer */}
       <div className="h-11 border-t border-k-border flex items-center px-5 flex-shrink-0">

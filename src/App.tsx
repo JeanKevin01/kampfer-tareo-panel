@@ -18,12 +18,22 @@ import RegistrosHH from '@/pages/RegistrosHH'
 import Reportes from '@/pages/Reportes'
 import Monitor from '@/pages/Monitor'
 import MonitorTareo from '@/pages/MonitorTareo'
+import Login from '@/pages/Login'
+import { currentUser } from '@/lib/auth'
 
 const qc = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
 })
 
 export default function App() {
+  // Compuerta de sesión: sin token válido → pantalla de login.
+  if (!currentUser()) {
+    return (
+      <QueryClientProvider client={qc}>
+        <Login />
+      </QueryClientProvider>
+    )
+  }
   return (
     <QueryClientProvider client={qc}>
       <BrowserRouter>
