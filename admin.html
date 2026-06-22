@@ -1,0 +1,1182 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin · Kampfer Tareo</title>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800&family=Barlow+Condensed:wght@700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --void:#060810;--surface:#141926;--raised:#1c2436;--border:#252f45;--border2:#2e3a52;
+  --text:#e8edf5;--text2:#8a96ad;--text3:#4e5a72;
+  --amber:#f59e0b;--amber2:#fbbf24;--amber-bg:rgba(245,158,11,.1);--amber-bd:rgba(245,158,11,.3);
+  --green:#10b981;--green-bg:rgba(16,185,129,.1);
+  --red:#ef4444;--red-bg:rgba(239,68,68,.1);
+  --blue:#3b82f6;--blue-bg:rgba(59,130,246,.1);
+  --font:'Barlow',sans-serif;--mono:'JetBrains Mono',monospace;--cond:'Barlow Condensed',sans-serif;
+}
+html,body{min-height:100%;background:var(--void);color:var(--text);font-family:var(--font);font-size:14px}
+
+nav{
+  background:var(--surface);border-bottom:1px solid var(--border);
+  padding:14px 24px;display:flex;align-items:center;gap:16px;
+  position:sticky;top:0;z-index:100;
+}
+.nav-logo{font-family:var(--cond);font-size:20px;font-weight:800;color:var(--amber);letter-spacing:2px}
+.nav-sub{font-size:11px;color:var(--text3);letter-spacing:1px;text-transform:uppercase}
+.nav-tabs{display:flex;gap:4px;margin-left:auto}
+.tab{
+  padding:7px 16px;border-radius:8px;cursor:pointer;font-size:13px;
+  font-weight:600;border:1px solid transparent;font-family:var(--font);
+  background:none;color:var(--text3);transition:all .15s;
+}
+.tab:hover{background:var(--raised);color:var(--text)}
+.tab.active{background:var(--amber-bg);color:var(--amber);border-color:var(--amber-bd)}
+
+.container{max-width:1200px;margin:0 auto;padding:28px 24px}
+.page{display:none}.page.active{display:block}
+
+.sec-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px}
+.sec-title{font-family:var(--cond);font-size:22px;font-weight:800;letter-spacing:-.3px}
+.sec-title span{color:var(--amber)}
+
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:24px}
+.stat{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 18px}
+.stat-n{font-family:var(--mono);font-size:28px;font-weight:500;color:var(--amber)}
+.stat-l{font-size:11px;color:var(--text3);margin-top:3px;text-transform:uppercase;letter-spacing:.8px}
+
+.card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:22px;margin-bottom:20px}
+.card-title{font-size:13px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:1px;margin-bottom:16px}
+.card-info{font-size:13px;color:var(--text2);line-height:1.7}
+.card-info strong{color:var(--text)}
+
+.form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:16px}
+.field label{font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;display:block;margin-bottom:6px}
+.field input,.field select{
+  width:100%;background:var(--raised);border:1px solid var(--border2);
+  border-radius:8px;padding:11px 13px;font-size:13px;color:var(--text);
+  font-family:var(--font);outline:none;transition:border .15s;
+}
+.field input:focus,.field select:focus{border-color:var(--amber)}
+.field input::placeholder{color:var(--text3)}
+.field select option{background:var(--raised)}
+
+.btn{
+  padding:11px 20px;border-radius:8px;border:none;font-size:13px;
+  font-weight:700;cursor:pointer;font-family:var(--font);
+  text-transform:uppercase;letter-spacing:.3px;transition:all .15s;
+  display:inline-flex;align-items:center;gap:7px;
+}
+.btn:active{transform:scale(.97)}
+.btn-amber{background:var(--amber);color:#000}
+.btn-amber:hover{background:var(--amber2)}
+.btn-green{background:var(--green);color:#fff}
+.btn-ghost{background:transparent;border:1px solid var(--border2);color:var(--text2)}
+.btn-ghost:hover{background:var(--raised);color:var(--text)}
+.btn-red{background:var(--red-bg);border:1px solid rgba(239,68,68,.3);color:var(--red)}
+.btn-sm{padding:6px 12px;font-size:11px}
+
+.search-wrap{position:relative;margin-bottom:16px}
+.search-wrap input{
+  width:100%;background:var(--raised);border:1px solid var(--border2);
+  border-radius:8px;padding:11px 13px 11px 38px;font-size:13px;
+  color:var(--text);font-family:var(--font);outline:none;transition:border .15s;
+}
+.search-wrap input:focus{border-color:var(--amber)}
+.search-wrap input::placeholder{color:var(--text3)}
+.search-ico{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text3);font-size:15px}
+
+.tbl{width:100%;border-collapse:collapse}
+.tbl th{
+  background:var(--raised);padding:10px 14px;text-align:left;
+  font-size:11px;font-weight:700;color:var(--text3);
+  text-transform:uppercase;letter-spacing:.8px;
+  border-bottom:1px solid var(--border);white-space:nowrap;
+}
+.tbl td{padding:10px 14px;border-bottom:1px solid var(--border);font-size:13px;vertical-align:middle}
+.tbl tr:last-child td{border:none}
+.tbl tr:hover td{background:rgba(255,255,255,.02)}
+.tbl-wrap{overflow-x:auto;border-radius:10px;border:1px solid var(--border)}
+.tid{font-family:var(--mono);font-size:11px;color:var(--amber);font-weight:500}
+.tnom{font-weight:600}
+.tcarg{font-size:11px;color:var(--text3)}
+
+.badge{display:inline-block;padding:3px 9px;border-radius:4px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase}
+.badge-green{background:var(--green-bg);color:var(--green);border:1px solid rgba(16,185,129,.2)}
+.badge-amber{background:var(--amber-bg);color:var(--amber);border:1px solid var(--amber-bd)}
+.badge-red{background:var(--red-bg);color:var(--red);border:1px solid rgba(239,68,68,.2)}
+.badge-blue{background:var(--blue-bg);color:var(--blue);border:1px solid rgba(59,130,246,.2)}
+
+/* QR GRID */
+.qr-grid{
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));
+  gap:16px;
+}
+.qr-card{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:12px;padding:16px;text-align:center;
+  cursor:pointer;transition:all .15s;
+}
+.qr-card:hover{border-color:var(--amber-bd);background:var(--raised);transform:translateY(-2px)}
+.qr-card:active{transform:scale(.97)}
+.qr-img{
+  width:140px;height:140px;display:block;margin:0 auto;
+  border-radius:6px;background:#fff;
+}
+.qr-name{font-size:11px;font-weight:700;margin-top:8px;line-height:1.3;color:var(--text)}
+.qr-cargo{font-size:10px;color:var(--text3);margin-top:2px}
+.qr-id{font-family:var(--mono);font-size:10px;color:var(--amber);margin-top:3px}
+
+/* MODAL */
+.overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:200;
+  display:none;align-items:center;justify-content:center;
+  backdrop-filter:blur(4px);
+}
+.overlay.open{display:flex}
+.modal{
+  background:var(--surface);border:1px solid var(--border2);
+  border-radius:16px;padding:28px;max-width:380px;width:90%;
+  text-align:center;
+}
+.modal-title{font-family:var(--cond);font-size:18px;font-weight:800;margin-bottom:4px;color:var(--text)}
+.modal-sub{font-size:12px;color:var(--text3);margin-bottom:20px}
+.modal-qr-wrap{
+  background:#fff;border-radius:12px;padding:12px;
+  display:inline-block;margin-bottom:12px;
+}
+.modal-qr-wrap img{display:block;width:200px;height:200px;border-radius:4px}
+.modal-id{font-family:var(--mono);font-size:12px;color:var(--text3);margin-bottom:16px}
+.modal-btns{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+
+/* REGISTROS */
+.date-input{
+  background:var(--raised);border:1px solid var(--border2);color:var(--text);
+  padding:8px 12px;border-radius:8px;font-family:var(--font);font-size:13px;
+  outline:none;
+}
+.date-input:focus{border-color:var(--amber)}
+
+/* TOAST */
+.toast{
+  position:fixed;bottom:20px;right:20px;
+  background:var(--surface);border:1px solid var(--border2);
+  border-radius:10px;padding:12px 18px;
+  font-size:13px;font-weight:600;z-index:999;
+  opacity:0;transition:all .25s;transform:translateY(8px);
+  max-width:320px;
+}
+.toast.show{opacity:1;transform:none}
+.toast.ok{border-color:rgba(16,185,129,.4);color:var(--green)}
+.toast.err{border-color:rgba(239,68,68,.4);color:var(--red)}
+.toast.warn{border-color:var(--amber-bd);color:var(--amber2)}
+
+.loading{text-align:center;padding:40px;color:var(--text3);font-size:13px}
+.spinner{width:32px;height:32px;border:2px solid var(--border2);border-top-color:var(--amber);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 12px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+@media print{
+  nav,.no-print{display:none!important}
+  body{background:#fff;color:#000}
+  .qr-card{border:1px solid #ccc;break-inside:avoid;background:#fff;page-break-inside:avoid}
+  .qr-card:hover{transform:none;border-color:#ccc}
+  .qr-name,.qr-cargo,.qr-id{color:#000!important}
+  .container{padding:0}
+  .qr-grid{grid-template-columns:repeat(4,1fr);gap:10px}
+}
+</style>
+</head>
+<body>
+
+<!-- LOGIN (Fase 2) -->
+<div id="login" style="position:fixed;inset:0;z-index:9999;background:#060810;display:none;align-items:center;justify-content:center;padding:24px">
+  <div style="width:100%;max-width:360px;background:#141926;border:1px solid #252f45;border-radius:14px;padding:28px 24px">
+    <div style="font-family:'Barlow Condensed',sans-serif;font-size:32px;font-weight:800;letter-spacing:5px;color:#f59e0b;text-align:center">KAMPFER</div>
+    <div style="font-size:11px;letter-spacing:1px;color:#4e5a72;text-align:center;margin:2px 0 20px">Admin · Iniciar sesión</div>
+    <label style="font-size:10px;letter-spacing:1px;text-transform:uppercase;color:#4e5a72;display:block;margin-bottom:5px">Usuario</label>
+    <input id="lg-user" autocomplete="username" autocapitalize="off" style="width:100%;background:#060810;border:1px solid #252f45;border-radius:9px;padding:12px 14px;font-size:15px;color:#e8edf5;outline:none;margin-bottom:14px">
+    <label style="font-size:10px;letter-spacing:1px;text-transform:uppercase;color:#4e5a72;display:block;margin-bottom:5px">Contraseña</label>
+    <input id="lg-pass" type="password" autocomplete="current-password" style="width:100%;background:#060810;border:1px solid #252f45;border-radius:9px;padding:12px 14px;font-size:15px;color:#e8edf5;outline:none;margin-bottom:10px">
+    <div id="lg-err" style="color:#ef4444;font-size:12px;font-weight:700;min-height:16px;margin-bottom:10px"></div>
+    <button id="lg-btn" onclick="hacerLogin()" style="width:100%;background:#f59e0b;color:#060810;font-weight:800;border:none;border-radius:9px;padding:13px;font-size:15px;cursor:pointer">Ingresar</button>
+  </div>
+</div>
+
+<nav>
+  <div>
+    <div class="nav-logo">KAMPFER</div>
+    <div class="nav-sub">Panel de Administración · Tareo SMCV</div>
+  </div>
+  <div class="nav-tabs">
+    <button class="tab active" onclick="showPage('p-workers',this)">👷 Trabajadores</button>
+    <button class="tab" onclick="showPage('p-otms',this)">📋 OTMs</button>
+    <button class="tab" onclick="showPage('p-qrs',this)">📷 QRs</button>
+    <button class="tab" onclick="showPage('p-registros',this)">📊 Registros</button>
+    <button class="tab" onclick="showPage('p-cuadrillas',this)">👥 Cuadrillas</button>
+    <button class="tab" onclick="cerrarSesion()">🚪 Salir</button>
+  </div>
+</nav>
+
+<div class="container">
+
+  <!-- ═══ TRABAJADORES ═══ -->
+  <div id="p-workers" class="page active">
+    <div class="sec-hdr">
+      <div class="sec-title">Trabajadores <span>·</span> Personal</div>
+      <div style="display:flex;gap:8px" class="no-print">
+        <button class="btn btn-ghost" onclick="showPage('p-qrs',document.querySelectorAll('.tab')[2])">📷 Ver QRs</button>
+        <button class="btn btn-amber" onclick="document.getElementById('form-worker').scrollIntoView({behavior:'smooth'})">+ Agregar trabajador</button>
+      </div>
+    </div>
+
+    <div class="stats">
+      <div class="stat"><div class="stat-n" id="st-total">—</div><div class="stat-l">Total personal</div></div>
+      <div class="stat"><div class="stat-n" id="st-activos" style="color:var(--green)">—</div><div class="stat-l">Activos</div></div>
+      <div class="stat"><div class="stat-n" id="st-inactivos" style="color:var(--red)">—</div><div class="stat-l">Inactivos</div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Lista de personal</div>
+      <div class="search-wrap">
+        <span class="search-ico">🔍</span>
+        <input type="text" id="q-worker" placeholder="Buscar por nombre, cargo o ID..." oninput="filtrarWorkers(this.value)">
+      </div>
+      <div class="tbl-wrap">
+        <table class="tbl">
+          <thead>
+            <tr><th>ID</th><th>Apellidos y Nombres</th><th>Cargo</th><th>Estado</th><th class="no-print">Acciones</th></tr>
+          </thead>
+          <tbody id="tbl-workers">
+            <tr><td colspan="5"><div class="loading"><div class="spinner"></div>Cargando...</div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card" id="form-worker">
+      <div class="card-title">➕ Agregar nuevo trabajador</div>
+      <div class="form-grid">
+        <div class="field">
+          <label>Apellidos y Nombres *</label>
+          <input type="text" id="nw-nombre" placeholder="APELLIDO1 APELLIDO2 NOMBRE" autocomplete="off">
+        </div>
+        <div class="field">
+          <label>Cargo *</label>
+          <input type="text" id="nw-cargo" placeholder="OPERARIO MECANICO" list="cargos-list">
+          <datalist id="cargos-list">
+            <option value="OPERARIO MECANICO"><option value="OFICIAL MECANICO"><option value="LIDER MECANICO">
+            <option value="MECANICO SOLDADOR"><option value="MECANICO RIGGER"><option value="OPERARIO ANDAMIERO">
+            <option value="OFICIAL ANDAMIERO"><option value="LIDER ANDAMIERO"><option value="TECNICO ELECTRICISTA">
+            <option value="CONDUCTOR"><option value="SUPERVISOR DE OPERACIONES"><option value="SUPERVISOR ELECTRICISTA">
+            <option value="OPERADOR CAMION GRUA"><option value="ING OFICINA TECNICA"><option value="ALMACENERO">
+            <option value="TOPOGRAFO"><option value="VIGIA"><option value="LIDER CIVIL"><option value="OFICIAL CIVIL">
+          </datalist>
+        </div>
+        <div class="field">
+          <label>DNI (opcional)</label>
+          <input type="text" id="nw-dni" placeholder="12345678" maxlength="8">
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-green" onclick="agregarWorker()">✅ Registrar trabajador</button>
+        <p style="font-size:12px;color:var(--text3);align-self:center">⚠️ Nuevo trabajador no tendrá QR pre-generado. Genera su QR en la pestaña QRs → clic en su nombre.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ OTMs ═══ -->
+  <div id="p-otms" class="page">
+    <div class="sec-hdr">
+      <div class="sec-title">OTMs <span>·</span> Órdenes de Trabajo</div>
+      <button class="btn btn-amber" onclick="document.getElementById('form-otm').scrollIntoView({behavior:'smooth'})">+ Nueva OTM</button>
+    </div>
+
+    <div class="stats">
+      <div class="stat"><div class="stat-n" id="st-otm-tot">—</div><div class="stat-l">Total OTMs</div></div>
+      <div class="stat"><div class="stat-n" id="st-otm-ejec" style="color:var(--green)">—</div><div class="stat-l">En ejecución</div></div>
+      <div class="stat"><div class="stat-n" id="st-otm-por" style="color:var(--amber)">—</div><div class="stat-l">Por iniciar</div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Lista de OTMs</div>
+      <div class="tbl-wrap">
+        <table class="tbl">
+          <thead>
+            <tr><th>OTM</th><th>Descripción</th><th>Área</th><th>Estado</th><th>Centro Costo</th><th>Cambiar Estado</th></tr>
+          </thead>
+          <tbody id="tbl-otms">
+            <tr><td colspan="6"><div class="loading"><div class="spinner"></div>Cargando...</div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card" id="form-otm">
+      <div class="card-title">➕ Agregar nueva OTM</div>
+      <div class="form-grid">
+        <div class="field"><label>ID de OTM *</label><input type="text" id="no-id" placeholder="OTM-0035"></div>
+        <div class="field"><label>SDP</label><input type="text" id="no-sdp" placeholder="SDP-0040"></div>
+        <div class="field">
+          <label>Área</label>
+          <input type="text" id="no-area" placeholder="SX-EW / Mina / Aguas..." list="areas-list">
+          <datalist id="areas-list">
+            <option value="SX-EW"><option value="Mina"><option value="Lixviación">
+            <option value="Aguas"><option value="C2 Área Seca"><option value="GSC">
+          </datalist>
+        </div>
+        <div class="field"><label>Centro de Costo</label><input type="text" id="no-cc" placeholder="GOPSP-2510004-035"></div>
+        <div class="field" style="grid-column:1/-1"><label>Descripción *</label><input type="text" id="no-desc" placeholder="DESCRIPCIÓN DE LOS TRABAJOS"></div>
+      </div>
+      <button class="btn btn-amber" onclick="agregarOTM()">✅ Crear OTM</button>
+    </div>
+  </div>
+
+  <!-- ═══ QRs ═══ -->
+  <div id="p-qrs" class="page">
+    <div class="sec-hdr">
+      <div class="sec-title">QRs <span>·</span> Códigos por Trabajador</div>
+      <div style="display:flex;gap:8px" class="no-print">
+        <button class="btn btn-ghost" onclick="window.print()">🖨️ Imprimir todos</button>
+      </div>
+    </div>
+
+    <div class="card no-print">
+      <div class="card-title">ℹ️ Instrucciones</div>
+      <p class="card-info">
+        Cada QR encodea únicamente el <strong>ID numérico</strong> del trabajador (ej: 067).
+        Si el cargo o nombre cambia, el QR sigue siendo válido — no necesita reimprimirse.<br>
+        Para imprimir: usa el botón "Imprimir todos" o haz clic en un QR individual para descargarlo.
+      </p>
+    </div>
+
+    <div class="search-wrap no-print">
+      <span class="search-ico">🔍</span>
+      <input type="text" id="q-qr" placeholder="Filtrar QRs por nombre o cargo..." oninput="filtrarQRs(this.value)">
+    </div>
+
+    <div id="qr-grid" class="qr-grid">
+      <div class="loading" style="grid-column:1/-1"><div class="spinner"></div>Cargando trabajadores...</div>
+    </div>
+  </div>
+
+  <!-- ═══ REGISTROS ═══ -->
+  <div id="p-registros" class="page">
+    <div class="sec-hdr">
+      <div class="sec-title">Registros <span>·</span> Tareo del Día</div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input type="date" id="fecha-filtro" class="date-input">
+        <button class="btn btn-ghost" onclick="cargarRegistros()">🔄 Cargar</button>
+        <button class="btn btn-amber" onclick="calcularHH()">⚙️ Calcular HH</button>
+      </div>
+    </div>
+
+    <div class="stats">
+      <div class="stat"><div class="stat-n" id="st-reg-tot">—</div><div class="stat-l">Registros del día</div></div>
+      <div class="stat"><div class="stat-n" id="st-reg-trab">—</div><div class="stat-l">Trabajadores únicos</div></div>
+      <div class="stat"><div class="stat-n" id="st-reg-otms">—</div><div class="stat-l">OTMs activas hoy</div></div>
+    </div>
+
+    <div class="card">
+      <div class="tbl-wrap">
+        <table class="tbl">
+          <thead>
+            <tr><th>ID</th><th>Trabajador</th><th>OTM</th><th>Hora reg.</th><th>HH</th><th>Supervisor</th></tr>
+          </thead>
+          <tbody id="tbl-reg">
+            <tr><td colspan="6" style="text-align:center;padding:30px;color:var(--text3)">Selecciona una fecha y presiona Cargar</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- PAGE: CUADRILLAS -->
+<div id="p-cuadrillas" class="page">
+<div class="container">
+  <div class="sec-hdr">
+    <div class="sec-title">Cuadrillas <span>pre-establecidas</span></div>
+  </div>
+  <p class="card-info" style="margin-bottom:16px;font-size:13px;color:var(--text2);padding:12px 14px;background:var(--surface);border:1px solid var(--border);border-radius:8px;line-height:1.7">
+    Configura qué trabajadores forman la cuadrilla de cada supervisor.
+    En la app de tareo, el supervisor verá el botón <strong>"👥 Cargar mi cuadrilla"</strong>
+    para agregar a todos sus trabajadores habituales de un solo toque.
+  </p>
+  <div class="form-grid" style="grid-template-columns:1fr 1fr;margin-bottom:16px">
+    <div class="field">
+      <label>Supervisor</label>
+      <select id="cua-sup" onchange="cargarCuadrillaAdmin()">
+        <option value="">— Seleccionar supervisor —</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Buscar trabajador para agregar</label>
+      <input type="text" id="cua-busq" placeholder="Nombre o ID..."
+             oninput="buscarParaCuadrilla(this.value)" autocomplete="off">
+    </div>
+  </div>
+  <div id="cua-busq-res" style="margin-bottom:16px"></div>
+  <div class="card-title" style="margin-bottom:12px">Miembros actuales</div>
+  <div class="tbl-wrap" id="cua-lista">
+    <p style="padding:20px;text-align:center;color:var(--text3);font-size:13px">
+      Selecciona un supervisor para ver su cuadrilla
+    </p>
+  </div>
+</div>
+</div>
+
+<!-- QR MODAL -->
+<div class="overlay" id="qr-modal">
+  <div class="modal">
+    <div class="modal-title" id="modal-nombre">—</div>
+    <div class="modal-sub" id="modal-cargo">—</div>
+    <div class="modal-qr-wrap">
+      <img id="modal-qr-img" src="" alt="QR Code" width="200" height="200">
+    </div>
+    <div class="modal-id" id="modal-id">—</div>
+    <div class="modal-btns">
+      <button class="btn btn-amber" onclick="descargarQR()">⬇️ Descargar PNG</button>
+      <button class="btn btn-ghost" onclick="cerrarModal()">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API = 'https://api.apps1.astraera.space';
+
+// ── Sesión Fase 2: token JWT en localStorage ──
+var TOKEN_KEY='kampfer_token';
+function getToken(){ return localStorage.getItem(TOKEN_KEY); }
+function setTokenLS(t){ localStorage.setItem(TOKEN_KEY,t); }
+function clearToken(){ localStorage.removeItem(TOKEN_KEY); }
+function decodeToken(t){
+  if(!t) return null;
+  try{
+    var b=t.split('.')[0].replace(/-/g,'+').replace(/_/g,'/');
+    while(b.length%4) b+='=';
+    var bin=atob(b);
+    var json=new TextDecoder().decode(Uint8Array.from(bin,function(c){return c.charCodeAt(0)}));
+    return JSON.parse(json);
+  }catch(e){ return null; }
+}
+function sesionValida(){
+  var p=decodeToken(getToken());
+  return !!(p && (!p.exp || p.exp*1000>Date.now()));
+}
+function cerrarSesion(){ clearToken(); location.reload(); }
+
+// Inyecta token Bearer en todas las llamadas a la API; si responde 401, vuelve al login.
+(function(){
+  var _fetch = window.fetch.bind(window);
+  window.fetch = function(u, o){
+    o = o || {};
+    var url = (typeof u==='string') ? u : (u && u.url) || '';
+    if(url.indexOf(API)===0){
+      var h = {};
+      if(o.headers) for(var k in o.headers) h[k]=o.headers[k];
+      var tk=getToken();
+      if(tk) h['Authorization']='Bearer '+tk;
+      o.headers=h;
+    }
+    return _fetch(u,o).then(function(res){
+      if(res.status===401 && getToken() && url.indexOf(API)===0 && url.indexOf('/api/auth/login')<0){
+        clearToken(); location.reload();
+      }
+      return res;
+    });
+  };
+})();
+
+// ═══════ QR DATA PRE-GENERADO (SVG — sin CDN, sin canvas) ═══════
+const QR_DATA = {
+"001":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m2%200h1m2%200h1m1%200h7M2%203.5h1m5%200h1m3%200h1m1%200h1m1%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m1%200h2m2%200h1m1%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m1%200h2m1%200h2m1%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h1m2%200h2m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m1%200h1m3%200h1m1%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M10%209.5h5M2%2010.5h1m1%200h5m5%200h1m1%200h5M2%2011.5h2m3%200h1m1%200h1m2%200h1m1%200h1m2%200h1m2%200h2M2%2012.5h7m2%200h3m1%200h1m2%200h1m1%200h1M3%2013.5h5m1%200h1m7%200h2m1%200h1M4%2014.5h1m1%200h1m1%200h1m2%200h1m1%200h1m1%200h1m2%200h1m1%200h1M10%2015.5h1m1%200h5m2%200h1M2%2016.5h7m2%200h1m2%200h1m1%200h2m3%200h2M2%2017.5h1m5%200h1m1%200h7m2%200h1M2%2018.5h1m1%200h3m1%200h1m1%200h1m3%200h1m2%200h1m2%200h1M2%2019.5h1m1%200h3m1%200h1m1%200h1m1%200h1m1%200h1m2%200h1m2%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h2m1%200h1m1%200h1m2%200h3M2%2021.5h1m5%200h1m3%200h1m4%200h2m1%200h2M2%2022.5h7m1%200h4m1%200h1m2%200h3%22%2F%3E%3C%2Fsvg%3E%0A",
+"002":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m3%200h1m3%200h7M2%203.5h1m5%200h1m2%200h1m2%200h1m1%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m1%200h3m3%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m1%200h1m3%200h1m1%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h1m1%200h3m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m1%200h1m3%200h1m1%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M10%209.5h1m2%200h2M2%2010.5h1m1%200h5m3%200h1m1%200h1m1%200h5M2%2011.5h6m1%200h2m1%200h1m1%200h1m2%200h1m2%200h1m1%200h1M2%2012.5h4m2%200h1m1%200h4m1%200h1m2%200h1m1%200h1M3%2013.5h2m1%200h2m2%200h1m1%200h1m4%200h2m1%200h1M2%2014.5h1m1%200h1m2%200h2m4%200h1m1%200h1m2%200h1m1%200h1M10%2015.5h1m2%200h4m2%200h1M2%2016.5h7m5%200h1m1%200h2m3%200h2M2%2017.5h1m5%200h1m1%200h2m1%200h4m2%200h1M2%2018.5h1m1%200h3m1%200h1m1%200h1m1%200h1m1%200h1m2%200h1m2%200h1M2%2019.5h1m1%200h3m1%200h1m1%200h2m2%200h1m2%200h1m2%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h4m1%200h1m2%200h3M2%2021.5h1m5%200h1m2%200h1m5%200h2m1%200h2M2%2022.5h7m1%200h2m1%200h1m1%200h1m2%200h3%22%2F%3E%3C%2Fsvg%3E%0A",
+"003":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m4%200h1m2%200h7M2%203.5h1m5%200h1m1%200h1m5%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m2%200h1m1%200h1m2%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m2%200h2m1%200h1m1%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h1m2%200h2m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m2%200h3m2%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M12%209.5h1M2%2010.5h1m1%200h1m1%200h1m1%200h1m2%200h2m1%200h1m3%200h1m2%200h1M2%2011.5h3m2%200h1m4%200h2m1%200h1m1%200h1m1%200h1m2%200h1M5%2012.5h1m2%200h2m3%200h1m1%200h3m2%200h1m1%200h1M4%2013.5h4m2%200h6m1%200h3m1%200h1M2%2014.5h1m1%200h1m1%200h1m1%200h1m1%200h1m2%200h1m1%200h3m2%200h1m1%200h1M10%2015.5h2m4%200h1m3%200h2M2%2016.5h7m5%200h1m3%200h1m2%200h1M2%2017.5h1m5%200h1m7%200h1m3%200h2M2%2018.5h1m1%200h3m1%200h1m1%200h3m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2019.5h1m1%200h3m1%200h1m4%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h2m1%200h1m1%200h3m1%200h2m1%200h1M2%2021.5h1m5%200h1m2%200h5m1%200h3M2%2022.5h7m1%200h1m2%200h1m1%200h3m1%200h2m1%200h1%22%2F%3E%3C%2Fsvg%3E%0A",
+"004":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m3%200h1m3%200h7M2%203.5h1m5%200h1m1%200h3m3%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m2%200h2m3%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m2%200h2m1%200h1m1%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h2m1%200h2m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m4%200h1m2%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M2%2010.5h1m1%200h1m1%200h1m1%200h1m5%200h1m3%200h1m2%200h1M4%2011.5h1m2%200h1m2%200h1m1%200h2m1%200h1m1%200h1m1%200h1m1%200h1M2%2012.5h3m1%200h4m1%200h1m1%200h1m1%200h3m2%200h3M2%2013.5h1m1%200h1m7%200h4m1%200h3m1%200h1M2%2014.5h5m1%200h4m1%200h1m1%200h3m2%200h1m1%200h1M10%2015.5h1m5%200h1m3%200h2M2%2016.5h7m2%200h1m2%200h1m3%200h1m2%200h1M2%2017.5h1m5%200h1m2%200h2m3%200h1m3%200h2M2%2018.5h1m1%200h3m1%200h1m1%200h1m3%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2019.5h1m1%200h3m1%200h1m3%200h2m1%200h1m1%200h1m1%200h1m1%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h1m2%200h1m1%200h3m1%200h2m1%200h1M2%2021.5h1m5%200h1m2%200h1m1%200h3m1%200h3M2%2022.5h7m1%200h4m1%200h3m1%200h2m1%200h1%22%2F%3E%3C%2Fsvg%3E%0A",
+"005":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m2%200h3m2%200h7M2%203.5h1m5%200h1m1%200h1m1%200h2m2%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m3%200h2m2%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m4%200h1m2%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h1m2%200h2m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m2%200h3m2%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M12%209.5h1M2%2010.5h1m1%200h1m1%200h1m1%200h1m3%200h1m1%200h1m3%200h1m2%200h1M2%2011.5h5m5%200h2m1%200h1m1%200h1m1%200h1M4%2012.5h2m1%200h2m2%200h1m1%200h1m1%200h3m2%200h3M4%2013.5h2m1%200h1m1%200h1m1%200h5m1%200h3m1%200h1M2%2014.5h2m2%200h5m1%200h2m1%200h3m2%200h1m1%200h1M10%2015.5h2m4%200h1m3%200h2M2%2016.5h7m3%200h1m1%200h1m3%200h1m2%200h1M2%2017.5h1m5%200h1m3%200h1m3%200h1m3%200h2M2%2018.5h1m1%200h3m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2019.5h1m1%200h3m1%200h1m2%200h3m1%200h1m1%200h1m1%200h1m1%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h2m1%200h1m1%200h3m1%200h2m1%200h1M2%2021.5h1m5%200h1m2%200h5m1%200h3M2%2022.5h7m1%200h2m1%200h1m1%200h3m1%200h2m1%200h1%22%2F%3E%3C%2Fsvg%3E%0A",
+"006":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m1%200h2m2%200h1m1%200h7M2%203.5h1m5%200h1m1%200h1m3%200h1m1%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m1%200h2m1%200h2m1%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m3%200h3m1%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h2m2%200h1m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m4%200h2m1%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M13%209.5h2M2%2010.5h1m2%200h7m2%200h2m2%200h1m1%200h3M4%2011.5h4m1%200h1m1%200h1m2%200h1m1%200h1m1%200h1m1%200h1M4%2012.5h1m2%200h2m1%200h1m1%200h1m2%200h2m1%200h5M2%2013.5h6m1%200h2m1%200h2m5%200h2M5%2014.5h1m1%200h2m1%200h1m1%200h1m3%200h1m2%200h4M10%2015.5h1m1%200h3m2%200h1m1%200h1m1%200h2M2%2016.5h7m1%200h1m1%200h1m1%200h5m3%200h1M2%2017.5h1m5%200h1m1%200h6m1%200h3m2%200h1M2%2018.5h1m1%200h3m1%200h1m1%200h5m1%200h2m1%200h2m1%200h1M2%2019.5h1m1%200h3m1%200h1m1%200h5m3%200h3M2%2020.5h1m1%200h3m1%200h1m3%200h1m3%200h1m3%200h3M2%2021.5h1m5%200h1m2%200h1m3%200h2m1%200h1m1%200h1m1%200h1M2%2022.5h7m1%200h1m1%200h2m5%200h3%22%2F%3E%3C%2Fsvg%3E%0A",
+"007":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m2%200h1m2%200h1m1%200h7M2%203.5h1m5%200h1m1%200h1m5%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m2%200h1m2%200h1m1%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m3%200h3m1%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h5m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m4%200h1m2%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M11%209.5h2M2%2010.5h1m1%200h1m1%200h1m1%200h1m3%200h1m1%200h1m3%200h1m2%200h1M5%2011.5h3m4%200h2m1%200h1m1%200h1m1%200h1m2%200h1M2%2012.5h3m3%200h4m1%200h1m1%200h3m2%200h3M2%2013.5h1m1%200h2m3%200h2m2%200h3m1%200h3m1%200h1M3%2014.5h3m1%200h4m2%200h1m1%200h3m2%200h1m1%200h1M10%2015.5h1m1%200h1m3%200h1m3%200h2M2%2016.5h7m5%200h1m3%200h1m2%200h1M2%2017.5h1m5%200h1m2%200h1m4%200h1m3%200h2M2%2018.5h1m1%200h3m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2019.5h1m1%200h3m1%200h1m2%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h1m1%200h2m1%200h3m1%200h2m1%200h1M2%2021.5h1m5%200h1m3%200h4m1%200h3M2%2022.5h7m1%200h2m1%200h1m1%200h3m1%200h2m1%200h1%22%2F%3E%3C%2Fsvg%3E%0A",
+"008":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m3%200h2m2%200h7M2%203.5h1m5%200h1m2%200h2m1%200h1m1%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m1%200h1m2%200h1m2%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m1%200h1m2%200h2m1%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h1m1%200h3m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m1%200h1m3%200h1m1%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M10%209.5h1m2%200h2M2%2010.5h1m1%200h5m2%200h1m2%200h1m1%200h5M2%2011.5h3m1%200h2m1%200h2m1%200h1m1%200h1m2%200h1m2%200h1M2%2012.5h3m1%200h4m3%200h1m1%200h1m2%200h1m1%200h1m1%200h1M2%2013.5h3m2%200h1m1%200h4m4%200h2m1%200h1M2%2014.5h2m1%200h2m1%200h1m1%200h1m1%200h2m1%200h1m2%200h1m1%200h1M10%2015.5h2m1%200h4m2%200h1M2%2016.5h7m2%200h2m1%200h1m1%200h2m3%200h2M2%2017.5h1m5%200h1m1%200h7m2%200h1M2%2018.5h1m1%200h3m1%200h1m1%200h2m2%200h1m2%200h1m2%200h1M2%2019.5h1m1%200h3m1%200h1m1%200h1m3%200h1m2%200h1m2%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h1m1%200h2m1%200h1m2%200h3M2%2021.5h1m5%200h1m3%200h1m4%200h2m1%200h2M2%2022.5h7m1%200h4m1%200h1m2%200h3%22%2F%3E%3C%2Fsvg%3E%0A",
+"009":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m7%200h7M2%203.5h1m5%200h1m1%200h1m1%200h1m3%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m3%200h1m3%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m2%200h4m1%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h1m2%200h2m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m2%200h3m2%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M12%209.5h1M2%2010.5h1m1%200h1m1%200h1m1%200h1m5%200h1m3%200h1m2%200h1M2%2011.5h4m1%200h1m4%200h2m1%200h1m1%200h1m1%200h1M6%2012.5h3m1%200h4m1%200h3m2%200h1M2%2013.5h1m1%200h2m1%200h1m1%200h2m1%200h4m1%200h3m1%200h1M2%2014.5h2m1%200h1m1%200h2m3%200h2m1%200h3m2%200h1m1%200h1M10%2015.5h1m5%200h1m3%200h2M2%2016.5h7m2%200h2m1%200h1m3%200h1m2%200h1M2%2017.5h1m5%200h1m3%200h1m3%200h1m3%200h2M2%2018.5h1m1%200h3m1%200h1m1%200h1m3%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2019.5h1m1%200h3m1%200h1m2%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h1m2%200h1m1%200h3m1%200h2m1%200h1M2%2021.5h1m5%200h1m4%200h3m1%200h3M2%2022.5h7m1%200h1m1%200h2m1%200h3m1%200h2m1%200h1%22%2F%3E%3C%2Fsvg%3E%0A",
+"010":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m1%200h2m2%200h1m1%200h7M2%203.5h1m5%200h1m4%200h2m1%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m2%200h1m1%200h1m2%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m1%200h1m3%200h1m1%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h1m2%200h2m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m1%200h1m1%200h1m1%200h1m1%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M10%209.5h3M2%2010.5h1m3%200h1m1%200h3m3%200h6m2%200h1M3%2011.5h4m4%200h2m1%200h3m3%200h2M2%2012.5h1m1%200h2m1%200h2m1%200h1m1%200h1m1%200h2m3%200h1m2%200h1M2%2013.5h3m1%200h2m1%200h1m2%200h3m2%200h1m1%200h1M5%2014.5h1m2%200h2m1%200h1m1%200h1m2%200h3m1%200h3M10%2015.5h5m2%200h1m1%200h1m1%200h2M2%2016.5h7m1%200h4m2%200h7M2%2017.5h1m5%200h1m3%200h1m2%200h2m1%200h1m1%200h1M2%2018.5h1m1%200h3m1%200h1m1%200h1m3%200h3m3%200h3M2%2019.5h1m1%200h3m1%200h1m2%200h2m1%200h3m3%200h3M2%2020.5h1m1%200h3m1%200h1m2%200h2m1%200h2M2%2021.5h1m5%200h1m2%200h1m1%200h2m2%200h1m1%200h1m1%200h1M2%2022.5h7m1%200h1m1%200h2m2%200h7%22%2F%3E%3C%2Fsvg%3E%0A",
+"011":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m3%200h3m1%200h7M2%203.5h1m5%200h1m1%200h1m2%200h1m2%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m2%200h1m1%200h2m1%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m2%200h1m1%200h1m2%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h5m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m4%200h1m2%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M11%209.5h2M2%2010.5h1m1%200h1m1%200h1m1%200h1m5%200h1m3%200h1m2%200h1M5%2011.5h1m6%200h2m1%200h1m1%200h1m1%200h1m2%200h1M2%2012.5h2m1%200h2m1%200h2m1%200h3m1%200h3m2%200h1M4%2013.5h2m3%200h1m1%200h1m1%200h3m1%200h3m1%200h1M3%2014.5h2m1%200h3m4%200h1m1%200h3m2%200h1m1%200h1M10%2015.5h3m3%200h1m3%200h2M2%2016.5h7m2%200h1m2%200h1m3%200h1m2%200h1M2%2017.5h1m5%200h1m2%200h1m4%200h1m3%200h2M2%2018.5h1m1%200h3m1%200h1m1%200h1m3%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2019.5h1m1%200h3m1%200h1m2%200h3m1%200h1m1%200h1m1%200h1m1%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h4m1%200h3m1%200h2m1%200h1M2%2021.5h1m5%200h1m2%200h1m1%200h3m1%200h3M2%2022.5h7m1%200h1m1%200h2m1%200h3m1%200h2m1%200h1%22%2F%3E%3C%2Fsvg%3E%0A",
+"012":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m5%200h1m1%200h7M2%203.5h1m5%200h1m1%200h4m2%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m2%200h2m1%200h1m1%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m2%200h1m1%200h1m2%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h1m1%200h3m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m2%200h3m2%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M11%209.5h1M2%2010.5h1m1%200h1m1%200h1m1%200h1m2%200h2m1%200h1m3%200h1m2%200h1M2%2011.5h2m1%200h1m4%200h1m1%200h2m1%200h1m1%200h1m1%200h1m1%200h1M4%2012.5h1m2%200h3m2%200h2m1%200h3m2%200h2M2%2013.5h1m1%200h1m1%200h2m1%200h2m2%200h3m1%200h3m1%200h1M4%2014.5h6m1%200h1m1%200h1m1%200h3m2%200h1m1%200h1M10%2015.5h1m1%200h1m3%200h1m3%200h2M2%2016.5h7m5%200h1m3%200h1m2%200h1M2%2017.5h1m5%200h1m3%200h1m3%200h1m3%200h2M2%2018.5h1m1%200h3m1%200h1m1%200h3m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2019.5h1m1%200h3m1%200h1m2%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h1m1%200h2m1%200h3m1%200h2m1%200h1M2%2021.5h1m5%200h1m2%200h5m1%200h3M2%2022.5h7m1%200h2m1%200h1m1%200h3m1%200h2m1%200h1%22%2F%3E%3C%2Fsvg%3E%0A",
+"013":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m2%200h1m1%200h2m1%200h7M2%203.5h1m5%200h1m1%200h1m1%200h1m3%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m3%200h3m1%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m3%200h1m1%200h1m1%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h5m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m4%200h1m2%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M11%209.5h2M2%2010.5h1m1%200h1m1%200h1m1%200h1m2%200h1m2%200h1m3%200h1m2%200h1M6%2011.5h2m4%200h2m1%200h1m1%200h1m1%200h1M2%2012.5h7m3%200h2m1%200h3m2%200h2M4%2013.5h3m3%200h2m1%200h3m1%200h3m1%200h1M6%2014.5h1m1%200h2m2%200h2m1%200h3m2%200h1m1%200h1M10%2015.5h3m3%200h1m3%200h2M2%2016.5h7m2%200h2m1%200h1m3%200h1m2%200h1M2%2017.5h1m5%200h1m2%200h2m3%200h1m3%200h2M2%2018.5h1m1%200h3m1%200h1m1%200h2m2%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2019.5h1m1%200h3m1%200h1m4%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h4m1%200h3m1%200h2m1%200h1M2%2021.5h1m5%200h1m2%200h1m1%200h3m1%200h3M2%2022.5h7m1%200h4m1%200h3m1%200h2m1%200h1%22%2F%3E%3C%2Fsvg%3E%0A",
+"014":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m2%200h1m1%200h1m2%200h7M2%203.5h1m5%200h1m2%200h1m1%200h2m1%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m1%200h4m2%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m1%200h3m3%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h1m1%200h3m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m1%200h1m3%200h1m1%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M10%209.5h1m2%200h2M2%2010.5h1m1%200h5m5%200h1m1%200h5M2%2011.5h4m3%200h2m1%200h1m1%200h1m2%200h1m2%200h1m1%200h1M2%2012.5h2m2%200h1m1%200h1m2%200h1m1%200h1m1%200h1m2%200h1m1%200h3M2%2013.5h3m1%200h2m3%200h2m4%200h2m1%200h1M2%2014.5h1m1%200h7m2%200h1m1%200h1m2%200h1m1%200h1M10%2015.5h2m1%200h4m2%200h1M2%2016.5h7m2%200h1m2%200h1m1%200h2m3%200h2M2%2017.5h1m5%200h1m1%200h2m1%200h4m2%200h1M2%2018.5h1m1%200h3m1%200h1m1%200h1m3%200h1m2%200h1m2%200h1M2%2019.5h1m1%200h3m1%200h1m1%200h3m1%200h1m2%200h1m2%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h1m1%200h2m1%200h1m2%200h3M2%2021.5h1m5%200h1m3%200h1m4%200h2m1%200h2M2%2022.5h7m1%200h1m1%200h2m1%200h1m2%200h3%22%2F%3E%3C%2Fsvg%3E%0A",
+"015":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m7%200h7M2%203.5h1m5%200h1m5%200h1m1%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m1%200h1m1%200h1m3%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m1%200h1m2%200h2m1%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h5m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m1%200h3m1%200h1m1%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M10%209.5h1m1%200h3M2%2010.5h1m1%200h5m3%200h1m1%200h1m1%200h5M4%2011.5h1m1%200h2m1%200h1m2%200h1m1%200h1m2%200h1m2%200h3M5%2012.5h1m2%200h2m1%200h1m1%200h1m1%200h1m2%200h1m1%200h3M3%2013.5h4m2%200h1m2%200h1m4%200h2m1%200h1M2%2014.5h1m3%200h1m1%200h6m1%200h1m2%200h1m1%200h1M10%2015.5h1m2%200h4m2%200h1M2%2016.5h7m3%200h1m1%200h1m1%200h2m3%200h2M2%2017.5h1m5%200h1m1%200h1m2%200h4m2%200h1M2%2018.5h1m1%200h3m1%200h1m1%200h1m1%200h1m1%200h1m2%200h1m2%200h1M2%2019.5h1m1%200h3m1%200h1m1%200h1m1%200h1m1%200h1m2%200h1m2%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h4m1%200h1m2%200h3M2%2021.5h1m5%200h1m8%200h2m1%200h2M2%2022.5h7m1%200h1m2%200h1m1%200h1m2%200h3%22%2F%3E%3C%2Fsvg%3E%0A",
+"016":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m2%200h2m1%200h1m1%200h7M2%203.5h1m5%200h1m1%200h1m1%200h1m3%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m2%200h1m2%200h1m1%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m2%200h2m3%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h2m1%200h2m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m4%200h1m2%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M11%209.5h1M2%2010.5h1m1%200h1m1%200h1m1%200h1m3%200h1m1%200h1m3%200h1m2%200h1M6%2011.5h2m1%200h5m1%200h1m1%200h1m1%200h1m1%200h1M2%2012.5h5m1%200h1m2%200h3m1%200h3m2%200h1m1%200h1M3%2013.5h2m1%200h2m2%200h2m1%200h3m1%200h3M2%2014.5h3m1%200h6m1%200h1m1%200h3m2%200h1m1%200h1M10%2015.5h3m3%200h1m3%200h2M2%2016.5h7m3%200h1m1%200h1m3%200h1m2%200h1M2%2017.5h1m5%200h1m3%200h1m3%200h1m3%200h2M2%2018.5h1m1%200h3m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2019.5h1m1%200h3m1%200h1m4%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h4m1%200h3m1%200h2m1%200h1M2%2021.5h1m5%200h1m3%200h4m1%200h3M2%2022.5h7m1%200h4m1%200h3m1%200h2m1%200h1%22%2F%3E%3C%2Fsvg%3E%0A",
+"017":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m3%200h3m1%200h7M2%203.5h1m5%200h1m1%200h4m2%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m4%200h2m1%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m4%200h2m1%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h1m2%200h2m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m2%200h3m2%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M11%209.5h2M2%2010.5h1m1%200h1m1%200h1m1%200h1m5%200h1m3%200h1m2%200h1M2%2011.5h2m1%200h1m3%200h1m1%200h3m1%200h1m1%200h1m1%200h1M4%2012.5h1m3%200h2m1%200h3m1%200h3m2%200h1m1%200h1M2%2013.5h5m2%200h2m2%200h3m1%200h3M2%2014.5h2m1%200h2m1%200h3m1%200h2m1%200h3m2%200h1m1%200h1M10%2015.5h1m1%200h1m3%200h1m3%200h2M2%2016.5h7m2%200h1m2%200h1m3%200h1m2%200h1M2%2017.5h1m5%200h1m2%200h2m3%200h1m3%200h2M2%2018.5h1m1%200h3m1%200h1m1%200h1m3%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2019.5h1m1%200h3m1%200h1m2%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h1m1%200h2m1%200h3m1%200h2m1%200h1M2%2021.5h1m5%200h1m4%200h3m1%200h3M2%2022.5h7m1%200h2m1%200h1m1%200h3m1%200h2m1%200h1%22%2F%3E%3C%2Fsvg%3E%0A",
+"018":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m2%200h1m1%200h1m2%200h7M2%203.5h1m5%200h1m1%200h1m2%200h1m2%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m3%200h2m2%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m2%200h1m2%200h1m1%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h1m1%200h3m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m2%200h3m2%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M2%2010.5h1m1%200h1m1%200h1m1%200h1m3%200h1m1%200h1m3%200h1m2%200h1M2%2011.5h3m1%200h1m2%200h5m1%200h1m1%200h1m1%200h1m1%200h2M4%2012.5h1m1%200h8m1%200h3m2%200h1m1%200h1M2%2013.5h3m1%200h1m5%200h4m1%200h3M3%2014.5h1m1%200h1m1%200h7m1%200h3m2%200h1m1%200h1M10%2015.5h1m5%200h1m3%200h2M2%2016.5h7m5%200h1m3%200h1m2%200h1M2%2017.5h1m5%200h1m2%200h1m4%200h1m3%200h2M2%2018.5h1m1%200h3m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2019.5h1m1%200h3m1%200h1m3%200h2m1%200h1m1%200h1m1%200h1m1%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h1m2%200h1m1%200h3m1%200h2m1%200h1M2%2021.5h1m5%200h1m2%200h5m1%200h3M2%2022.5h7m1%200h4m1%200h3m1%200h2m1%200h1%22%2F%3E%3C%2Fsvg%3E%0A",
+"019":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m7%200h7M2%203.5h1m5%200h1m1%200h2m4%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m2%200h2m3%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m3%200h2m2%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h5m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m4%200h1m2%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M12%209.5h1M2%2010.5h1m1%200h1m1%200h1m1%200h1m5%200h1m3%200h1m2%200h1M4%2011.5h2m1%200h1m1%200h1m1%200h3m1%200h1m1%200h1m1%200h1m2%200h1M2%2012.5h4m1%200h2m1%200h4m1%200h3m2%200h1m1%200h1M3%2013.5h5m1%200h1m1%200h5m1%200h3M3%2014.5h2m3%200h3m2%200h1m1%200h3m2%200h1m1%200h1M10%2015.5h2m4%200h1m3%200h2M2%2016.5h7m2%200h2m1%200h1m3%200h1m2%200h1M2%2017.5h1m5%200h1m7%200h1m3%200h2M2%2018.5h1m1%200h3m1%200h1m1%200h1m3%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2019.5h1m1%200h3m1%200h1m2%200h3m1%200h1m1%200h1m1%200h1m1%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h2m1%200h1m1%200h3m1%200h2m1%200h1M2%2021.5h1m5%200h1m2%200h1m1%200h3m1%200h3M2%2022.5h7m1%200h2m1%200h1m1%200h3m1%200h2m1%200h1%22%2F%3E%3C%2Fsvg%3E%0A",
+"020":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m3%200h2m2%200h7M2%203.5h1m5%200h1m1%200h1m1%200h1m3%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m2%200h1m1%200h1m2%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m3%200h2m2%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h1m1%200h3m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m2%200h3m2%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M2%2010.5h1m1%200h1m1%200h1m1%200h1m2%200h2m1%200h1m3%200h1m2%200h1M2%2011.5h4m1%200h1m1%200h5m1%200h1m1%200h1m1%200h1m1%200h1M6%2012.5h1m1%200h1m1%200h1m1%200h2m1%200h3m2%200h3M2%2013.5h3m4%200h2m1%200h4m1%200h3M4%2014.5h2m2%200h1m1%200h2m1%200h1m1%200h3m2%200h1m1%200h1M10%2015.5h1m5%200h1m3%200h2M2%2016.5h7m3%200h1m1%200h1m3%200h1m2%200h1M2%2017.5h1m5%200h1m2%200h2m3%200h1m3%200h2M2%2018.5h1m1%200h3m1%200h1m1%200h3m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2019.5h1m1%200h3m1%200h1m2%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h1m2%200h1m1%200h3m1%200h2m1%200h1M2%2021.5h1m5%200h1m2%200h5m1%200h3M2%2022.5h7m1%200h1m1%200h2m1%200h3m1%200h2m1%200h1%22%2F%3E%3C%2Fsvg%3E%0A",
+"021":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m7%200h7M2%203.5h1m5%200h1m2%200h2m1%200h1m1%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m1%200h3m3%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m1%200h2m1%200h1m2%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h1m2%200h2m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m1%200h1m3%200h1m1%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M10%209.5h1m1%200h3M2%2010.5h1m1%200h5m3%200h1m1%200h1m1%200h5M2%2011.5h3m1%200h2m3%200h2m1%200h1m2%200h1m2%200h2M2%2012.5h3m1%200h1m1%200h2m1%200h1m1%200h1m1%200h1m2%200h1m1%200h2M2%2013.5h1m1%200h2m3%200h4m4%200h2m1%200h2M4%2014.5h5m2%200h1m1%200h1m1%200h1m2%200h1m1%200h1M10%2015.5h2m1%200h4m2%200h1M2%2016.5h7m3%200h1m1%200h1m1%200h2m3%200h2M2%2017.5h1m5%200h1m1%200h1m1%200h5m2%200h1M2%2018.5h1m1%200h3m1%200h1m1%200h1m1%200h1m1%200h1m2%200h1m2%200h1M2%2019.5h1m1%200h3m1%200h1m1%200h1m3%200h1m2%200h1m2%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h1m1%200h2m1%200h1m2%200h3M2%2021.5h1m5%200h1m2%200h1m5%200h2m1%200h2M2%2022.5h7m1%200h4m1%200h1m2%200h3%22%2F%3E%3C%2Fsvg%3E%0A",
+"022":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m5%200h1m1%200h7M2%203.5h1m5%200h1m1%200h1m2%200h1m2%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m3%200h1m1%200h1m1%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m4%200h2m1%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h2m1%200h2m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m4%200h1m2%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M11%209.5h1M2%2010.5h1m1%200h1m1%200h1m1%200h1m2%200h2m1%200h1m3%200h1m2%200h1M5%2011.5h1m3%200h5m1%200h1m1%200h1m1%200h1m1%200h2M2%2012.5h2m1%200h5m2%200h2m1%200h3m2%200h3M3%2013.5h2m2%200h1m1%200h1m1%200h1m1%200h3m1%200h3M2%2014.5h1m3%200h1m1%200h1m1%200h4m1%200h3m2%200h1m1%200h1M10%2015.5h3m3%200h1m3%200h2M2%2016.5h7m5%200h1m3%200h1m2%200h1M2%2017.5h1m5%200h1m7%200h1m3%200h2M2%2018.5h1m1%200h3m1%200h1m1%200h3m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2019.5h1m1%200h3m1%200h1m2%200h3m1%200h1m1%200h1m1%200h1m1%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h4m1%200h3m1%200h2m1%200h1M2%2021.5h1m5%200h1m3%200h4m1%200h3M2%2022.5h7m1%200h1m1%200h2m1%200h3m1%200h2m1%200h1%22%2F%3E%3C%2Fsvg%3E%0A",
+"023":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m2%200h1m1%200h2m1%200h7M2%203.5h1m5%200h1m1%200h2m4%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m2%200h4m1%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m2%200h2m3%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h1m2%200h2m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m2%200h3m2%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M11%209.5h2M2%2010.5h1m1%200h1m1%200h1m1%200h1m2%200h1m2%200h1m3%200h1m2%200h1M2%2011.5h2m2%200h2m1%200h1m1%200h3m1%200h1m1%200h1m1%200h1m2%200h1M7%2012.5h2m3%200h2m1%200h3m2%200h3M2%2013.5h4m7%200h3m1%200h3M2%2014.5h1m1%200h5m1%200h1m2%200h1m1%200h3m2%200h1m1%200h1M10%2015.5h1m1%200h1m3%200h1m3%200h2M2%2016.5h7m2%200h2m1%200h1m3%200h1m2%200h1M2%2017.5h1m5%200h1m2%200h1m4%200h1m3%200h2M2%2018.5h1m1%200h3m1%200h1m1%200h2m2%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2019.5h1m1%200h3m1%200h1m3%200h2m1%200h1m1%200h1m1%200h1m1%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h1m1%200h2m1%200h3m1%200h2m1%200h1M2%2021.5h1m5%200h1m4%200h3m1%200h3M2%2022.5h7m1%200h1m2%200h1m1%200h3m1%200h2m1%200h1%22%2F%3E%3C%2Fsvg%3E%0A",
+"024":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m2%200h1m4%200h7M2%203.5h1m5%200h1m1%200h1m1%200h2m2%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m2%200h1m4%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m2%200h1m1%200h2m1%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h1m1%200h3m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m2%200h3m2%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M2%2010.5h1m1%200h1m1%200h1m1%200h1m2%200h1m2%200h1m3%200h1m2%200h1M2%2011.5h5m2%200h5m1%200h1m1%200h1m1%200h1m1%200h1M4%2012.5h2m2%200h1m4%200h1m1%200h3m2%200h1M3%2013.5h2m4%200h1m1%200h5m1%200h3M4%2014.5h1m1%200h1m1%200h2m1%200h1m1%200h1m1%200h3m2%200h1m1%200h1M10%2015.5h2m4%200h1m3%200h2M2%2016.5h7m2%200h2m1%200h1m3%200h1m2%200h1M2%2017.5h1m5%200h1m2%200h2m3%200h1m3%200h2M2%2018.5h1m1%200h3m1%200h1m1%200h2m2%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2019.5h1m1%200h3m1%200h1m2%200h3m1%200h1m1%200h1m1%200h1m1%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h2m1%200h1m1%200h3m1%200h2m1%200h1M2%2021.5h1m5%200h1m4%200h3m1%200h3M2%2022.5h7m1%200h2m1%200h1m1%200h3m1%200h2m1%200h1%22%2F%3E%3C%2Fsvg%3E%0A",
+"025":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m1%200h2m4%200h7M2%203.5h1m5%200h1m1%200h1m1%200h3m1%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m1%200h2m1%200h1m2%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m2%200h1m1%200h2m1%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h1m3%200h1m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m2%200h4m1%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M11%209.5h4M2%2010.5h1m2%200h6m1%200h1m1%200h2m2%200h1m1%200h3M2%2011.5h2m1%200h2m3%200h1m3%200h1m1%200h1m1%200h1m1%200h3M2%2012.5h4m1%200h3m1%200h2m2%200h2m1%200h3M4%2013.5h1m1%200h2m1%200h1m1%200h1m1%200h1m5%200h3M3%2014.5h1m2%200h1m1%200h1m2%200h2m3%200h1m2%200h4M10%2015.5h2m1%200h2m2%200h1m1%200h1m1%200h2M2%2016.5h7m1%200h2m2%200h5m3%200h1M2%2017.5h1m5%200h1m1%200h2m1%200h3m1%200h3m2%200h1M2%2018.5h1m1%200h3m1%200h1m1%200h1m2%200h2m1%200h2m1%200h2m1%200h1M2%2019.5h1m1%200h3m1%200h1m1%200h2m1%200h2m3%200h3M2%2020.5h1m1%200h3m1%200h1m2%200h1m4%200h1m3%200h3M2%2021.5h1m5%200h1m2%200h2m2%200h2m1%200h1m1%200h1m1%200h1M2%2022.5h7m1%200h1m1%200h2m5%200h3%22%2F%3E%3C%2Fsvg%3E%0A",
+"026":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m4%200h2m1%200h7M2%203.5h1m5%200h1m4%200h2m1%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m1%200h2m1%200h2m1%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m1%200h3m1%200h1m1%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h1m1%200h3m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m1%200h1m3%200h1m1%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M10%209.5h2m1%200h2M2%2010.5h1m1%200h5m3%200h1m1%200h1m1%200h5M2%2011.5h2m1%200h2m3%200h3m1%200h1m2%200h1m2%200h1m1%200h1M2%2012.5h2m1%200h5m1%200h3m1%200h1m2%200h1m1%200h1m1%200h1M4%2013.5h1m5%200h1m6%200h2m1%200h2M2%2014.5h1m1%200h1m1%200h1m1%200h3m2%200h1m1%200h1m2%200h1m1%200h1M10%2015.5h1m1%200h5m2%200h1M2%2016.5h7m3%200h1m1%200h1m1%200h2m3%200h2M2%2017.5h1m5%200h1m1%200h1m2%200h4m2%200h1M2%2018.5h1m1%200h3m1%200h1m1%200h1m1%200h1m1%200h1m2%200h1m2%200h1M2%2019.5h1m1%200h3m1%200h1m1%200h2m2%200h1m2%200h1m2%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h2m1%200h1m1%200h1m2%200h3M2%2021.5h1m5%200h1m2%200h1m5%200h2m1%200h2M2%2022.5h7m1%200h1m1%200h2m1%200h1m2%200h3%22%2F%3E%3C%2Fsvg%3E%0A",
+"027":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m1%200h5m1%200h7M2%203.5h1m5%200h1m1%200h1m3%200h1m1%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m2%200h3m2%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h3m1%200h1m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m4%200h2m1%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M12%209.5h3M2%2010.5h1m2%200h6m1%200h1m1%200h2m2%200h1m1%200h3M4%2011.5h4m2%200h1m3%200h1m1%200h1m1%200h1m1%200h2M4%2012.5h1m3%200h1m1%200h3m2%200h2m1%200h3M2%2013.5h1m1%200h1m1%200h1m2%200h2m1%200h2m5%200h3M2%2014.5h4m2%200h1m2%200h1m4%200h1m2%200h4M10%2015.5h1m1%200h3m2%200h1m1%200h1m1%200h2M2%2016.5h7m1%200h3m1%200h5m3%200h1M2%2017.5h1m5%200h1m1%200h1m1%200h4m1%200h3m2%200h1M2%2018.5h1m1%200h3m1%200h1m1%200h1m2%200h2m1%200h2m1%200h2m1%200h1M2%2019.5h1m1%200h3m1%200h1m1%200h5m3%200h3M2%2020.5h1m1%200h3m1%200h1m3%200h1m3%200h1m3%200h3M2%2021.5h1m5%200h1m3%200h1m2%200h2m1%200h1m1%200h1m1%200h1M2%2022.5h7m1%200h1m1%200h2m5%200h3%22%2F%3E%3C%2Fsvg%3E%0A",
+"028":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m2%200h4m1%200h7M2%203.5h1m5%200h1m3%200h1m1%200h1m1%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m1%200h1m1%200h3m1%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m1%200h1m2%200h1m2%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h1m1%200h3m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m1%200h1m3%200h1m1%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M10%209.5h2m1%200h2M2%2010.5h1m1%200h5m2%200h2m1%200h1m1%200h5M2%2011.5h2m3%200h1m2%200h3m1%200h1m2%200h1m2%200h1M2%2012.5h5m1%200h1m3%200h2m1%200h1m2%200h1m1%200h3M4%2013.5h1m1%200h1m2%200h1m7%200h2m1%200h2M2%2014.5h2m2%200h3m1%200h1m1%200h2m1%200h1m2%200h1m1%200h1M10%2015.5h1m1%200h5m2%200h1M2%2016.5h7m5%200h1m1%200h2m3%200h2M2%2017.5h1m5%200h1m1%200h1m1%200h5m2%200h1M2%2018.5h1m1%200h3m1%200h1m1%200h3m1%200h1m2%200h1m2%200h1M2%2019.5h1m1%200h3m1%200h1m1%200h1m1%200h1m1%200h1m2%200h1m2%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h2m1%200h1m1%200h1m2%200h3M2%2021.5h1m5%200h1m2%200h1m5%200h2m1%200h2M2%2022.5h7m1%200h4m1%200h1m2%200h3%22%2F%3E%3C%2Fsvg%3E%0A",
+"029":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m2%200h1m2%200h1m1%200h7M2%203.5h1m5%200h1m1%200h3m3%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m5%200h1m1%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m2%200h3m2%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h1m2%200h2m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m2%200h3m2%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M11%209.5h2M2%2010.5h1m1%200h1m1%200h1m1%200h1m3%200h1m1%200h1m3%200h1m2%200h1M2%2011.5h2m1%200h3m1%200h1m1%200h3m1%200h1m1%200h1m1%200h1M5%2012.5h2m1%200h4m1%200h1m1%200h3m2%200h2M3%2013.5h4m2%200h1m1%200h1m1%200h3m1%200h3M2%2014.5h2m4%200h1m3%200h2m1%200h3m2%200h1m1%200h1M10%2015.5h3m3%200h1m3%200h2M2%2016.5h7m5%200h1m3%200h1m2%200h1M2%2017.5h1m5%200h1m2%200h2m3%200h1m3%200h2M2%2018.5h1m1%200h3m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2019.5h1m1%200h3m1%200h1m2%200h3m1%200h1m1%200h1m1%200h1m1%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h4m1%200h3m1%200h2m1%200h1M2%2021.5h1m5%200h1m2%200h5m1%200h3M2%2022.5h7m1%200h1m1%200h2m1%200h3m1%200h2m1%200h1%22%2F%3E%3C%2Fsvg%3E%0A",
+"030":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m3%200h1m3%200h7M2%203.5h1m5%200h1m1%200h1m5%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m3%200h1m3%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m3%200h1m3%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h1m1%200h3m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m2%200h3m2%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M2%2010.5h1m1%200h1m1%200h1m1%200h1m5%200h1m3%200h1m2%200h1M2%2011.5h3m2%200h1m1%200h5m1%200h1m1%200h1m1%200h1m1%200h2M5%2012.5h1m1%200h3m1%200h1m1%200h1m1%200h3m2%200h2M3%2013.5h2m1%200h1m3%200h6m1%200h3M3%2014.5h1m2%200h3m2%200h3m1%200h3m2%200h1m1%200h1M10%2015.5h2m4%200h1m3%200h2M2%2016.5h7m2%200h1m2%200h1m3%200h1m2%200h1M2%2017.5h1m5%200h1m2%200h1m4%200h1m3%200h2M2%2018.5h1m1%200h3m1%200h1m1%200h1m3%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2019.5h1m1%200h3m1%200h1m4%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h2m1%200h1m1%200h3m1%200h2m1%200h1M2%2021.5h1m5%200h1m4%200h3m1%200h3M2%2022.5h7m1%200h1m2%200h1m1%200h3m1%200h2m1%200h1%22%2F%3E%3C%2Fsvg%3E%0A",
+"031":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m2%200h3m2%200h7M2%203.5h1m5%200h1m1%200h2m1%200h1m2%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m2%200h3m2%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m2%200h1m1%200h2m1%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h5m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m4%200h1m2%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M12%209.5h1M2%2010.5h1m1%200h1m1%200h1m1%200h1m3%200h1m1%200h1m3%200h1m2%200h1M4%2011.5h3m2%200h1m1%200h3m1%200h1m1%200h1m1%200h1m2%200h1M2%2012.5h2m2%200h3m2%200h1m1%200h1m1%200h3m2%200h2M2%2013.5h6m1%200h2m1%200h4m1%200h3M3%2014.5h4m1%200h1m4%200h1m1%200h3m2%200h1m1%200h1M10%2015.5h1m5%200h1m3%200h2M2%2016.5h7m3%200h1m1%200h1m3%200h1m2%200h1M2%2017.5h1m5%200h1m7%200h1m3%200h2M2%2018.5h1m1%200h3m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2019.5h1m1%200h3m1%200h1m2%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h1m2%200h1m1%200h3m1%200h2m1%200h1M2%2021.5h1m5%200h1m3%200h4m1%200h3M2%2022.5h7m1%200h1m1%200h2m1%200h3m1%200h2m1%200h1%22%2F%3E%3C%2Fsvg%3E%0A",
+"032":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m2%200h2m3%200h7M2%203.5h1m5%200h1m1%200h1m2%200h2m1%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m2%200h2m3%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m4%200h1m2%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h2m1%200h2m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m4%200h1m2%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M11%209.5h2M2%2010.5h1m1%200h1m1%200h1m1%200h1m3%200h1m1%200h1m3%200h1m2%200h1M5%2011.5h1m1%200h1m3%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1M3%2012.5h2m1%200h4m2%200h2m1%200h3m2%200h1m1%200h1M3%2013.5h2m1%200h2m2%200h2m1%200h3m1%200h3m1%200h2M2%2014.5h3m3%200h2m1%200h1m1%200h1m1%200h3m2%200h1m1%200h1M10%2015.5h1m1%200h1m3%200h1m3%200h2M2%2016.5h7m2%200h2m1%200h1m3%200h1m2%200h1M2%2017.5h1m5%200h1m2%200h2m3%200h1m3%200h2M2%2018.5h1m1%200h3m1%200h1m1%200h3m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2019.5h1m1%200h3m1%200h1m2%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h4m1%200h3m1%200h2m1%200h1M2%2021.5h1m5%200h1m2%200h5m1%200h3M2%2022.5h7m1%200h2m1%200h1m1%200h3m1%200h2m1%200h1%22%2F%3E%3C%2Fsvg%3E%0A",
+"033":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m3%200h2m2%200h7M2%203.5h1m5%200h1m1%200h2m2%200h1m1%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m3%200h2m2%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m2%200h2m1%200h1m1%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h1m2%200h2m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m2%200h3m2%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M11%209.5h1M2%2010.5h1m1%200h1m1%200h1m1%200h1m5%200h1m3%200h1m2%200h1M2%2011.5h2m2%200h1m3%200h2m1%200h1m1%200h1m1%200h1m1%200h1M2%2012.5h1m1%200h2m1%200h2m3%200h2m1%200h3m2%200h1m1%200h1M2%2013.5h5m2%200h2m2%200h3m1%200h3m1%200h2M2%2014.5h2m1%200h1m1%200h3m2%200h2m1%200h3m2%200h1m1%200h1M10%2015.5h3m3%200h1m3%200h2M2%2016.5h7m5%200h1m3%200h1m2%200h1M2%2017.5h1m5%200h1m3%200h1m3%200h1m3%200h2M2%2018.5h1m1%200h3m1%200h1m1%200h2m2%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2019.5h1m1%200h3m1%200h1m4%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h1m1%200h2m1%200h3m1%200h2m1%200h1M2%2021.5h1m5%200h1m2%200h1m1%200h3m1%200h3M2%2022.5h7m1%200h4m1%200h3m1%200h2m1%200h1%22%2F%3E%3C%2Fsvg%3E%0A",
+"034":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m2%200h1m1%200h2m1%200h7M2%203.5h1m5%200h1m1%200h1m1%200h1m1%200h1m1%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m4%200h2m1%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m3%200h3m1%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h1m1%200h3m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m2%200h3m2%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M12%209.5h1M2%2010.5h1m1%200h1m1%200h1m1%200h1m3%200h1m1%200h1m3%200h1m2%200h1M2%2011.5h4m5%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h2M2%2012.5h1m1%200h3m1%200h1m1%200h1m1%200h2m1%200h3m2%200h1m1%200h1M2%2013.5h3m1%200h1m5%200h4m1%200h3m1%200h2M3%2014.5h1m1%200h2m1%200h2m1%200h3m1%200h3m2%200h1m1%200h1M10%2015.5h2m4%200h1m3%200h2M2%2016.5h7m2%200h1m2%200h1m3%200h1m2%200h1M2%2017.5h1m5%200h1m7%200h1m3%200h2M2%2018.5h1m1%200h3m1%200h1m1%200h3m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2019.5h1m1%200h3m1%200h1m2%200h3m1%200h1m1%200h1m1%200h1m1%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h1m2%200h1m1%200h3m1%200h2m1%200h1M2%2021.5h1m5%200h1m3%200h4m1%200h3M2%2022.5h7m1%200h2m1%200h1m1%200h3m1%200h2m1%200h1%22%2F%3E%3C%2Fsvg%3E%0A",
+"035":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m2%200h2m1%200h1m1%200h7M2%203.5h1m5%200h1m2%200h2m3%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m1%200h2m1%200h2m1%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h1m2%200h2m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m1%200h1m3%200h1m1%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M10%209.5h1m2%200h2M2%2010.5h1m1%200h5m2%200h2m1%200h1m1%200h5M2%2011.5h3m1%200h1m2%200h3m2%200h1m2%200h1m2%200h3M3%2012.5h1m1%200h2m1%200h2m1%200h1m1%200h1m1%200h1m2%200h1m1%200h1M2%2013.5h1m1%200h3m4%200h2m4%200h2m1%200h1m1%200h1M3%2014.5h1m1%200h1m1%200h7m1%200h1m2%200h1m1%200h1M10%2015.5h1m2%200h4m2%200h1M2%2016.5h7m2%200h1m2%200h1m1%200h2m3%200h2M2%2017.5h1m5%200h1m1%200h2m1%200h4m2%200h1M2%2018.5h1m1%200h3m1%200h1m1%200h1m1%200h1m1%200h1m2%200h1m2%200h1M2%2019.5h1m1%200h3m1%200h1m1%200h1m1%200h1m1%200h1m2%200h1m2%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h1m1%200h2m1%200h1m2%200h3M2%2021.5h1m5%200h1m8%200h2m1%200h2M2%2022.5h7m1%200h1m2%200h1m1%200h1m2%200h3%22%2F%3E%3C%2Fsvg%3E%0A",
+"036":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m1%200h1m2%200h2m1%200h7M2%203.5h1m5%200h1m2%200h1m4%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m3%200h1m3%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m1%200h3m3%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h1m2%200h2m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m1%200h1m1%200h1m1%200h1m1%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M10%209.5h1M2%2010.5h1m3%200h1m1%200h4m2%200h6m2%200h1M3%2011.5h1m1%200h2m3%200h1m3%200h3m3%200h3M4%2012.5h1m1%200h1m1%200h2m2%200h1m1%200h2m3%200h1m1%200h1M2%2013.5h1m1%200h1m1%200h1m3%200h1m2%200h2m2%200h1m1%200h1m2%200h1M3%2014.5h3m1%200h3m1%200h3m2%200h3m1%200h3M10%2015.5h1m2%200h2m2%200h1m1%200h1m1%200h2M2%2016.5h7m1%200h1m1%200h2m2%200h7M2%2017.5h1m5%200h1m6%200h2m1%200h1m1%200h1M2%2018.5h1m1%200h3m1%200h1m1%200h1m3%200h3m3%200h3M2%2019.5h1m1%200h3m1%200h1m2%200h1m2%200h3m3%200h3M2%2020.5h1m1%200h3m1%200h1m2%200h1m2%200h2M2%2021.5h1m5%200h1m4%200h2m2%200h1m1%200h1m1%200h1M2%2022.5h7m1%200h1m1%200h2m2%200h7%22%2F%3E%3C%2Fsvg%3E%0A",
+"037":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m2%200h2m1%200h1m1%200h7M2%203.5h1m5%200h1m1%200h2m2%200h1m1%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m3%200h1m1%200h1m1%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m3%200h3m1%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h5m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m4%200h1m2%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M2%2010.5h1m1%200h1m1%200h1m1%200h1m2%200h1m2%200h1m3%200h1m2%200h1M4%2011.5h2m4%200h2m1%200h1m1%200h1m1%200h1m1%200h1M3%2012.5h1m3%200h2m1%200h4m1%200h3m2%200h3M3%2013.5h3m1%200h1m2%200h6m1%200h3m1%200h2M6%2014.5h1m1%200h1m3%200h2m1%200h3m2%200h1m1%200h1M10%2015.5h1m5%200h1m3%200h2M2%2016.5h7m5%200h1m3%200h1m2%200h1M2%2017.5h1m5%200h1m2%200h2m3%200h1m3%200h2M2%2018.5h1m1%200h3m1%200h1m1%200h1m3%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2019.5h1m1%200h3m1%200h1m2%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h2m1%200h1m1%200h3m1%200h2m1%200h1M2%2021.5h1m5%200h1m4%200h3m1%200h3M2%2022.5h7m1%200h1m1%200h2m1%200h3m1%200h2m1%200h1%22%2F%3E%3C%2Fsvg%3E%0A",
+"038":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m2%200h2m3%200h7M2%203.5h1m5%200h1m3%200h2m2%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m1%200h3m3%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m1%200h4m2%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h1m1%200h3m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m1%200h1m3%200h1m1%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M10%209.5h5M2%2010.5h1m1%200h5m5%200h1m1%200h5M2%2011.5h2m2%200h2m1%200h1m1%200h1m2%200h1m2%200h1m2%200h1m1%200h1M3%2012.5h3m2%200h1m1%200h1m2%200h1m1%200h1m2%200h1m1%200h2M2%2013.5h1m1%200h1m6%200h1m5%200h2m1%200h1m1%200h1M2%2014.5h1m1%200h5m1%200h1m2%200h1m1%200h1m2%200h1m1%200h1M10%2015.5h1m1%200h5m2%200h1M2%2016.5h7m3%200h1m1%200h1m1%200h2m3%200h2M2%2017.5h1m5%200h1m1%200h2m1%200h4m2%200h1M2%2018.5h1m1%200h3m1%200h1m1%200h2m2%200h1m2%200h1m2%200h1M2%2019.5h1m1%200h3m1%200h1m1%200h1m1%200h1m1%200h1m2%200h1m2%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h1m2%200h1m1%200h1m2%200h3M2%2021.5h1m5%200h1m2%200h2m4%200h2m1%200h2M2%2022.5h7m1%200h4m1%200h1m2%200h3%22%2F%3E%3C%2Fsvg%3E%0A",
+"039":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m3%200h2m2%200h7M2%203.5h1m5%200h1m2%200h2m3%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m1%200h1m1%200h2m2%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m1%200h1m3%200h1m1%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h5m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m1%200h3m1%200h1m1%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M10%209.5h2m1%200h2M2%2010.5h1m1%200h5m3%200h1m1%200h1m1%200h5M5%2011.5h1m3%200h3m2%200h1m2%200h1m2%200h3M2%2012.5h1m1%200h1m1%200h1m1%200h3m2%200h1m1%200h1m2%200h1m1%200h2M4%2013.5h2m1%200h1m1%200h1m7%200h2m1%200h1m1%200h1M2%2014.5h1m3%200h1m1%200h1m1%200h4m1%200h1m2%200h1m1%200h1M10%2015.5h7m2%200h1M2%2016.5h7m2%200h1m2%200h1m1%200h2m3%200h2M2%2017.5h1m5%200h1m1%200h1m2%200h4m2%200h1M2%2018.5h1m1%200h3m1%200h1m1%200h3m1%200h1m2%200h1m2%200h1M2%2019.5h1m1%200h3m1%200h1m1%200h3m1%200h1m2%200h1m2%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h2m1%200h1m1%200h1m2%200h3M2%2021.5h1m5%200h1m2%200h1m5%200h2m1%200h2M2%2022.5h7m1%200h2m1%200h1m1%200h1m2%200h3%22%2F%3E%3C%2Fsvg%3E%0A",
+"040":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m3%200h1m1%200h1m1%200h7M2%203.5h1m5%200h1m4%200h1m2%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m1%200h1m3%200h1m1%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m1%200h1m1%200h2m2%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h2m1%200h2m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m1%200h3m1%200h1m1%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M10%209.5h1m1%200h3M2%2010.5h1m1%200h5m3%200h1m1%200h1m1%200h5M4%2011.5h1m2%200h1m1%200h1m1%200h1m2%200h1m2%200h1m2%200h1M2%2012.5h1m2%200h6m1%200h2m1%200h1m2%200h1m1%200h1m1%200h1M2%2013.5h1m1%200h1m2%200h1m3%200h2m4%200h2m1%200h1m1%200h1M5%2014.5h5m2%200h2m1%200h1m2%200h1m1%200h1M10%2015.5h1m2%200h4m2%200h1M2%2016.5h7m2%200h1m2%200h1m1%200h2m3%200h2M2%2017.5h1m5%200h1m1%200h1m1%200h5m2%200h1M2%2018.5h1m1%200h3m1%200h1m1%200h3m1%200h1m2%200h1m2%200h1M2%2019.5h1m1%200h3m1%200h1m1%200h1m1%200h1m1%200h1m2%200h1m2%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h1m1%200h2m1%200h1m2%200h3M2%2021.5h1m5%200h1m2%200h1m5%200h2m1%200h2M2%2022.5h7m1%200h1m2%200h1m1%200h1m2%200h3%22%2F%3E%3C%2Fsvg%3E%0A",
+"041":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m4%200h2m1%200h7M2%203.5h1m5%200h1m1%200h2m1%200h2m1%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m3%200h3m1%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m2%200h1m1%200h1m2%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h5m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m4%200h1m2%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M2%2010.5h1m1%200h1m1%200h1m1%200h1m2%200h2m1%200h1m3%200h1m2%200h1M4%2011.5h4m2%200h2m1%200h1m1%200h1m1%200h1m1%200h1M3%2012.5h6m2%200h1m1%200h1m1%200h3m2%200h1M2%2013.5h4m1%200h1m4%200h4m1%200h3m1%200h2M5%2014.5h1m2%200h3m1%200h2m1%200h3m2%200h1m1%200h1M10%2015.5h2m4%200h1m3%200h2M2%2016.5h7m2%200h1m2%200h1m3%200h1m2%200h1M2%2017.5h1m5%200h1m2%200h2m3%200h1m3%200h2M2%2018.5h1m1%200h3m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2019.5h1m1%200h3m1%200h1m2%200h3m1%200h1m1%200h1m1%200h1m1%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h1m2%200h1m1%200h3m1%200h2m1%200h1M2%2021.5h1m5%200h1m2%200h5m1%200h3M2%2022.5h7m1%200h2m1%200h1m1%200h3m1%200h2m1%200h1%22%2F%3E%3C%2Fsvg%3E%0A",
+"042":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m1%200h2m1%200h1m2%200h7M2%203.5h1m5%200h1m2%200h2m3%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m2%200h1m2%200h1m1%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m1%200h1m1%200h1m3%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h5m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m1%200h2m2%200h1m1%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M10%209.5h2M2%2010.5h1m3%200h1m1%200h5m1%200h6m2%200h1M2%2011.5h1m1%200h2m4%200h1m3%200h3m3%200h2M2%2012.5h2m3%200h2m5%200h2m3%200h1m2%200h1M2%2013.5h1m1%200h1m1%200h2m2%200h1m1%200h3m2%200h1m1%200h1m2%200h1M2%2014.5h2m1%200h1m1%200h2m1%200h2m1%200h1m2%200h3m1%200h3M10%2015.5h1m1%200h3m2%200h1m1%200h1m1%200h2M2%2016.5h7m1%200h2m1%200h1m2%200h7M2%2017.5h1m5%200h1m2%200h2m2%200h2m1%200h1m1%200h1M2%2018.5h1m1%200h3m1%200h1m1%200h1m1%200h1m1%200h3m3%200h3M2%2019.5h1m1%200h3m1%200h1m2%200h1m2%200h3m3%200h3M2%2020.5h1m1%200h3m1%200h1m2%200h2m1%200h2M2%2021.5h1m5%200h1m3%200h3m2%200h1m1%200h1m1%200h1M2%2022.5h7m1%200h2m1%200h1m2%200h7%22%2F%3E%3C%2Fsvg%3E%0A",
+"043":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m3%200h1m3%200h7M2%203.5h1m5%200h1m1%200h3m1%200h1m1%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m2%200h1m4%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m2%200h4m1%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h1m2%200h2m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m2%200h3m2%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M11%209.5h1M2%2010.5h1m1%200h1m1%200h1m1%200h1m2%200h2m1%200h1m3%200h1m2%200h1M2%2011.5h2m1%200h2m3%200h2m1%200h1m1%200h1m1%200h1m1%200h1m2%200h1M2%2012.5h1m1%200h1m1%200h1m1%200h4m1%200h1m1%200h3m2%200h1M3%2013.5h3m4%200h2m1%200h3m1%200h3m1%200h2M2%2014.5h1m1%200h1m1%200h1m1%200h3m2%200h1m1%200h3m2%200h1m1%200h1M10%2015.5h1m1%200h1m3%200h1m3%200h2M2%2016.5h7m2%200h2m1%200h1m3%200h1m2%200h1M2%2017.5h1m5%200h1m7%200h1m3%200h2M2%2018.5h1m1%200h3m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2019.5h1m1%200h3m1%200h1m2%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h4m1%200h3m1%200h2m1%200h1M2%2021.5h1m5%200h1m3%200h4m1%200h3M2%2022.5h7m1%200h2m1%200h1m1%200h3m1%200h2m1%200h1%22%2F%3E%3C%2Fsvg%3E%0A",
+"044":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m4%200h1m2%200h7M2%203.5h1m5%200h1m1%200h1m3%200h1m1%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m2%200h3m2%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m2%200h4m1%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h2m1%200h2m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m4%200h1m2%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M11%209.5h2M2%2010.5h1m1%200h1m1%200h1m1%200h1m5%200h1m3%200h1m2%200h1M5%2011.5h2m4%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1M3%2012.5h1m1%200h1m1%200h4m2%200h1m1%200h3m2%200h2M2%2013.5h3m1%200h2m5%200h3m1%200h3m1%200h2M2%2014.5h5m1%200h1m1%200h2m1%200h1m1%200h3m2%200h1m1%200h1M10%2015.5h3m3%200h1m3%200h2M2%2016.5h7m3%200h1m1%200h1m3%200h1m2%200h1M2%2017.5h1m5%200h1m2%200h2m3%200h1m3%200h2M2%2018.5h1m1%200h3m1%200h1m1%200h2m2%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2019.5h1m1%200h3m1%200h1m2%200h3m1%200h1m1%200h1m1%200h1m1%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h1m1%200h2m1%200h3m1%200h2m1%200h1M2%2021.5h1m5%200h1m4%200h3m1%200h3M2%2022.5h7m1%200h1m1%200h2m1%200h3m1%200h2m1%200h1%22%2F%3E%3C%2Fsvg%3E%0A",
+"045":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m1%200h1m2%200h1m2%200h7M2%203.5h1m5%200h1m5%200h1m1%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m1%200h4m2%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m2%200h1m1%200h1m2%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m2%200h1m2%200h1m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m1%200h1m1%200h1m3%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M13%209.5h1M2%2010.5h1m1%200h1m3%200h2m1%200h4m2%200h1m2%200h1m1%200h1M2%2011.5h1m2%200h1m3%200h2m10%200h1M2%2012.5h2m1%200h2m1%200h4m4%200h1m2%200h2M4%2013.5h1m1%200h2m6%200h1m3%200h1m3%200h1M2%2014.5h1m2%200h2m1%200h5m3%200h1m2%200h4M10%2015.5h4m1%200h3m1%200h2M2%2016.5h7m1%200h1m2%200h3m1%200h3M2%2017.5h1m5%200h1m2%200h3m1%200h3m1%200h2M2%2018.5h1m1%200h3m1%200h1m3%200h11M2%2019.5h1m1%200h3m1%200h1m2%200h2M2%2020.5h1m1%200h3m1%200h1m1%200h1m1%200h1m3%200h1m3%200h3M2%2021.5h1m5%200h1m2%200h2m1%200h1m3%200h1m2%200h1M2%2022.5h7m1%200h2m4%200h1m3%200h3%22%2F%3E%3C%2Fsvg%3E%0A",
+"046":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m2%200h1m2%200h1m1%200h7M2%203.5h1m5%200h1m3%200h1m3%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m1%200h3m1%200h1m1%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m1%200h2m2%200h1m1%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h2m1%200h2m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m1%200h3m1%200h1m1%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M10%209.5h1m1%200h3M2%2010.5h1m1%200h5m2%200h2m1%200h1m1%200h5M4%2011.5h3m2%200h1m1%200h1m2%200h1m2%200h1m2%200h1m1%200h1M2%2012.5h1m1%200h3m1%200h1m1%200h4m1%200h1m2%200h1m1%200h3M2%2013.5h1m1%200h1m1%200h2m1%200h4m4%200h2m1%200h1m1%200h1M3%2014.5h4m1%200h1m4%200h1m1%200h1m2%200h1m1%200h1M10%2015.5h1m2%200h4m2%200h1M2%2016.5h7m2%200h2m1%200h1m1%200h2m3%200h2M2%2017.5h1m5%200h1m1%200h1m2%200h4m2%200h1M2%2018.5h1m1%200h3m1%200h1m1%200h1m1%200h1m1%200h1m2%200h1m2%200h1M2%2019.5h1m1%200h3m1%200h1m1%200h2m2%200h1m2%200h1m2%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h1m1%200h2m1%200h1m2%200h3M2%2021.5h1m5%200h1m2%200h1m5%200h2m1%200h2M2%2022.5h7m1%200h2m1%200h1m1%200h1m2%200h3%22%2F%3E%3C%2Fsvg%3E%0A",
+"047":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m4%200h2m1%200h7M2%203.5h1m5%200h1m2%200h3m2%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m1%200h1m1%200h3m1%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m1%200h1m1%200h2m2%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h1m2%200h2m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m1%200h1m3%200h1m1%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M10%209.5h1m2%200h2M2%2010.5h1m1%200h5m2%200h1m2%200h1m1%200h5M2%2011.5h3m2%200h1m1%200h3m2%200h1m2%200h1m2%200h3M3%2012.5h2m3%200h6m1%200h1m2%200h1m1%200h3M4%2013.5h3m3%200h1m1%200h1m4%200h2m1%200h1m1%200h1M3%2014.5h1m2%200h3m2%200h3m1%200h1m2%200h1m1%200h1M10%2015.5h2m1%200h4m2%200h1M2%2016.5h7m5%200h1m1%200h2m3%200h2M2%2017.5h1m5%200h1m1%200h2m1%200h4m2%200h1M2%2018.5h1m1%200h3m1%200h1m1%200h1m3%200h1m2%200h1m2%200h1M2%2019.5h1m1%200h3m1%200h1m1%200h1m3%200h1m2%200h1m2%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h4m1%200h1m2%200h3M2%2021.5h1m5%200h1m2%200h2m4%200h2m1%200h2M2%2022.5h7m1%200h4m1%200h1m2%200h3%22%2F%3E%3C%2Fsvg%3E%0A",
+"048":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m2%200h3m2%200h7M2%203.5h1m5%200h1m1%200h2m1%200h2m1%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m2%200h1m1%200h1m2%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m2%200h1m2%200h1m1%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h1m1%200h3m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m2%200h3m2%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M11%209.5h2M2%2010.5h1m1%200h1m1%200h1m1%200h1m2%200h1m2%200h1m3%200h1m2%200h1M2%2011.5h2m3%200h1m1%200h1m3%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2012.5h1m3%200h1m1%200h1m1%200h2m1%200h1m1%200h3m2%200h1m1%200h1M4%2013.5h1m1%200h2m1%200h1m1%200h1m1%200h3m1%200h3m2%200h1M4%2014.5h1m1%200h1m1%200h1m2%200h1m1%200h1m1%200h3m2%200h1m1%200h1M10%2015.5h1m1%200h1m3%200h1m3%200h2M2%2016.5h7m5%200h1m3%200h1m2%200h1M2%2017.5h1m5%200h1m2%200h2m3%200h1m3%200h2M2%2018.5h1m1%200h3m1%200h1m1%200h1m3%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2019.5h1m1%200h3m1%200h1m3%200h2m1%200h1m1%200h1m1%200h1m1%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h4m1%200h3m1%200h2m1%200h1M2%2021.5h1m5%200h1m2%200h1m1%200h3m1%200h3M2%2022.5h7m1%200h1m2%200h1m1%200h3m1%200h2m1%200h1%22%2F%3E%3C%2Fsvg%3E%0A",
+"049":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m2%200h1m4%200h7M2%203.5h1m5%200h1m4%200h1m2%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m1%200h3m3%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h1m2%200h2m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m1%200h1m3%200h1m1%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M10%209.5h2m1%200h2M2%2010.5h1m1%200h5m5%200h1m1%200h5M2%2011.5h2m1%200h3m2%200h1m3%200h1m2%200h1m2%200h2M3%2012.5h2m1%200h1m1%200h2m2%200h2m1%200h1m2%200h1m1%200h1M3%2013.5h5m1%200h1m7%200h2m1%200h3M4%2014.5h1m2%200h2m1%200h2m1%200h1m1%200h1m2%200h1m1%200h1M10%2015.5h7m2%200h1M2%2016.5h7m5%200h1m1%200h2m3%200h2M2%2017.5h1m5%200h1m1%200h1m1%200h5m2%200h1M2%2018.5h1m1%200h3m1%200h1m1%200h2m2%200h1m2%200h1m2%200h1M2%2019.5h1m1%200h3m1%200h1m1%200h3m1%200h1m2%200h1m2%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h2m1%200h1m1%200h1m2%200h3M2%2021.5h1m5%200h1m2%200h2m4%200h2m1%200h2M2%2022.5h7m1%200h2m1%200h1m1%200h1m2%200h3%22%2F%3E%3C%2Fsvg%3E%0A",
+"050":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m2%200h1m2%200h1m1%200h7M2%203.5h1m5%200h1m1%200h3m1%200h1m1%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m3%200h1m1%200h1m1%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m2%200h2m3%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h2m1%200h2m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m4%200h1m2%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M12%209.5h1M2%2010.5h1m1%200h1m1%200h1m1%200h1m2%200h1m2%200h1m3%200h1m2%200h1M4%2011.5h1m4%200h1m3%200h1m1%200h1m1%200h1m1%200h1m1%200h2M3%2012.5h1m1%200h5m1%200h1m1%200h1m1%200h3m2%200h1m1%200h1M2%2013.5h1m1%200h1m1%200h1m2%200h2m1%200h4m1%200h3m2%200h1M2%2014.5h1m2%200h1m2%200h1m2%200h3m1%200h3m2%200h1m1%200h1M10%2015.5h2m4%200h1m3%200h2M2%2016.5h7m3%200h1m1%200h1m3%200h1m2%200h1M2%2017.5h1m5%200h1m7%200h1m3%200h2M2%2018.5h1m1%200h3m1%200h1m1%200h1m3%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2019.5h1m1%200h3m1%200h1m4%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h1m2%200h1m1%200h3m1%200h2m1%200h1M2%2021.5h1m5%200h1m4%200h3m1%200h3M2%2022.5h7m1%200h1m2%200h1m1%200h3m1%200h2m1%200h1%22%2F%3E%3C%2Fsvg%3E%0A",
+"051":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m4%200h2m1%200h7M2%203.5h1m5%200h1m1%200h1m1%200h3m1%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m2%200h4m1%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m4%200h2m1%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h1m2%200h2m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m2%200h3m2%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M2%2010.5h1m1%200h1m1%200h1m1%200h1m2%200h2m1%200h1m3%200h1m2%200h1M2%2011.5h6m1%200h2m2%200h1m1%200h1m1%200h1m1%200h1m2%200h1M2%2012.5h1m4%200h2m2%200h1m1%200h1m1%200h3m2%200h1m1%200h1M4%2013.5h4m2%200h6m1%200h3m2%200h1M2%2014.5h1m1%200h1m2%200h2m4%200h1m1%200h3m2%200h1m1%200h1M10%2015.5h1m5%200h1m3%200h2M2%2016.5h7m2%200h1m2%200h1m3%200h1m2%200h1M2%2017.5h1m5%200h1m2%200h1m4%200h1m3%200h2M2%2018.5h1m1%200h3m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2019.5h1m1%200h3m1%200h1m2%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h2m1%200h1m1%200h3m1%200h2m1%200h1M2%2021.5h1m5%200h1m3%200h4m1%200h3M2%2022.5h7m1%200h1m1%200h2m1%200h3m1%200h2m1%200h1%22%2F%3E%3C%2Fsvg%3E%0A",
+"052":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m3%200h1m1%200h1m1%200h7M2%203.5h1m5%200h1m1%200h2m1%200h2m1%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m2%200h1m2%200h1m1%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m4%200h2m1%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h2m1%200h2m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m4%200h1m2%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M12%209.5h1M2%2010.5h1m1%200h1m1%200h1m1%200h1m5%200h1m3%200h1m2%200h1M4%2011.5h4m1%200h1m3%200h1m1%200h1m1%200h1m1%200h1m1%200h1M3%2012.5h4m1%200h1m4%200h1m1%200h3m2%200h3M2%2013.5h1m1%200h1m7%200h4m1%200h3m2%200h1M2%2014.5h4m1%200h3m1%200h1m1%200h1m1%200h3m2%200h1m1%200h1M10%2015.5h2m4%200h1m3%200h2M2%2016.5h7m5%200h1m3%200h1m2%200h1M2%2017.5h1m5%200h1m3%200h1m3%200h1m3%200h2M2%2018.5h1m1%200h3m1%200h1m1%200h2m2%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2019.5h1m1%200h3m1%200h1m2%200h3m1%200h1m1%200h1m1%200h1m1%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h1m2%200h1m1%200h3m1%200h2m1%200h1M2%2021.5h1m5%200h1m4%200h3m1%200h3M2%2022.5h7m1%200h2m1%200h1m1%200h3m1%200h2m1%200h1%22%2F%3E%3C%2Fsvg%3E%0A",
+"053":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m1%200h1m2%200h2m1%200h7M2%203.5h1m5%200h1m1%200h2m2%200h1m1%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m4%200h1m2%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m1%200h5m1%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m3%200h1m3%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m7%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M10%209.5h2M2%2010.5h1m1%200h2m1%200h3m2%200h1m3%200h1m2%200h1m1%200h2M4%2011.5h1m2%200h1m2%200h1m3%200h1m2%200h1m2%200h2M4%2012.5h1m1%200h4m2%200h1m1%200h6m1%200h2M4%2013.5h1m1%200h1m2%200h1m4%200h2m6%200h1M2%2014.5h5m1%200h4m1%200h1m1%200h1m2%200h1m1%200h1M10%2015.5h2m3%200h1m1%200h1m2%200h1m1%200h1M2%2016.5h7m1%200h3m2%200h2m1%200h1m1%200h1m1%200h1M2%2017.5h1m5%200h1m1%200h7m2%200h1M2%2018.5h1m1%200h3m1%200h1m2%200h1m1%200h1m2%200h1m2%200h1m2%200h1M2%2019.5h1m1%200h3m1%200h1m1%200h2m3%200h1m2%200h1m2%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h1m1%200h2m1%200h1m2%200h3M2%2021.5h1m5%200h1m2%200h4m1%200h1m1%200h2m1%200h2M2%2022.5h7m1%200h5m2%200h1m1%200h1m1%200h1%22%2F%3E%3C%2Fsvg%3E%0A",
+"054":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m4%200h1m2%200h7M2%203.5h1m5%200h1m1%200h3m1%200h1m1%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m3%200h2m2%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m3%200h2m2%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h1m1%200h3m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m2%200h3m2%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M11%209.5h2M2%2010.5h1m1%200h1m1%200h1m1%200h1m5%200h1m3%200h1m2%200h1M2%2011.5h2m1%200h2m2%200h1m3%200h1m1%200h1m1%200h1m1%200h1m1%200h2M2%2012.5h1m1%200h1m1%200h5m2%200h1m1%200h3m2%200h3M4%2013.5h1m2%200h1m2%200h2m1%200h3m1%200h3m2%200h1M3%2014.5h1m2%200h4m1%200h3m1%200h3m2%200h1m1%200h1M10%2015.5h1m1%200h1m3%200h1m3%200h2M2%2016.5h7m3%200h1m1%200h1m3%200h1m2%200h1M2%2017.5h1m5%200h1m2%200h1m4%200h1m3%200h2M2%2018.5h1m1%200h3m1%200h1m1%200h2m2%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2019.5h1m1%200h3m1%200h1m2%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h4m1%200h3m1%200h2m1%200h1M2%2021.5h1m5%200h1m2%200h1m1%200h3m1%200h3M2%2022.5h7m1%200h2m1%200h1m1%200h3m1%200h2m1%200h1%22%2F%3E%3C%2Fsvg%3E%0A",
+"055":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m2%200h1m4%200h7M2%203.5h1m5%200h1m4%200h2m1%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m2%200h3m2%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m2%200h1m2%200h1m1%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m2%200h1m1%200h2m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m1%200h1m5%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M11%209.5h2M2%2010.5h1m2%200h1m1%200h2m1%200h1m1%200h4m1%200h1M7%2011.5h1m1%200h2m2%200h1m1%200h1m1%200h1m1%200h1m2%200h1M4%2012.5h7m1%200h2m2%200h3m1%200h1m1%200h1M2%2013.5h1m2%200h1m1%200h1m1%200h1m4%200h5M3%2014.5h4m1%200h2m3%200h1m1%200h3m2%200h1m1%200h1M10%2015.5h2m3%200h2m1%200h1m1%200h1M2%2016.5h7m2%200h1m1%200h2m1%200h1m1%200h2m1%200h2M2%2017.5h1m5%200h1m1%200h1m5%200h1m3%200h2M2%2018.5h1m1%200h3m1%200h1m2%200h1m2%200h3m3%200h3M2%2019.5h1m1%200h3m1%200h1m1%200h1m4%200h3m3%200h2M2%2020.5h1m1%200h3m1%200h1m3%200h2m1%200h3m1%200h2m1%200h1M2%2021.5h1m5%200h1m2%200h1m1%200h2m2%200h1m1%200h1m1%200h1M2%2022.5h7m1%200h3m2%200h1m1%200h1m2%200h1%22%2F%3E%3C%2Fsvg%3E%0A",
+"056":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m3%200h3m1%200h7M2%203.5h1m5%200h1m2%200h1m1%200h1m2%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m1%200h1m1%200h3m1%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m1%200h3m1%200h1m1%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h1m1%200h3m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m1%200h1m3%200h1m1%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M10%209.5h1m1%200h3M2%2010.5h1m1%200h5m2%200h1m2%200h1m1%200h5M2%2011.5h4m1%200h1m6%200h1m2%200h1m2%200h1M3%2012.5h4m1%200h1m2%200h1m1%200h1m1%200h1m2%200h1m1%200h1m1%200h1M2%2013.5h3m2%200h1m1%200h4m4%200h2m1%200h3M2%2014.5h2m1%200h1m1%200h2m3%200h2m1%200h1m2%200h1m1%200h1M10%2015.5h1m2%200h4m2%200h1M2%2016.5h7m3%200h1m1%200h1m1%200h2m3%200h2M2%2017.5h1m5%200h1m1%200h1m1%200h5m2%200h1M2%2018.5h1m1%200h3m1%200h1m1%200h1m3%200h1m2%200h1m2%200h1M2%2019.5h1m1%200h3m1%200h1m1%200h2m2%200h1m2%200h1m2%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h1m1%200h2m1%200h1m2%200h3M2%2021.5h1m5%200h1m2%200h2m4%200h2m1%200h2M2%2022.5h7m1%200h2m1%200h1m1%200h1m2%200h3%22%2F%3E%3C%2Fsvg%3E%0A",
+"057":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m1%200h1m1%200h1m1%200h1m1%200h7M2%203.5h1m5%200h1m2%200h1m4%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m2%200h1m1%200h1m2%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h1m1%200h3m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m1%200h1m1%200h1m1%200h1m1%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M10%209.5h1m1%200h1M2%2010.5h1m3%200h1m1%200h3m1%200h1m1%200h6m2%200h1M3%2011.5h1m1%200h2m2%200h1m1%200h1m2%200h3m3%200h1m1%200h1M4%2012.5h1m1%200h4m1%200h2m1%200h2m3%200h1m2%200h1M2%2013.5h6m2%200h1m2%200h2m2%200h1m1%200h1m1%200h2M2%2014.5h1m2%200h1m2%200h3m2%200h1m2%200h3m1%200h3M10%2015.5h1m2%200h2m2%200h1m1%200h1m1%200h2M2%2016.5h7m1%200h4m2%200h7M2%2017.5h1m5%200h1m2%200h1m3%200h2m1%200h1m1%200h1M2%2018.5h1m1%200h3m1%200h1m1%200h3m1%200h3m3%200h3M2%2019.5h1m1%200h3m1%200h1m2%200h1m2%200h3m3%200h3M2%2020.5h1m1%200h3m1%200h1m2%200h1m2%200h2M2%2021.5h1m5%200h1m2%200h4m2%200h1m1%200h1m1%200h1M2%2022.5h7m1%200h1m1%200h2m2%200h7%22%2F%3E%3C%2Fsvg%3E%0A",
+"058":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m2%200h2m3%200h7M2%203.5h1m5%200h1m1%200h5m1%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m3%200h1m3%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m2%200h1m1%200h2m1%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h1m1%200h3m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m2%200h3m2%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M11%209.5h2M2%2010.5h1m1%200h1m1%200h1m1%200h1m3%200h1m1%200h1m3%200h1m2%200h1M2%2011.5h2m1%200h1m1%200h1m1%200h1m3%200h1m1%200h1m1%200h1m1%200h1m1%200h2M2%2012.5h1m2%200h1m1%200h3m2%200h2m1%200h3m2%200h1M2%2013.5h1m1%200h1m2%200h1m5%200h3m1%200h3m2%200h1M3%2014.5h1m1%200h1m1%200h2m1%200h4m1%200h3m2%200h1m1%200h1M10%2015.5h3m3%200h1m3%200h2M2%2016.5h7m2%200h2m1%200h1m3%200h1m2%200h1M2%2017.5h1m5%200h1m2%200h1m4%200h1m3%200h2M2%2018.5h1m1%200h3m1%200h1m1%200h3m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2019.5h1m1%200h3m1%200h1m2%200h3m1%200h1m1%200h1m1%200h1m1%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h1m1%200h2m1%200h3m1%200h2m1%200h1M2%2021.5h1m5%200h1m3%200h4m1%200h3M2%2022.5h7m1%200h1m1%200h2m1%200h3m1%200h2m1%200h1%22%2F%3E%3C%2Fsvg%3E%0A",
+"059":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m3%200h2m2%200h7M2%203.5h1m5%200h1m1%200h1m1%200h1m1%200h1m1%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m2%200h3m2%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m3%200h1m3%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h5m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m4%200h1m2%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M11%209.5h1M2%2010.5h1m1%200h1m1%200h1m1%200h1m5%200h1m3%200h1m2%200h1M6%2011.5h1m2%200h2m2%200h1m1%200h1m1%200h1m1%200h1m2%200h1M3%2012.5h1m2%200h3m3%200h2m1%200h3m2%200h1M4%2013.5h2m3%200h1m1%200h1m1%200h3m1%200h3m2%200h1M3%2014.5h2m3%200h1m1%200h1m2%200h1m1%200h3m2%200h1m1%200h1M10%2015.5h1m1%200h1m3%200h1m3%200h2M2%2016.5h7m5%200h1m3%200h1m2%200h1M2%2017.5h1m5%200h1m7%200h1m3%200h2M2%2018.5h1m1%200h3m1%200h1m1%200h2m2%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2019.5h1m1%200h3m1%200h1m3%200h2m1%200h1m1%200h1m1%200h1m1%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h4m1%200h3m1%200h2m1%200h1M2%2021.5h1m5%200h1m4%200h3m1%200h3M2%2022.5h7m1%200h1m2%200h1m1%200h3m1%200h2m1%200h1%22%2F%3E%3C%2Fsvg%3E%0A",
+"060":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m7%200h7M2%203.5h1m5%200h1m1%200h2m2%200h1m1%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m2%200h1m4%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m3%200h1m3%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h1m1%200h3m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m2%200h3m2%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M11%209.5h2M2%2010.5h1m1%200h1m1%200h1m1%200h1m2%200h2m1%200h1m3%200h1m2%200h1M2%2011.5h2m2%200h1m2%200h1m3%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2012.5h1m1%200h2m2%200h1m2%200h3m1%200h3m2%200h2M2%2013.5h1m1%200h1m1%200h2m1%200h2m2%200h3m1%200h3m2%200h1M4%2014.5h2m2%200h4m1%200h1m1%200h3m2%200h1m1%200h1M10%2015.5h3m3%200h1m3%200h2M2%2016.5h7m2%200h1m2%200h1m3%200h1m2%200h1M2%2017.5h1m5%200h1m2%200h2m3%200h1m3%200h2M2%2018.5h1m1%200h3m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2019.5h1m1%200h3m1%200h1m4%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h1m1%200h2m1%200h3m1%200h2m1%200h1M2%2021.5h1m5%200h1m3%200h4m1%200h3M2%2022.5h7m1%200h4m1%200h3m1%200h2m1%200h1%22%2F%3E%3C%2Fsvg%3E%0A",
+"061":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m2%200h1m1%200h1m2%200h7M2%203.5h1m5%200h1m1%200h1m2%200h2m1%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m4%200h1m2%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m2%200h1m1%200h2m1%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h5m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m4%200h1m2%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M11%209.5h1M2%2010.5h1m1%200h1m1%200h1m1%200h1m2%200h1m2%200h1m3%200h1m2%200h1M5%2011.5h1m1%200h1m1%200h2m2%200h1m1%200h1m1%200h1m1%200h1M3%2012.5h2m1%200h1m1%200h2m1%200h3m1%200h3m2%200h2M4%2013.5h3m3%200h2m1%200h3m1%200h3m2%200h1M7%2014.5h4m1%200h2m1%200h3m2%200h1m1%200h1M10%2015.5h1m1%200h1m3%200h1m3%200h2M2%2016.5h7m3%200h1m1%200h1m3%200h1m2%200h1M2%2017.5h1m5%200h1m3%200h1m3%200h1m3%200h2M2%2018.5h1m1%200h3m1%200h1m1%200h1m3%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2019.5h1m1%200h3m1%200h1m2%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h4m1%200h3m1%200h2m1%200h1M2%2021.5h1m5%200h1m4%200h3m1%200h3M2%2022.5h7m1%200h2m1%200h1m1%200h3m1%200h2m1%200h1%22%2F%3E%3C%2Fsvg%3E%0A",
+"062":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m2%200h1m1%200h2m1%200h7M2%203.5h1m5%200h1m2%200h2m3%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m1%200h2m1%200h2m1%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m1%200h1m2%200h1m2%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h1m1%200h3m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m1%200h1m3%200h1m1%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M10%209.5h1m1%200h3M2%2010.5h1m1%200h5m5%200h1m1%200h5M2%2011.5h3m1%200h1m7%200h1m2%200h1m2%200h1m1%200h1M3%2012.5h1m1%200h5m3%200h1m1%200h1m2%200h1m1%200h3M2%2013.5h3m1%200h2m3%200h2m4%200h2m1%200h3M2%2014.5h1m1%200h2m2%200h2m3%200h1m1%200h1m2%200h1m1%200h1M10%2015.5h1m2%200h4m2%200h1M2%2016.5h7m5%200h1m1%200h2m3%200h2M2%2017.5h1m5%200h1m1%200h1m2%200h4m2%200h1M2%2018.5h1m1%200h3m1%200h1m1%200h2m2%200h1m2%200h1m2%200h1M2%2019.5h1m1%200h3m1%200h1m1%200h1m1%200h1m1%200h1m2%200h1m2%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h1m1%200h2m1%200h1m2%200h3M2%2021.5h1m5%200h1m2%200h2m4%200h2m1%200h2M2%2022.5h7m1%200h1m2%200h1m1%200h1m2%200h3%22%2F%3E%3C%2Fsvg%3E%0A",
+"063":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m2%200h2m1%200h1m1%200h7M2%203.5h1m5%200h1m1%200h1m1%200h1m1%200h1m1%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m2%200h2m1%200h1m1%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m2%200h3m2%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h1m2%200h2m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m2%200h3m2%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M2%2010.5h1m1%200h1m1%200h1m1%200h1m2%200h1m2%200h1m3%200h1m2%200h1M2%2011.5h4m3%200h2m2%200h1m1%200h1m1%200h1m1%200h1m2%200h1M2%2012.5h1m1%200h5m1%200h4m1%200h3m2%200h2M2%2013.5h1m1%200h4m4%200h4m1%200h3m2%200h1M2%2014.5h1m1%200h7m2%200h1m1%200h3m2%200h1m1%200h1M10%2015.5h2m4%200h1m3%200h2M2%2016.5h7m5%200h1m3%200h1m2%200h1M2%2017.5h1m5%200h1m2%200h1m4%200h1m3%200h2M2%2018.5h1m1%200h3m1%200h1m1%200h1m3%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2019.5h1m1%200h3m1%200h1m2%200h3m1%200h1m1%200h1m1%200h1m1%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h1m2%200h1m1%200h3m1%200h2m1%200h1M2%2021.5h1m5%200h1m2%200h1m1%200h3m1%200h3M2%2022.5h7m1%200h2m1%200h1m1%200h3m1%200h2m1%200h1%22%2F%3E%3C%2Fsvg%3E%0A",
+"064":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m1%200h4m2%200h7M2%203.5h1m5%200h1m1%200h1m2%200h2m1%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m1%200h4m2%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m2%200h1m1%200h1m2%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m3%200h3m1%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M12%209.5h3M2%2010.5h1m2%200h8m1%200h2m2%200h1m1%200h3M2%2011.5h3m2%200h1m4%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1M5%2012.5h1m2%200h2m2%200h1m2%200h2m1%200h3m1%200h1M2%2013.5h1m2%200h3m2%200h2m1%200h1m5%200h2M2%2014.5h1m1%200h2m2%200h1m2%200h1m4%200h1m2%200h2m1%200h1M10%2015.5h2m1%200h2m2%200h1m1%200h1m1%200h2M2%2016.5h7m1%200h1m3%200h5m3%200h1M2%2017.5h1m5%200h1m1%200h1m1%200h4m1%200h3m2%200h1M2%2018.5h1m1%200h3m1%200h1m1%200h1m1%200h3m1%200h2m1%200h2m1%200h1M2%2019.5h1m1%200h3m1%200h1m1%200h1m2%200h2m3%200h3M2%2020.5h1m1%200h3m1%200h1m3%200h1m3%200h1m3%200h3M2%2021.5h1m5%200h1m2%200h1m3%200h2m1%200h1m1%200h1m1%200h1M2%2022.5h7m1%200h1m2%200h1m5%200h3%22%2F%3E%3C%2Fsvg%3E%0A",
+"065":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m1%200h1m2%200h1m2%200h7M2%203.5h1m5%200h1m1%200h2m1%200h1m2%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m2%200h2m1%200h1m1%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m1%200h2m2%200h1m1%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m3%200h1m3%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m2%200h1m4%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M10%209.5h1M2%2010.5h1m1%200h2m1%200h3m6%200h1m2%200h1m1%200h2M11%2011.5h1m2%200h1m2%200h1m2%200h2M3%2012.5h1m1%200h2m1%200h1m2%200h2m1%200h6m2%200h1M2%2013.5h2m2%200h2m2%200h1m3%200h2m5%200h1M2%2014.5h3m1%200h1m1%200h3m2%200h1m1%200h1m2%200h1m1%200h2M10%2015.5h1m4%200h1m1%200h1m2%200h1m1%200h1M2%2016.5h7m1%200h1m1%200h1m2%200h2m1%200h1m1%200h1m1%200h1M2%2017.5h1m5%200h1m1%200h1m2%200h4m2%200h1M2%2018.5h1m1%200h3m1%200h1m2%200h1m1%200h1m2%200h1m2%200h1m2%200h1M2%2019.5h1m1%200h3m1%200h1m1%200h2m3%200h1m2%200h1m2%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h2m1%200h1m1%200h1m2%200h3M2%2021.5h1m5%200h1m2%200h4m1%200h1m1%200h2m1%200h2M2%2022.5h7m1%200h5m2%200h1m1%200h1m1%200h1%22%2F%3E%3C%2Fsvg%3E%0A",
+"066":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m4%200h2m1%200h7M2%203.5h1m5%200h1m1%200h4m2%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m2%200h1m2%200h1m1%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m7%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h1m1%200h3m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m3%200h2m2%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M12%209.5h1M2%2010.5h1m1%200h1m1%200h1m1%200h1m3%200h1m1%200h1m3%200h1m2%200h1M2%2011.5h6m1%200h3m1%200h1m1%200h1m1%200h1m1%200h1m1%200h2M2%2012.5h2m1%200h2m1%200h1m1%200h2m1%200h1m1%200h3m2%200h1m1%200h1M2%2013.5h2m5%200h1m1%200h1m1%200h3m1%200h3m1%200h1M3%2014.5h1m1%200h5m2%200h2m1%200h3m2%200h3M10%2015.5h3m3%200h1m3%200h2M2%2016.5h7m2%200h2m1%200h1m3%200h1m2%200h1M2%2017.5h1m5%200h1m3%200h1m3%200h1m3%200h2M2%2018.5h1m1%200h3m1%200h1m1%200h2m2%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2019.5h1m1%200h3m1%200h1m2%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h1m2%200h1m1%200h3m1%200h2m1%200h1M2%2021.5h1m5%200h1m2%200h1m1%200h3m1%200h3M2%2022.5h7m1%200h2m1%200h1m1%200h3m1%200h2m1%200h1%22%2F%3E%3C%2Fsvg%3E%0A",
+"067":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m3%200h1m1%200h1m1%200h7M2%203.5h1m5%200h1m3%200h3m1%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m1%200h5m1%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m1%200h3m3%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h1m2%200h2m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m1%200h2m2%200h1m1%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M10%209.5h1m2%200h2M2%2010.5h1m1%200h5m2%200h2m1%200h1m1%200h5M2%2011.5h3m2%200h1m3%200h1m2%200h1m2%200h1m2%200h3M4%2012.5h3m1%200h2m2%200h2m1%200h1m2%200h1m1%200h1M2%2013.5h1m2%200h1m3%200h1m7%200h2m1%200h1M3%2014.5h1m1%200h1m2%200h3m1%200h2m1%200h1m2%200h1m1%200h2M10%2015.5h1m1%200h5m2%200h1M2%2016.5h7m2%200h2m1%200h1m1%200h2m3%200h2M2%2017.5h1m5%200h1m1%200h7m2%200h1M2%2018.5h1m1%200h3m1%200h1m1%200h1m3%200h1m2%200h1m2%200h1M2%2019.5h1m1%200h3m1%200h1m1%200h1m3%200h1m2%200h1m2%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h1m1%200h2m1%200h1m2%200h3M2%2021.5h1m5%200h1m2%200h2m4%200h2m1%200h2M2%2022.5h7m1%200h1m2%200h1m1%200h1m2%200h3%22%2F%3E%3C%2Fsvg%3E%0A",
+"068":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m2%200h4m1%200h7M2%203.5h1m5%200h1m1%200h2m4%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m3%200h1m1%200h1m1%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m2%200h4m1%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h1m1%200h3m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m3%200h2m2%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M12%209.5h1M2%2010.5h1m1%200h1m1%200h1m1%200h1m2%200h2m1%200h1m3%200h1m2%200h1M2%2011.5h3m4%200h3m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2012.5h9m2%200h1m1%200h3m2%200h3M2%2013.5h2m2%200h1m3%200h2m1%200h3m1%200h3m1%200h1M4%2014.5h3m1%200h1m4%200h1m1%200h3m2%200h3M10%2015.5h3m3%200h1m3%200h2M2%2016.5h7m2%200h1m2%200h1m3%200h1m2%200h1M2%2017.5h1m5%200h1m7%200h1m3%200h2M2%2018.5h1m1%200h3m1%200h1m1%200h1m3%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2019.5h1m1%200h3m1%200h1m3%200h2m1%200h1m1%200h1m1%200h1m1%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h1m2%200h1m1%200h3m1%200h2m1%200h1M2%2021.5h1m5%200h1m2%200h1m1%200h3m1%200h3M2%2022.5h7m1%200h1m2%200h1m1%200h3m1%200h2m1%200h1%22%2F%3E%3C%2Fsvg%3E%0A",
+"069":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m2%200h1m2%200h1m1%200h7M2%203.5h1m5%200h1m5%200h1m1%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m1%200h1m2%200h2m1%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m1%200h1m2%200h2m1%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h1m2%200h2m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m1%200h2m2%200h1m1%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M10%209.5h1m2%200h2M2%2010.5h1m1%200h5m3%200h1m1%200h1m1%200h5M2%2011.5h5m4%200h1m2%200h1m2%200h1m2%200h2M5%2012.5h4m2%200h3m1%200h1m2%200h1m1%200h2M2%2013.5h1m2%200h2m3%200h1m6%200h2m1%200h1M4%2014.5h2m1%200h2m1%200h1m2%200h1m1%200h1m2%200h1m1%200h2M10%2015.5h1m1%200h5m2%200h1M2%2016.5h7m2%200h1m2%200h1m1%200h2m3%200h2M2%2017.5h1m5%200h1m1%200h2m1%200h4m2%200h1M2%2018.5h1m1%200h3m1%200h1m1%200h2m2%200h1m2%200h1m2%200h1M2%2019.5h1m1%200h3m1%200h1m1%200h3m1%200h1m2%200h1m2%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h1m1%200h2m1%200h1m2%200h3M2%2021.5h1m5%200h1m2%200h2m4%200h2m1%200h2M2%2022.5h7m1%200h2m1%200h1m1%200h1m2%200h3%22%2F%3E%3C%2Fsvg%3E%0A",
+"070":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m3%200h1m3%200h7M2%203.5h1m5%200h1m2%200h2m1%200h1m1%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m1%200h1m1%200h2m2%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m1%200h2m2%200h1m1%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h1m1%200h3m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m1%200h2m2%200h1m1%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M10%209.5h5M2%2010.5h1m1%200h5m5%200h1m1%200h5M2%2011.5h2m6%200h2m2%200h1m2%200h1m2%200h1m1%200h1M5%2012.5h1m2%200h1m1%200h4m1%200h1m2%200h1m1%200h2M2%2013.5h1m3%200h1m2%200h1m2%200h1m4%200h2m1%200h1M2%2014.5h1m1%200h3m1%200h1m1%200h2m1%200h1m1%200h1m2%200h1m1%200h2M10%2015.5h1m2%200h4m2%200h1M2%2016.5h7m5%200h1m1%200h2m3%200h2M2%2017.5h1m5%200h1m1%200h7m2%200h1M2%2018.5h1m1%200h3m1%200h1m1%200h3m1%200h1m2%200h1m2%200h1M2%2019.5h1m1%200h3m1%200h1m1%200h1m3%200h1m2%200h1m2%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h1m2%200h1m1%200h1m2%200h3M2%2021.5h1m5%200h1m8%200h2m1%200h2M2%2022.5h7m1%200h4m1%200h1m2%200h3%22%2F%3E%3C%2Fsvg%3E%0A",
+"071":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m2%200h3m2%200h7M2%203.5h1m5%200h1m3%200h3m1%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m1%200h3m3%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m1%200h1m1%200h2m2%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h5m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m1%200h1m1%200h1m1%200h1m1%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M10%209.5h2m1%200h2M2%2010.5h1m1%200h5m3%200h1m1%200h1m1%200h5M5%2011.5h3m3%200h1m2%200h1m2%200h1m2%200h3M2%2012.5h2m2%200h1m1%200h6m1%200h1m2%200h1m1%200h2M5%2013.5h3m3%200h2m4%200h2m1%200h1M2%2014.5h1m3%200h3m1%200h1m1%200h2m1%200h1m2%200h1m1%200h2M10%2015.5h2m1%200h4m2%200h1M2%2016.5h7m2%200h2m1%200h1m1%200h2m3%200h2M2%2017.5h1m5%200h1m1%200h1m1%200h5m2%200h1M2%2018.5h1m1%200h3m1%200h1m1%200h2m2%200h1m2%200h1m2%200h1M2%2019.5h1m1%200h3m1%200h1m1%200h2m2%200h1m2%200h1m2%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h2m1%200h1m1%200h1m2%200h3M2%2021.5h1m5%200h1m3%200h1m4%200h2m1%200h2M2%2022.5h7m1%200h2m1%200h1m1%200h1m2%200h3%22%2F%3E%3C%2Fsvg%3E%0A",
+"072":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m2%200h2m1%200h1m1%200h7M2%203.5h1m5%200h1m2%200h1m2%200h1m1%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m1%200h2m1%200h2m1%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m1%200h1m3%200h1m1%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h2m1%200h2m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m1%200h1m1%200h1m1%200h1m1%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M10%209.5h1m1%200h3M2%2010.5h1m1%200h5m3%200h1m1%200h1m1%200h5M4%2011.5h1m1%200h1m3%200h2m2%200h1m2%200h1m2%200h1M2%2012.5h10m1%200h1m1%200h1m2%200h1m1%200h1m1%200h1M2%2013.5h1m3%200h2m1%200h1m7%200h2m1%200h1M5%2014.5h2m1%200h2m1%200h3m1%200h1m2%200h1m1%200h2M10%2015.5h1m1%200h5m2%200h1M2%2016.5h7m2%200h2m1%200h1m1%200h2m3%200h2M2%2017.5h1m5%200h1m1%200h1m2%200h4m2%200h1M2%2018.5h1m1%200h3m1%200h1m1%200h2m2%200h1m2%200h1m2%200h1M2%2019.5h1m1%200h3m1%200h1m1%200h1m3%200h1m2%200h1m2%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h1m1%200h2m1%200h1m2%200h3M2%2021.5h1m5%200h1m3%200h1m4%200h2m1%200h2M2%2022.5h7m1%200h1m2%200h1m1%200h1m2%200h3%22%2F%3E%3C%2Fsvg%3E%0A",
+"073":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m2%200h1m1%200h2m1%200h7M2%203.5h1m5%200h1m1%200h1m5%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m2%200h2m1%200h1m1%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m2%200h2m1%200h1m1%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h5m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m2%200h1m1%200h1m2%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M2%2010.5h1m1%200h1m1%200h1m1%200h1m2%200h2m1%200h1m3%200h1m2%200h1M4%2011.5h2m3%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1M5%2012.5h4m3%200h2m1%200h3m2%200h1M2%2013.5h2m1%200h3m1%200h1m1%200h1m1%200h3m1%200h3m1%200h1M5%2014.5h1m1%200h7m1%200h3m2%200h3M10%2015.5h3m3%200h1m3%200h2M2%2016.5h7m2%200h2m1%200h1m3%200h1m2%200h1M2%2017.5h1m5%200h1m2%200h1m4%200h1m3%200h2M2%2018.5h1m1%200h3m1%200h1m1%200h1m3%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2019.5h1m1%200h3m1%200h1m2%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h1m2%200h1m1%200h3m1%200h2m1%200h1M2%2021.5h1m5%200h1m4%200h3m1%200h3M2%2022.5h7m1%200h2m1%200h1m1%200h3m1%200h2m1%200h1%22%2F%3E%3C%2Fsvg%3E%0A",
+"074":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m2%200h1m1%200h1m2%200h7M2%203.5h1m5%200h1m2%200h4m1%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m1%200h1m1%200h1m3%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m1%200h1m1%200h1m3%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h1m1%200h3m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m1%200h2m2%200h1m1%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M10%209.5h5M2%2010.5h1m1%200h5m3%200h1m1%200h1m1%200h5M2%2011.5h2m2%200h2m2%200h2m2%200h1m2%200h1m2%200h1m1%200h1M4%2012.5h1m1%200h1m1%200h1m2%200h1m1%200h1m1%200h1m2%200h1m1%200h1m1%200h1M6%2013.5h1m2%200h4m4%200h2m1%200h1M2%2014.5h1m1%200h1m3%200h2m1%200h1m1%200h1m1%200h1m2%200h1m1%200h2M10%2015.5h2m1%200h4m2%200h1M2%2016.5h7m2%200h1m2%200h1m1%200h2m3%200h2M2%2017.5h1m5%200h1m1%200h7m2%200h1M2%2018.5h1m1%200h3m1%200h1m1%200h2m2%200h1m2%200h1m2%200h1M2%2019.5h1m1%200h3m1%200h1m1%200h1m1%200h1m1%200h1m2%200h1m2%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h2m1%200h1m1%200h1m2%200h3M2%2021.5h1m5%200h1m2%200h2m4%200h2m1%200h2M2%2022.5h7m1%200h1m2%200h1m1%200h1m2%200h3%22%2F%3E%3C%2Fsvg%3E%0A",
+"075":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m7%200h7M2%203.5h1m5%200h1m3%200h1m1%200h1m1%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m1%200h4m2%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m1%200h2m1%200h2m1%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h5m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m1%200h1m1%200h1m1%200h1m1%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M10%209.5h2m1%200h2M2%2010.5h1m1%200h5m5%200h1m1%200h5M5%2011.5h1m5%200h1m2%200h1m2%200h1m2%200h3M2%2012.5h4m2%200h2m1%200h1m1%200h1m1%200h1m2%200h1m1%200h1m1%200h1M2%2013.5h1m2%200h3m2%200h1m1%200h1m4%200h2m1%200h1M2%2014.5h1m2%200h1m1%200h3m2%200h2m1%200h1m2%200h1m1%200h2M10%2015.5h1m2%200h4m2%200h1M2%2016.5h7m3%200h1m1%200h1m1%200h2m3%200h2M2%2017.5h1m5%200h1m1%200h1m1%200h5m2%200h1M2%2018.5h1m1%200h3m1%200h1m1%200h3m1%200h1m2%200h1m2%200h1M2%2019.5h1m1%200h3m1%200h1m1%200h3m1%200h1m2%200h1m2%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h1m2%200h1m1%200h1m2%200h3M2%2021.5h1m5%200h1m2%200h1m5%200h2m1%200h2M2%2022.5h7m1%200h1m1%200h2m1%200h1m2%200h3%22%2F%3E%3C%2Fsvg%3E%0A",
+"076":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m1%200h1m1%200h2m2%200h7M2%203.5h1m5%200h1m1%200h1m2%200h1m2%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m3%200h1m1%200h1m1%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m1%200h2m1%200h2m1%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m2%200h2m3%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m3%200h1m3%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M10%209.5h1m1%200h1M2%2010.5h1m1%200h2m1%200h3m6%200h1m2%200h1m1%200h2M2%2011.5h2m1%200h1m4%200h2m2%200h1m2%200h1m2%200h1M2%2012.5h1m1%200h3m1%200h4m2%200h6m1%200h1M2%2013.5h2m1%200h2m2%200h1m4%200h2m5%200h1M2%2014.5h2m3%200h2m2%200h3m1%200h1m2%200h1m1%200h2M10%2015.5h1m4%200h1m1%200h1m2%200h1m1%200h1M2%2016.5h7m1%200h1m4%200h2m1%200h1m1%200h1m1%200h1M2%2017.5h1m5%200h1m1%200h2m1%200h4m2%200h1M2%2018.5h1m1%200h3m1%200h1m2%200h1m1%200h1m2%200h1m2%200h1m2%200h1M2%2019.5h1m1%200h3m1%200h1m1%200h1m1%200h1m2%200h1m2%200h1m2%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h2m1%200h1m1%200h1m2%200h3M2%2021.5h1m5%200h1m3%200h3m1%200h1m1%200h2m1%200h2M2%2022.5h7m1%200h1m1%200h3m2%200h1m1%200h1m1%200h1%22%2F%3E%3C%2Fsvg%3E%0A",
+"077":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m1%200h3m3%200h7M2%203.5h1m5%200h1m1%200h2m4%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m2%200h4m1%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m1%200h1m1%200h1m3%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m3%200h1m3%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m2%200h1m4%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M10%209.5h1M2%2010.5h1m1%200h2m1%200h3m2%200h1m3%200h1m2%200h1m1%200h2M6%2011.5h2m3%200h1m2%200h1m2%200h1m2%200h2M3%2012.5h2m3%200h1m1%200h2m2%200h6m1%200h1M3%2013.5h1m2%200h2m3%200h1m2%200h2m5%200h1M2%2014.5h4m2%200h1m4%200h1m1%200h1m2%200h1m1%200h2M10%2015.5h2m3%200h1m1%200h1m2%200h1m1%200h1M2%2016.5h7m1%200h3m2%200h2m1%200h1m1%200h1m1%200h1M2%2017.5h1m5%200h1m1%200h1m2%200h4m2%200h1M2%2018.5h1m1%200h3m1%200h1m2%200h3m2%200h1m2%200h1m2%200h1M2%2019.5h1m1%200h3m1%200h1m1%200h3m2%200h1m2%200h1m2%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h1m2%200h1m1%200h1m2%200h3M2%2021.5h1m5%200h1m4%200h2m1%200h1m1%200h2m1%200h2M2%2022.5h7m1%200h1m2%200h2m2%200h1m1%200h1m1%200h1%22%2F%3E%3C%2Fsvg%3E%0A",
+"078":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m5%200h1m1%200h7M2%203.5h1m5%200h1m2%200h4m1%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m1%200h1m1%200h3m1%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m1%200h4m2%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h2m1%200h2m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m1%200h1m1%200h1m1%200h1m1%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M10%209.5h1m1%200h3M2%2010.5h1m1%200h5m2%200h2m1%200h1m1%200h5M4%2011.5h2m1%200h1m2%200h2m2%200h1m2%200h1m2%200h1m1%200h1M2%2012.5h2m1%200h2m1%200h1m1%200h1m2%200h1m1%200h1m2%200h1m1%200h3M2%2013.5h1m4%200h1m2%200h1m6%200h2m1%200h1M3%2014.5h6m2%200h1m1%200h1m1%200h1m2%200h1m1%200h2M10%2015.5h1m1%200h5m2%200h1M2%2016.5h7m2%200h1m2%200h1m1%200h2m3%200h2M2%2017.5h1m5%200h1m1%200h1m1%200h5m2%200h1M2%2018.5h1m1%200h3m1%200h1m1%200h1m3%200h1m2%200h1m2%200h1M2%2019.5h1m1%200h3m1%200h1m1%200h3m1%200h1m2%200h1m2%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h1m1%200h2m1%200h1m2%200h3M2%2021.5h1m5%200h1m3%200h1m4%200h2m1%200h2M2%2022.5h7m1%200h2m1%200h1m1%200h1m2%200h3%22%2F%3E%3C%2Fsvg%3E%0A",
+"079":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m3%200h3m1%200h7M2%203.5h1m5%200h1m1%200h1m1%200h2m2%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m5%200h1m1%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m4%200h1m2%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h5m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m2%200h1m1%200h1m2%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M2%2010.5h1m1%200h1m1%200h1m1%200h1m3%200h1m1%200h1m3%200h1m2%200h1M4%2011.5h1m1%200h2m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1m2%200h1M4%2012.5h3m1%200h2m1%200h3m1%200h3m2%200h2M2%2013.5h2m1%200h1m1%200h1m2%200h2m1%200h3m1%200h3m1%200h1M3%2014.5h3m2%200h1m1%200h2m1%200h1m1%200h3m2%200h3M10%2015.5h3m3%200h1m3%200h2M2%2016.5h7m2%200h1m2%200h1m3%200h1m2%200h1M2%2017.5h1m5%200h1m2%200h2m3%200h1m3%200h2M2%2018.5h1m1%200h3m1%200h1m1%200h2m2%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2019.5h1m1%200h3m1%200h1m3%200h2m1%200h1m1%200h1m1%200h1m1%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h1m2%200h1m1%200h3m1%200h2m1%200h1M2%2021.5h1m5%200h1m4%200h3m1%200h3M2%2022.5h7m1%200h1m2%200h1m1%200h3m1%200h2m1%200h1%22%2F%3E%3C%2Fsvg%3E%0A",
+"080":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m2%200h2m3%200h7M2%203.5h1m5%200h1m1%200h2m1%200h2m1%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m1%200h3m3%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m1%200h1m3%200h1m1%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m2%200h1m1%200h2m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m2%200h2m1%200h1m1%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M10%209.5h1m1%200h3M2%2010.5h1m5%200h1m1%200h1m1%200h1m1%200h3m2%200h3M4%2011.5h2m1%200h1m1%200h1m1%200h2m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2012.5h2m1%200h1m2%200h1m2%200h1m1%200h1m1%200h1m2%200h1m1%200h1M2%2013.5h2m1%200h1m3%200h1m1%200h2m5%200h1m1%200h2M3%2014.5h4m1%200h2m1%200h1m4%200h1m2%200h2m1%200h1M10%2015.5h2m1%200h5m1%200h1M2%2016.5h7m2%200h1m2%200h1m1%200h2m3%200h2M2%2017.5h1m5%200h1m3%200h4m1%200h3m2%200h1M2%2018.5h1m1%200h3m1%200h1m2%200h1m2%200h1m2%200h1m2%200h1M2%2019.5h1m1%200h3m1%200h1m2%200h1m2%200h1m5%200h1M2%2020.5h1m1%200h3m1%200h1m3%200h1m3%200h1m3%200h3M2%2021.5h1m5%200h1m2%200h2m5%200h1m1%200h2M2%2022.5h7m1%200h4m1%200h1m2%200h3%22%2F%3E%3C%2Fsvg%3E%0A",
+"081":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m7%200h7M2%203.5h1m5%200h1m2%200h1m2%200h1m1%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m1%200h1m1%200h2m2%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m1%200h1m2%200h1m2%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h1m2%200h2m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m1%200h2m2%200h1m1%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M10%209.5h2m1%200h2M2%2010.5h1m1%200h5m5%200h1m1%200h5M2%2011.5h2m1%200h1m3%200h1m4%200h1m2%200h1m2%200h2M6%2012.5h1m1%200h2m1%200h1m1%200h1m1%200h1m2%200h1m1%200h1M3%2013.5h1m1%200h1m1%200h1m3%200h2m4%200h2m1%200h2M4%2014.5h1m3%200h1m1%200h1m2%200h1m1%200h1m2%200h1m1%200h2M10%2015.5h2m1%200h4m2%200h1M2%2016.5h7m3%200h1m1%200h1m1%200h2m3%200h2M2%2017.5h1m5%200h1m1%200h1m2%200h4m2%200h1M2%2018.5h1m1%200h3m1%200h1m1%200h3m1%200h1m2%200h1m2%200h1M2%2019.5h1m1%200h3m1%200h1m1%200h2m2%200h1m2%200h1m2%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h2m1%200h1m1%200h1m2%200h3M2%2021.5h1m5%200h1m8%200h2m1%200h2M2%2022.5h7m1%200h2m1%200h1m1%200h1m2%200h3%22%2F%3E%3C%2Fsvg%3E%0A",
+"082":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m5%200h1m1%200h7M2%203.5h1m5%200h1m1%200h1m1%200h2m2%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m2%200h4m1%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m2%200h1m1%200h2m1%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h2m1%200h2m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m2%200h1m1%200h1m2%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M12%209.5h1M2%2010.5h1m1%200h1m1%200h1m1%200h1m2%200h1m2%200h1m3%200h1m2%200h1M4%2011.5h1m1%200h2m2%200h1m2%200h1m1%200h1m1%200h1m1%200h1m1%200h2M4%2012.5h6m2%200h2m1%200h3m2%200h1m1%200h1M2%2013.5h1m7%200h2m1%200h3m1%200h3M2%2014.5h1m2%200h1m1%200h2m3%200h2m1%200h3m2%200h3M10%2015.5h3m3%200h1m3%200h2M2%2016.5h7m5%200h1m3%200h1m2%200h1M2%2017.5h1m5%200h1m3%200h1m3%200h1m3%200h2M2%2018.5h1m1%200h3m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2019.5h1m1%200h3m1%200h1m3%200h2m1%200h1m1%200h1m1%200h1m1%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h1m2%200h1m1%200h3m1%200h2m1%200h1M2%2021.5h1m5%200h1m2%200h5m1%200h3M2%2022.5h7m1%200h1m2%200h1m1%200h3m1%200h2m1%200h1%22%2F%3E%3C%2Fsvg%3E%0A",
+"083":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m2%200h1m1%200h2m1%200h7M2%203.5h1m5%200h1m1%200h3m3%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m3%200h1m1%200h1m1%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m3%200h1m3%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h1m2%200h2m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m3%200h2m2%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M2%2010.5h1m1%200h1m1%200h1m1%200h1m2%200h2m1%200h1m3%200h1m2%200h1M2%2011.5h4m7%200h1m1%200h1m1%200h1m1%200h1m2%200h1M2%2012.5h3m2%200h2m3%200h2m1%200h3m2%200h1m1%200h1M5%2013.5h1m1%200h1m1%200h2m2%200h3m1%200h3M2%2014.5h1m1%200h1m3%200h1m2%200h1m1%200h1m1%200h3m2%200h3M10%2015.5h1m1%200h1m3%200h1m3%200h2M2%2016.5h7m2%200h2m1%200h1m3%200h1m2%200h1M2%2017.5h1m5%200h1m2%200h2m3%200h1m3%200h2M2%2018.5h1m1%200h3m1%200h1m1%200h1m3%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2019.5h1m1%200h3m1%200h1m2%200h3m1%200h1m1%200h1m1%200h1m1%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h2m1%200h1m1%200h3m1%200h2m1%200h1M2%2021.5h1m5%200h1m2%200h1m1%200h3m1%200h3M2%2022.5h7m1%200h1m1%200h2m1%200h3m1%200h2m1%200h1%22%2F%3E%3C%2Fsvg%3E%0A",
+"084":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m2%200h2m1%200h1m1%200h7M2%203.5h1m5%200h1m1%200h1m5%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m4%200h2m1%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m3%200h1m3%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h2m1%200h2m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m2%200h1m1%200h1m2%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M12%209.5h1M2%2010.5h1m1%200h1m1%200h1m1%200h1m5%200h1m3%200h1m2%200h1M4%2011.5h2m4%200h1m2%200h1m1%200h1m1%200h1m1%200h1m1%200h1M5%2012.5h2m1%200h1m2%200h3m1%200h3m2%200h3M2%2013.5h1m3%200h1m2%200h1m1%200h1m1%200h3m1%200h3M2%2014.5h4m2%200h2m3%200h1m1%200h3m2%200h3M10%2015.5h3m3%200h1m3%200h2M2%2016.5h7m3%200h1m1%200h1m3%200h1m2%200h1M2%2017.5h1m5%200h1m7%200h1m3%200h2M2%2018.5h1m1%200h3m1%200h1m1%200h3m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2019.5h1m1%200h3m1%200h1m2%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h1m2%200h1m1%200h3m1%200h2m1%200h1M2%2021.5h1m5%200h1m2%200h5m1%200h3M2%2022.5h7m1%200h2m1%200h1m1%200h3m1%200h2m1%200h1%22%2F%3E%3C%2Fsvg%3E%0A",
+"085":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m3%200h3m1%200h7M2%203.5h1m5%200h1m2%200h3m2%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m2%200h1m1%200h2m1%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m2%200h1m1%200h2m1%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m3%200h3m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m1%200h1m1%200h1m3%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M12%209.5h1M2%2010.5h1m2%200h1m1%200h2m1%200h1m1%200h4m1%200h1M2%2011.5h3m1%200h2m5%200h1m1%200h1m1%200h1m1%200h1M2%2012.5h1m3%200h1m1%200h1m2%200h1m1%200h1m2%200h3m1%200h1m1%200h1M4%2013.5h3m3%200h1m3%200h5m3%200h1M2%2014.5h2m3%200h3m1%200h3m1%200h3m2%200h3M10%2015.5h1m4%200h2m1%200h1m1%200h1M2%2016.5h7m2%200h1m1%200h2m1%200h1m1%200h2m1%200h2M2%2017.5h1m5%200h1m1%200h2m4%200h1m3%200h2M2%2018.5h1m1%200h3m1%200h1m2%200h2m1%200h3m3%200h3M2%2019.5h1m1%200h3m1%200h1m1%200h1m4%200h3m3%200h2M2%2020.5h1m1%200h3m1%200h1m2%200h1m1%200h1m1%200h3m1%200h2m1%200h1M2%2021.5h1m5%200h1m2%200h4m2%200h1m1%200h1m1%200h1M2%2022.5h7m1%200h3m2%200h1m1%200h1m2%200h1%22%2F%3E%3C%2Fsvg%3E%0A",
+"086":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m3%200h2m2%200h7M2%203.5h1m5%200h1m3%200h1m1%200h1m1%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m1%200h1m5%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m1%200h1m2%200h1m2%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h2m1%200h2m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m1%200h1m1%200h1m1%200h1m1%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M10%209.5h5M2%2010.5h1m1%200h5m2%200h2m1%200h1m1%200h5M5%2011.5h1m3%200h2m3%200h1m2%200h1m2%200h1m1%200h1M2%2012.5h4m1%200h3m3%200h1m1%200h1m2%200h1m1%200h2M2%2013.5h2m2%200h1m3%200h1m1%200h1m4%200h2m1%200h2M3%2014.5h3m2%200h4m1%200h1m1%200h1m2%200h1m1%200h2M10%2015.5h1m2%200h4m2%200h1M2%2016.5h7m2%200h2m1%200h1m1%200h2m3%200h2M2%2017.5h1m5%200h1m1%200h7m2%200h1M2%2018.5h1m1%200h3m1%200h1m1%200h1m3%200h1m2%200h1m2%200h1M2%2019.5h1m1%200h3m1%200h1m1%200h3m1%200h1m2%200h1m2%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h1m2%200h1m1%200h1m2%200h3M2%2021.5h1m5%200h1m3%200h1m4%200h2m1%200h2M2%2022.5h7m1%200h1m1%200h2m1%200h1m2%200h3%22%2F%3E%3C%2Fsvg%3E%0A",
+"087":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m7%200h7M2%203.5h1m5%200h1m1%200h3m3%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m3%200h2m2%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m2%200h3m2%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h5m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m2%200h1m1%200h1m2%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M11%209.5h1M2%2010.5h1m1%200h1m1%200h1m1%200h1m3%200h1m1%200h1m3%200h1m2%200h1M6%2011.5h1m6%200h1m1%200h1m1%200h1m1%200h1m2%200h1M5%2012.5h1m1%200h2m1%200h4m1%200h3m2%200h3M2%2013.5h1m2%200h2m3%200h6m1%200h3M3%2014.5h7m1%200h1m1%200h1m1%200h3m2%200h3M10%2015.5h2m4%200h1m3%200h2M2%2016.5h7m2%200h2m1%200h1m3%200h1m2%200h1M2%2017.5h1m5%200h1m3%200h1m3%200h1m3%200h2M2%2018.5h1m1%200h3m1%200h1m1%200h2m2%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2019.5h1m1%200h3m1%200h1m3%200h2m1%200h1m1%200h1m1%200h1m1%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h1m1%200h2m1%200h3m1%200h2m1%200h1M2%2021.5h1m5%200h1m4%200h3m1%200h3M2%2022.5h7m1%200h4m1%200h3m1%200h2m1%200h1%22%2F%3E%3C%2Fsvg%3E%0A",
+"088":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m4%200h2m1%200h7M2%203.5h1m5%200h1m1%200h1m2%200h1m2%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m5%200h1m1%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m2%200h1m2%200h1m1%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h2m1%200h2m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m2%200h1m1%200h1m2%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M12%209.5h1M2%2010.5h1m1%200h1m1%200h1m1%200h1m3%200h1m1%200h1m3%200h1m2%200h1M4%2011.5h4m2%200h1m2%200h1m1%200h1m1%200h1m1%200h1m1%200h1M4%2012.5h1m3%200h1m1%200h2m1%200h1m1%200h3m2%200h1M6%2013.5h1m2%200h2m2%200h3m1%200h3M2%2014.5h3m1%200h1m1%200h1m1%200h1m2%200h1m1%200h3m2%200h3M10%2015.5h1m1%200h1m3%200h1m3%200h2M2%2016.5h7m2%200h2m1%200h1m3%200h1m2%200h1M2%2017.5h1m5%200h1m7%200h1m3%200h2M2%2018.5h1m1%200h3m1%200h1m1%200h2m2%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2019.5h1m1%200h3m1%200h1m2%200h3m1%200h1m1%200h1m1%200h1m1%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h2m1%200h1m1%200h3m1%200h2m1%200h1M2%2021.5h1m5%200h1m4%200h3m1%200h3M2%2022.5h7m1%200h1m1%200h2m1%200h3m1%200h2m1%200h1%22%2F%3E%3C%2Fsvg%3E%0A",
+"089":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m3%200h1m1%200h1m1%200h7M2%203.5h1m5%200h1m2%200h1m1%200h2m1%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m1%200h1m1%200h3m1%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h5m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m1%200h1m1%200h1m1%200h1m1%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M10%209.5h1m2%200h2M2%2010.5h1m1%200h5m2%200h2m1%200h1m1%200h5M4%2011.5h1m2%200h1m1%200h1m4%200h1m2%200h1m2%200h2M2%2012.5h2m4%200h2m2%200h2m1%200h1m2%200h1m1%200h1m1%200h1M3%2013.5h1m1%200h2m2%200h3m5%200h2m1%200h2M2%2014.5h3m2%200h2m4%200h1m1%200h1m2%200h1m1%200h2M10%2015.5h7m2%200h1M2%2016.5h7m2%200h2m1%200h1m1%200h2m3%200h2M2%2017.5h1m5%200h1m1%200h2m1%200h4m2%200h1M2%2018.5h1m1%200h3m1%200h1m1%200h1m3%200h1m2%200h1m2%200h1M2%2019.5h1m1%200h3m1%200h1m1%200h1m1%200h1m1%200h1m2%200h1m2%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h4m1%200h1m2%200h3M2%2021.5h1m5%200h1m3%200h1m4%200h2m1%200h2M2%2022.5h7m1%200h4m1%200h1m2%200h3%22%2F%3E%3C%2Fsvg%3E%0A",
+"090":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m3%200h1m3%200h7M2%203.5h1m5%200h1m1%200h1m1%200h1m3%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m2%200h3m2%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m2%200h2m3%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h1m1%200h3m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m3%200h2m2%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M11%209.5h2M2%2010.5h1m1%200h1m1%200h1m1%200h1m3%200h1m1%200h1m3%200h1m2%200h1M2%2011.5h2m1%200h2m3%200h1m2%200h1m1%200h1m1%200h1m1%200h1m1%200h2M2%2012.5h4m1%200h3m1%200h1m1%200h1m1%200h3m2%200h1M2%2013.5h1m3%200h2m1%200h1m1%200h5m1%200h3M3%2014.5h1m1%200h1m2%200h1m1%200h1m1%200h2m1%200h3m2%200h3M10%2015.5h2m4%200h1m3%200h2M2%2016.5h7m2%200h1m2%200h1m3%200h1m2%200h1M2%2017.5h1m5%200h1m2%200h2m3%200h1m3%200h2M2%2018.5h1m1%200h3m1%200h1m1%200h2m2%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2019.5h1m1%200h3m1%200h1m2%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h1m1%200h2m1%200h3m1%200h2m1%200h1M2%2021.5h1m5%200h1m2%200h1m1%200h3m1%200h3M2%2022.5h7m1%200h1m1%200h2m1%200h3m1%200h2m1%200h1%22%2F%3E%3C%2Fsvg%3E%0A",
+"091":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m1%200h2m1%200h1m2%200h7M2%203.5h1m5%200h1m3%200h1m1%200h1m1%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m2%200h4m1%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m1%200h1m1%200h3m1%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h2m1%200h2m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m1%200h1m3%200h1m1%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M10%209.5h3M2%2010.5h1m3%200h1m1%200h3m1%200h1m1%200h6m2%200h1M2%2011.5h1m1%200h2m4%200h2m2%200h3m3%200h1M2%2012.5h1m2%200h2m1%200h1m1%200h1m3%200h2m3%200h1m2%200h1M3%2013.5h1m1%200h1m3%200h1m3%200h2m2%200h1m1%200h1m1%200h1M4%2014.5h1m1%200h8m2%200h3m1%200h1m1%200h1M10%2015.5h2m1%200h2m2%200h1m1%200h1m1%200h2M2%2016.5h7m1%200h4m2%200h7M2%2017.5h1m5%200h1m6%200h2m1%200h1m1%200h1M2%2018.5h1m1%200h3m1%200h1m1%200h2m2%200h3m3%200h3M2%2019.5h1m1%200h3m1%200h1m2%200h1m2%200h3m3%200h3M2%2020.5h1m1%200h3m1%200h1m3%200h1m1%200h2M2%2021.5h1m5%200h1m2%200h1m1%200h2m2%200h1m1%200h1m1%200h1M2%2022.5h7m1%200h1m1%200h2m2%200h7%22%2F%3E%3C%2Fsvg%3E%0A",
+"092":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m1%200h1m2%200h1m2%200h7M2%203.5h1m5%200h1m1%200h2m2%200h1m1%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m1%200h2m1%200h1m2%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m2%200h2m3%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h2m2%200h1m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m2%200h1m1%200h2m1%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M12%209.5h3M2%2010.5h1m2%200h6m1%200h1m1%200h2m2%200h1m1%200h3M4%2011.5h3m2%200h1m1%200h2m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2012.5h2m2%200h3m2%200h2m2%200h2m1%200h4M3%2013.5h1m1%200h3m1%200h2m2%200h1m5%200h3M3%2014.5h2m3%200h1m1%200h2m4%200h1m2%200h2m1%200h1M10%2015.5h1m2%200h2m2%200h1m1%200h1m1%200h2M2%2016.5h7m1%200h1m1%200h1m1%200h5m3%200h1M2%2017.5h1m5%200h1m1%200h1m1%200h4m1%200h3m2%200h1M2%2018.5h1m1%200h3m1%200h1m1%200h5m1%200h2m1%200h2m1%200h1M2%2019.5h1m1%200h3m1%200h1m1%200h2m1%200h2m3%200h3M2%2020.5h1m1%200h3m1%200h1m2%200h2m3%200h1m3%200h3M2%2021.5h1m5%200h1m6%200h2m1%200h1m1%200h1m1%200h1M2%2022.5h7m1%200h1m1%200h2m5%200h3%22%2F%3E%3C%2Fsvg%3E%0A",
+"093":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m2%200h3m2%200h7M2%203.5h1m5%200h1m2%200h1m1%200h2m1%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m1%200h1m1%200h1m3%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m1%200h5m1%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h1m2%200h2m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m1%200h2m2%200h1m1%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M10%209.5h2m1%200h2M2%2010.5h1m1%200h5m3%200h1m1%200h1m1%200h5M2%2011.5h2m1%200h3m1%200h1m4%200h1m2%200h1m2%200h2M4%2012.5h2m2%200h6m1%200h1m2%200h1m1%200h3M2%2013.5h2m1%200h1m1%200h1m2%200h1m1%200h1m4%200h2m1%200h2M4%2014.5h3m1%200h2m3%200h1m1%200h1m2%200h1m1%200h2M10%2015.5h1m2%200h4m2%200h1M2%2016.5h7m2%200h2m1%200h1m1%200h2m3%200h2M2%2017.5h1m5%200h1m1%200h1m2%200h4m2%200h1M2%2018.5h1m1%200h3m1%200h1m1%200h2m2%200h1m2%200h1m2%200h1M2%2019.5h1m1%200h3m1%200h1m1%200h3m1%200h1m2%200h1m2%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h1m2%200h1m1%200h1m2%200h3M2%2021.5h1m5%200h1m2%200h2m4%200h2m1%200h2M2%2022.5h7m1%200h1m1%200h2m1%200h1m2%200h3%22%2F%3E%3C%2Fsvg%3E%0A",
+"094":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m1%200h1m2%200h2m1%200h7M2%203.5h1m5%200h1m1%200h3m3%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m2%200h2m3%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m2%200h2m3%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m3%200h1m3%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M10%209.5h3M2%2010.5h1m1%200h2m1%200h3m1%200h2m3%200h1m2%200h1m1%200h2M2%2011.5h3m2%200h1m1%200h2m3%200h1m2%200h1m2%200h1m1%200h1M2%2012.5h1m3%200h1m1%200h3m1%200h1m1%200h6m1%200h1M5%2013.5h3m3%200h2m1%200h2M2%2014.5h1m1%200h2m1%200h3m1%200h1m1%200h1m1%200h1m2%200h1m1%200h2M10%2015.5h3m2%200h1m1%200h1m2%200h1m1%200h1M2%2016.5h7m1%200h2m3%200h2m1%200h1m1%200h1m1%200h1M2%2017.5h1m5%200h1m1%200h1m1%200h5m2%200h1M2%2018.5h1m1%200h3m1%200h1m3%200h2m2%200h1m2%200h1m2%200h1M2%2019.5h1m1%200h3m1%200h1m1%200h3m2%200h1m2%200h1m2%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h1m1%200h2m1%200h1m2%200h3M2%2021.5h1m5%200h1m2%200h1m1%200h2m1%200h1m1%200h2m1%200h2M2%2022.5h7m1%200h5m2%200h1m1%200h1m1%200h1%22%2F%3E%3C%2Fsvg%3E%0A",
+"095":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m3%200h1m1%200h1m1%200h7M2%203.5h1m5%200h1m1%200h4m2%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m3%200h3m1%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m2%200h1m2%200h1m1%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h1m2%200h2m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m3%200h2m2%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M2%2010.5h1m1%200h1m1%200h1m1%200h1m2%200h1m2%200h1m3%200h1m2%200h1M2%2011.5h6m5%200h1m1%200h1m1%200h1m1%200h1m2%200h1M2%2012.5h2m1%200h4m1%200h1m2%200h1m1%200h3m2%200h2M2%2013.5h1m2%200h1m1%200h1m1%200h1m1%200h1m1%200h3m1%200h3M2%2014.5h1m1%200h3m1%200h4m1%200h1m1%200h3m2%200h3M10%2015.5h3m3%200h1m3%200h2M2%2016.5h7m3%200h1m1%200h1m3%200h1m2%200h1M2%2017.5h1m5%200h1m2%200h2m3%200h1m3%200h2M2%2018.5h1m1%200h3m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2019.5h1m1%200h3m1%200h1m2%200h1m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h1m2%200h1m1%200h3m1%200h2m1%200h1M2%2021.5h1m5%200h1m3%200h4m1%200h3M2%2022.5h7m1%200h2m1%200h1m1%200h3m1%200h2m1%200h1%22%2F%3E%3C%2Fsvg%3E%0A",
+"096":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m1%200h3m1%200h1m1%200h7M2%203.5h1m5%200h1m1%200h3m3%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m1%200h3m1%200h1m1%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m2%200h4m1%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h2m2%200h1m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m2%200h1m1%200h2m1%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M13%209.5h2M2%2010.5h1m2%200h6m3%200h2m2%200h1m1%200h3M4%2011.5h1m1%200h2m2%200h2m2%200h1m1%200h1m1%200h1m1%200h1m1%200h1M3%2012.5h2m3%200h3m4%200h2m1%200h3m1%200h1M2%2013.5h2m1%200h3m1%200h1m1%200h1m1%200h1m5%200h2m1%200h1M3%2014.5h3m1%200h5m4%200h1m2%200h2m1%200h1M10%2015.5h1m2%200h2m2%200h1m1%200h1m1%200h2M2%2016.5h7m1%200h1m1%200h1m1%200h5m3%200h1M2%2017.5h1m5%200h1m1%200h6m1%200h3m2%200h1M2%2018.5h1m1%200h3m1%200h1m1%200h1m2%200h2m1%200h2m1%200h2m1%200h1M2%2019.5h1m1%200h3m1%200h1m1%200h1m1%200h3m3%200h3M2%2020.5h1m1%200h3m1%200h1m3%200h1m3%200h1m3%200h3M2%2021.5h1m5%200h1m3%200h1m2%200h2m1%200h1m1%200h1m1%200h1M2%2022.5h7m1%200h4m5%200h3%22%2F%3E%3C%2Fsvg%3E%0A",
+"097":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m5%200h1m1%200h7M2%203.5h1m5%200h1m2%200h3m2%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m1%200h1m2%200h2m1%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m1%200h3m3%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h1m2%200h2m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m1%200h2m2%200h1m1%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M10%209.5h5M2%2010.5h1m1%200h5m5%200h1m1%200h5M2%2011.5h2m2%200h1m3%200h1m1%200h1m1%200h1m2%200h1m2%200h2M2%2012.5h1m2%200h4m4%200h1m1%200h1m2%200h1m1%200h1M3%2013.5h1m1%200h1m1%200h1m3%200h2m4%200h2m1%200h1m1%200h1M4%2014.5h1m1%200h3m4%200h1m1%200h1m2%200h1m1%200h2M10%2015.5h1m2%200h4m2%200h1M2%2016.5h7m2%200h2m1%200h1m1%200h2m3%200h2M2%2017.5h1m5%200h1m1%200h2m1%200h4m2%200h1M2%2018.5h1m1%200h3m1%200h1m1%200h1m1%200h1m1%200h1m2%200h1m2%200h1M2%2019.5h1m1%200h3m1%200h1m1%200h1m3%200h1m2%200h1m2%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h2m1%200h1m1%200h1m2%200h3M2%2021.5h1m5%200h1m2%200h1m5%200h2m1%200h2M2%2022.5h7m1%200h4m1%200h1m2%200h3%22%2F%3E%3C%2Fsvg%3E%0A",
+"098":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m7%200h7M2%203.5h1m5%200h1m1%200h1m3%200h1m1%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m2%200h1m1%200h1m2%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m3%200h1m1%200h1m1%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h2m1%200h2m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m2%200h1m1%200h1m2%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M2%2010.5h1m1%200h1m1%200h1m1%200h1m2%200h1m2%200h1m3%200h1m2%200h1M4%2011.5h2m1%200h1m1%200h1m2%200h2m1%200h1m1%200h1m1%200h1m1%200h2M2%2012.5h1m1%200h1m1%200h1m1%200h1m2%200h3m1%200h3m2%200h1m1%200h1M2%2013.5h1m7%200h2m1%200h3m1%200h3m1%200h2M2%2014.5h1m2%200h2m1%200h1m1%200h1m1%200h2m1%200h3m2%200h3M10%2015.5h1m1%200h1m3%200h1m3%200h2M2%2016.5h7m2%200h1m2%200h1m3%200h1m2%200h1M2%2017.5h1m5%200h1m2%200h2m3%200h1m3%200h2M2%2018.5h1m1%200h3m1%200h1m1%200h3m1%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2019.5h1m1%200h3m1%200h1m2%200h3m1%200h1m1%200h1m1%200h1m1%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h1m2%200h1m1%200h3m1%200h2m1%200h1M2%2021.5h1m5%200h1m3%200h4m1%200h3M2%2022.5h7m1%200h1m1%200h2m1%200h3m1%200h2m1%200h1%22%2F%3E%3C%2Fsvg%3E%0A",
+"099":"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2025%2025%22%20shape-rendering%3D%22crispEdges%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M0%200h25v25H0z%22%2F%3E%3Cpath%20stroke%3D%22%23000000%22%20d%3D%22M2%202.5h7m2%200h1m1%200h1m2%200h7M2%203.5h1m5%200h1m1%200h2m1%200h2m1%200h1m5%200h1M2%204.5h1m1%200h3m1%200h1m7%200h1m1%200h3m1%200h1M2%205.5h1m1%200h3m1%200h1m2%200h1m1%200h1m2%200h1m1%200h3m1%200h1M2%206.5h1m1%200h3m1%200h1m1%200h1m2%200h2m1%200h1m1%200h3m1%200h1M2%207.5h1m5%200h1m3%200h2m2%200h1m5%200h1M2%208.5h7m1%200h1m1%200h1m1%200h1m1%200h7M12%209.5h1M2%2010.5h1m1%200h1m1%200h1m1%200h1m2%200h2m1%200h1m3%200h1m2%200h1M2%2011.5h3m1%200h1m2%200h2m1%200h2m1%200h1m1%200h1m1%200h1m2%200h1M3%2012.5h3m2%200h2m1%200h3m1%200h3m2%200h1m1%200h1M5%2013.5h1m1%200h1m1%200h2m2%200h3m1%200h3m1%200h2M2%2014.5h1m1%200h1m1%200h3m1%200h2m1%200h1m1%200h3m2%200h3M10%2015.5h3m3%200h1m3%200h2M2%2016.5h7m3%200h1m1%200h1m3%200h1m2%200h1M2%2017.5h1m5%200h1m3%200h1m3%200h1m3%200h2M2%2018.5h1m1%200h3m1%200h1m1%200h2m2%200h1m1%200h1m1%200h1m1%200h1m1%200h1M2%2019.5h1m1%200h3m1%200h1m3%200h2m1%200h1m1%200h1m1%200h1m1%200h1M2%2020.5h1m1%200h3m1%200h1m1%200h2m1%200h1m1%200h3m1%200h2m1%200h1M2%2021.5h1m5%200h1m4%200h3m1%200h3M2%2022.5h7m1%200h1m2%200h1m1%200h3m1%200h2m1%200h1%22%2F%3E%3C%2Fsvg%3E%0A"
+};
+
+// ═══════ ESTADO ═══════
+var allWorkers = [];
+var allOTMs = [];
+var currentQR = null;
+
+// ═══════ INIT ═══════
+window.addEventListener('load', function() {
+  // Compuerta de sesión: sin token válido → pantalla de login.
+  if(!sesionValida()){
+    document.getElementById('login').style.display='flex';
+    document.getElementById('lg-user').focus();
+    document.getElementById('lg-pass').addEventListener('keydown',function(e){ if(e.key==='Enter') hacerLogin(); });
+    document.getElementById('lg-user').addEventListener('keydown',function(e){ if(e.key==='Enter') document.getElementById('lg-pass').focus(); });
+    return;
+  }
+  document.getElementById('fecha-filtro').value = new Date().toISOString().slice(0,10);
+  cargarWorkers();
+  cargarOTMs();
+});
+function hacerLogin(){
+  var btn=document.getElementById('lg-btn');
+  var err=document.getElementById('lg-err');
+  var username=document.getElementById('lg-user').value.trim();
+  var password=document.getElementById('lg-pass').value;
+  err.textContent='';
+  if(!username||!password){ err.textContent='Ingresa usuario y contraseña'; return; }
+  btn.disabled=true; btn.textContent='Ingresando...';
+  fetch(API+'/api/auth/login',{
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({username:username,password:password})
+  }).then(function(r){ return r.json().then(function(d){ return {ok:r.ok,d:d}; }); })
+  .then(function(res){
+    if(!res.ok) throw new Error(res.d.detail||'No se pudo iniciar sesión');
+    setTokenLS(res.d.token);
+    location.reload();
+  }).catch(function(e){
+    err.textContent=e.message;
+    btn.disabled=false; btn.textContent='Ingresar';
+  });
+}
+
+// ═══════ NAV ═══════
+function showPage(id, tabEl) {
+  document.querySelectorAll('.page').forEach(function(p) { p.classList.remove('active'); });
+  document.querySelectorAll('.tab').forEach(function(t) { t.classList.remove('active'); });
+  document.getElementById(id).classList.add('active');
+  if (tabEl) tabEl.classList.add('active');
+  if (id === 'p-qrs') renderQRs(allWorkers.filter(function(w) { return w.activo; }));
+}
+
+// ═══════ TRABAJADORES ═══════
+function cargarWorkers() {
+  fetch(API + '/admin/trabajadores')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      allWorkers = data;
+      renderWorkers(allWorkers);
+      var activos = allWorkers.filter(function(w) { return w.activo; }).length;
+      document.getElementById('st-total').textContent = allWorkers.length;
+      document.getElementById('st-activos').textContent = activos;
+      document.getElementById('st-inactivos').textContent = allWorkers.length - activos;
+    })
+    .catch(function(err) { toast('Error cargando trabajadores: ' + err.message, 'err'); });
+}
+
+function renderWorkers(list) {
+  var tbody = document.getElementById('tbl-workers');
+  if (!list.length) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text3);padding:30px">Sin resultados</td></tr>';
+    return;
+  }
+  tbody.innerHTML = list.map(function(w) {
+    var activoClass = w.activo ? 'badge-green' : 'badge-red';
+    var activoText  = w.activo ? 'ACTIVO' : 'INACTIVO';
+    var bajaBtn = w.activo
+      ? '<button class="btn btn-red btn-sm" data-action="baja" data-id="' + w.id + '" data-nombre="' + w.nombre + '">&#10005; Baja</button>'
+      : '';
+    return [
+      '<tr>',
+        '<td><span class="tid">', w.id, '</span></td>',
+        '<td><div class="tnom">', w.nombre, '</div></td>',
+        '<td><div class="tcarg">', w.cargo, '</div></td>',
+        '<td><span class="badge ', activoClass, '">', activoText, '</span></td>',
+        '<td class="no-print"><div style="display:flex;gap:6px">',
+          '<button class="btn btn-ghost btn-sm" data-action="qr"',
+            ' data-id="', w.id, '"',
+            ' data-nombre="', w.nombre, '"',
+            ' data-cargo="', w.cargo, '"',
+          '>&#128247; QR</button>',
+          bajaBtn,
+        '</div></td>',
+      '</tr>'
+    ].join('');
+  }).join('');
+
+  // Event delegation — no inline onclick needed
+  tbody.addEventListener('click', function(e) {
+    var btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    var action = btn.dataset.action;
+    var id     = btn.dataset.id;
+    var nombre = btn.dataset.nombre;
+    var cargo  = btn.dataset.cargo || '';
+    if (action === 'qr')   verQR(id, nombre, cargo);
+    if (action === 'baja') darBaja(id, nombre);
+  });
+}
+
+
+function filtrarWorkers(q) {
+  var f = q.length < 2 ? allWorkers : allWorkers.filter(function(w) {
+    return w.nombre.toLowerCase().includes(q.toLowerCase()) ||
+           w.cargo.toLowerCase().includes(q.toLowerCase()) ||
+           w.id === q.padStart(3,'0');
+  });
+  renderWorkers(f);
+}
+
+function agregarWorker() {
+  var nombre = document.getElementById('nw-nombre').value.trim().toUpperCase();
+  var cargo  = document.getElementById('nw-cargo').value.trim().toUpperCase();
+  var dni    = document.getElementById('nw-dni').value.trim();
+  if (!nombre || !cargo) { toast('Nombre y cargo son requeridos', 'err'); return; }
+
+  fetch(API + '/admin/trabajador', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({nombre: nombre, cargo: cargo, dni: dni})
+  })
+  .then(function(r) { return r.json().then(function(d) { return {ok:r.ok,data:d}; }); })
+  .then(function(res) {
+    if (!res.ok) { toast(res.data.detail || 'Error al crear', 'err'); return; }
+    toast('✅ ' + res.data.nombre + ' registrado con ID: ' + res.data.id, 'ok');
+    document.getElementById('nw-nombre').value = '';
+    document.getElementById('nw-cargo').value = '';
+    document.getElementById('nw-dni').value = '';
+    cargarWorkers();
+  })
+  .catch(function(err) { toast('Error de conexión', 'err'); });
+}
+
+function darBaja(id, nombre) {
+  if (!confirm('¿Dar de baja a ' + nombre + '?\nSu QR quedará inactivo en el sistema.')) return;
+  fetch(API + '/admin/trabajador/' + id + '/baja', {method:'PUT'})
+    .then(function() { toast(nombre + ' dado de baja', 'ok'); cargarWorkers(); })
+    .catch(function() { toast('Error de conexión', 'err'); });
+}
+
+// ═══════ QR MODAL ═══════
+// Los QRs están PRE-GENERADOS en QR_DATA como SVGs
+// Funciona sin CDN externo ni canvas — puro JavaScript
+
+function verQR(id, nombre, cargo) {
+  currentQR = {id: id, nombre: nombre, cargo: cargo};
+  document.getElementById('modal-nombre').textContent = nombre;
+  document.getElementById('modal-cargo').textContent = cargo;
+  document.getElementById('modal-id').textContent = 'ID: ' + id;
+
+  var qrSrc = QR_DATA[id] || null;
+
+  if (qrSrc) {
+    document.getElementById('modal-qr-img').src = qrSrc;
+  } else {
+    // Trabajador nuevo sin QR pre-generado — generar al vuelo
+    generarQRSVG(id, function(src) {
+      document.getElementById('modal-qr-img').src = src;
+    });
+  }
+
+  document.getElementById('qr-modal').classList.add('open');
+}
+
+function cerrarModal() {
+  document.getElementById('qr-modal').classList.remove('open');
+  // Limpiar para no mostrar imagen anterior mientras carga
+  currentQR = null;
+}
+
+// Click fuera del modal lo cierra
+document.addEventListener('click', function(e) {
+  var modal = document.getElementById('qr-modal');
+  if (e.target === modal) cerrarModal();
+});
+
+function descargarQR() {
+  if (!currentQR) return;
+  var img = document.getElementById('modal-qr-img');
+  if (!img.src || img.src === window.location.href) { toast('QR no disponible', 'err'); return; }
+
+  // SVG data URI → descargar como SVG
+  var link = document.createElement('a');
+  link.download = 'QR_' + currentQR.id + '_' + currentQR.nombre.replace(/ /g,'_') + '.svg';
+  link.href = img.src;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
+// ═══════ QR GRID ═══════
+function renderQRs(list) {
+  var grid = document.getElementById('qr-grid');
+  if (!list.length) {
+    grid.innerHTML = '<div class="loading">Sin trabajadores activos</div>';
+    return;
+  }
+
+  // Renderizar con QRs pre-generados — INSTANTÁNEO, sin librería externa
+  grid.innerHTML = list.map(function(w) {
+    var qrSrc = QR_DATA[w.id] || '';
+    var imgTag = qrSrc
+      ? '<img class="qr-img" src="' + qrSrc + '" alt="QR ' + w.id + '">'
+      : '<div class="qr-img" style="background:var(--raised);display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--text3)">Sin QR</div>';
+
+    return '<div class="qr-card" data-id="' + w.id + '" data-nombre="' + w.nombre + '" data-cargo="' + w.cargo + '">' +
+      imgTag +
+      '<div class="qr-name">' + w.nombre + '</div>' +
+      '<div class="qr-cargo">' + w.cargo + '</div>' +
+      '<div class="qr-id">ID: ' + w.id + '</div>' +
+      '</div>';
+  }).join('');
+
+  // Agregar eventos de click
+  grid.querySelectorAll('.qr-card').forEach(function(card) {
+    card.addEventListener('click', function() {
+      verQR(this.dataset.id, this.dataset.nombre, this.dataset.cargo);
+    });
+  });
+}
+
+function filtrarQRs(q) {
+  var activos = allWorkers.filter(function(w) { return w.activo; });
+  var f = q.length < 2 ? activos : activos.filter(function(w) {
+    return w.nombre.toLowerCase().includes(q.toLowerCase()) ||
+           w.cargo.toLowerCase().includes(q.toLowerCase());
+  });
+  renderQRs(f);
+}
+
+// Generar QR SVG al vuelo para trabajadores nuevos (sin QR pre-generado)
+// Implementación minimal de QR Code en pure JS — solo Versión 2, modo numérico
+// Para trabajadores nuevos con ID > 099 usamos el patron más simple
+function generarQRSVG(id, callback) {
+  // Fallback: mostrar el ID como texto en un SVG simple
+  var svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">' +
+    '<rect width="100" height="100" fill="white"/>' +
+    '<text x="50" y="45" text-anchor="middle" font-size="14" font-family="monospace" fill="black">QR</text>' +
+    '<text x="50" y="65" text-anchor="middle" font-size="16" font-family="monospace" font-weight="bold" fill="black">ID:' + id + '</text>' +
+    '<text x="50" y="80" text-anchor="middle" font-size="10" font-family="monospace" fill="#666">Ver admin para imprimir</text>' +
+    '</svg>';
+  callback('data:image/svg+xml,' + encodeURIComponent(svg));
+}
+
+// ═══════ OTMs ═══════
+function cargarOTMs() {
+  fetch(API + '/api/otms')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      allOTMs = data;
+      renderOTMs(allOTMs);
+      document.getElementById('st-otm-tot').textContent = allOTMs.length;
+      document.getElementById('st-otm-ejec').textContent = allOTMs.filter(function(o) { return o.estado === 'EJECUCION'; }).length;
+      document.getElementById('st-otm-por').textContent = allOTMs.filter(function(o) { return o.estado === 'POR INICIAR'; }).length;
+    })
+    .catch(function(err) { toast('Error cargando OTMs: ' + err.message, 'err'); });
+}
+
+function renderOTMs(list) {
+  var tbody = document.getElementById('tbl-otms');
+  var colores = {
+    'EJECUCION':'badge-green','POR INICIAR':'badge-amber',
+    'CERRADO':'badge-red','CONCLUIDO':'badge-blue','STAND BY':'badge-red'
+  };
+  tbody.innerHTML = list.map(function(o) {
+    var badgeClass = colores[o.estado] || 'badge-blue';
+    var options = ['EJECUCION','POR INICIAR','CERRADO','CONCLUIDO','STAND BY'].map(function(e) {
+      return '<option value="' + e + '"' + (e === o.estado ? ' selected' : '') + '>' + e + '</option>';
+    }).join('');
+    return [
+      '<tr>',
+        '<td><span class="tid">', o.id, '</span></td>',
+        '<td style="max-width:280px;font-size:12px">', o.descripcion, '</td>',
+        '<td><span style="font-size:11px;color:var(--text3)">', (o.area || '—'), '</span></td>',
+        '<td><span class="badge ', badgeClass, '">', o.estado, '</span></td>',
+        '<td><span style="font-family:var(--mono);font-size:11px;color:var(--text3)">', (o.centro_costo || '—'), '</span></td>',
+        '<td>',
+          '<select data-otm-id="', o.id, '" style="background:var(--raised);border:1px solid var(--border2);color:var(--text);padding:5px 8px;border-radius:6px;font-size:11px;font-family:var(--font);outline:none">',
+          options,
+          '</select>',
+        '</td>',
+      '</tr>'
+    ].join('');
+  }).join('');
+
+  // Event delegation for selects
+  tbody.addEventListener('change', function(e) {
+    var sel = e.target.closest('[data-otm-id]');
+    if (!sel) return;
+    cambiarEstadoOTM(sel.dataset.otmId, sel.value);
+  });
+}
+
+
+function cambiarEstadoOTM(id, estado) {
+  fetch(API + '/admin/otm/' + id + '/estado', {
+    method: 'PUT',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({estado: estado})
+  })
+  .then(function(r) {
+    if (r.ok) { toast(id + ' → ' + estado, 'ok'); cargarOTMs(); }
+    else toast('Error al actualizar estado', 'err');
+  })
+  .catch(function() { toast('Error de conexión', 'err'); });
+}
+
+function agregarOTM() {
+  var id   = document.getElementById('no-id').value.trim().toUpperCase();
+  var desc = document.getElementById('no-desc').value.trim().toUpperCase();
+  var sdp  = document.getElementById('no-sdp').value.trim();
+  var area = document.getElementById('no-area').value.trim();
+  var cc   = document.getElementById('no-cc').value.trim();
+  if (!id || !desc) { toast('ID y descripción son requeridos', 'err'); return; }
+
+  fetch(API + '/admin/otm', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({id:id, descripcion:desc, sdp:sdp, area:area, centro_costo:cc, estado:'POR INICIAR'})
+  })
+  .then(function(r) { return r.json().then(function(d) { return {ok:r.ok,data:d}; }); })
+  .then(function(res) {
+    if (!res.ok) { toast(res.data.detail||'Error', 'err'); return; }
+    toast('✅ ' + id + ' creada', 'ok');
+    ['no-id','no-desc','no-sdp','no-area','no-cc'].forEach(function(i) { document.getElementById(i).value=''; });
+    cargarOTMs();
+  })
+  .catch(function() { toast('Error de conexión', 'err'); });
+}
+
+// ═══════ REGISTROS ═══════
+function cargarRegistros() {
+  var fecha = document.getElementById('fecha-filtro').value;
+  if (!fecha) { toast('Selecciona una fecha', 'err'); return; }
+  fetch(API + '/api/registros/' + fecha)
+    .then(function(r) { return r.json(); })
+    .then(function(data) { renderRegistros(data, fecha); })
+    .catch(function() { toast('Error cargando registros', 'err'); });
+}
+
+function renderRegistros(data, fecha) {
+  var uniqTrab = new Set(data.map(function(r) { return r.trab_id; })).size;
+  var uniqOtms = new Set(data.map(function(r) { return r.otm_id; })).size;
+  document.getElementById('st-reg-tot').textContent = data.length;
+  document.getElementById('st-reg-trab').textContent = uniqTrab;
+  document.getElementById('st-reg-otms').textContent = uniqOtms;
+
+  var tbody = document.getElementById('tbl-reg');
+  if (!data.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:30px">Sin registros para ' + fecha + '</td></tr>';
+    return;
+  }
+  tbody.innerHTML = data.map(function(r) {
+    return '<tr>' +
+      '<td><span class="tid">' + r.trab_id + '</span></td>' +
+      '<td><div class="tnom" style="font-size:12px">' + r.nombre + '</div><div class="tcarg">' + r.cargo + '</div></td>' +
+      '<td><span class="tid">' + r.otm_id + '</span></td>' +
+      '<td style="font-family:var(--mono);font-size:12px">' + (r.hora||'').slice(0,5) + '</td>' +
+      '<td>' + (r.hh != null ? '<span style="font-family:var(--mono);color:var(--green);font-weight:600">' + r.hh + 'h</span>' : '<span style="color:var(--text3);font-size:11px">Pendiente</span>') + '</td>' +
+      '<td style="font-size:12px;color:var(--text2)">' + (r.supervisor_id||'—') + '</td>' +
+    '</tr>';
+  }).join('');
+}
+
+function calcularHH() {
+  var fecha = document.getElementById('fecha-filtro').value;
+  if (!fecha) { toast('Selecciona una fecha', 'err'); return; }
+  toast('Calculando HH...', 'ok');
+  fetch(API + '/api/calcular-hh', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({fecha: fecha})
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    toast('✅ ' + data.trabajadores_procesados + ' trabajadores actualizados', 'ok');
+    cargarRegistros();
+  })
+  .catch(function() { toast('Error calculando HH', 'err'); });
+}
+
+// ═══════ CUADRILLAS ═══════
+var allSupervisores = [];
+
+function cargarSupervisoresParaCuadrilla() {
+  fetch(API + '/api/supervisores')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      allSupervisores = data;
+      var sel = document.getElementById('cua-sup');
+      sel.innerHTML = '<option value="">— Seleccionar supervisor —</option>' +
+        data.map(function(s) {
+          return '<option value="' + s.id + '">' + s.nombre + '</option>';
+        }).join('');
+    });
+}
+
+function cargarCuadrillaAdmin() {
+  var supId = document.getElementById('cua-sup').value;
+  if (!supId) return;
+  fetch(API + '/api/cuadrilla/' + supId)
+    .then(function(r) { return r.json(); })
+    .then(function(data) { renderCuadrillaAdmin(data, supId); });
+}
+
+function renderCuadrillaAdmin(members, supId) {
+  var el = document.getElementById('cua-lista');
+  if (!members.length) {
+    el.innerHTML = '<p style="padding:20px;text-align:center;color:var(--text3);font-size:13px">Sin miembros aún — usa el buscador para agregar</p>';
+    return;
+  }
+  el.innerHTML = '<table class="tbl"><thead><tr>' +
+    '<th>ID</th><th>Nombre</th><th>Cargo</th><th style="text-align:right">Acción</th>' +
+    '</tr></thead><tbody>' +
+    members.map(function(t) {
+      return '<tr>' +
+        '<td><span class="tid">' + (t.trab_id || t.id) + '</span></td>' +
+        '<td class="tnom">' + t.nombre + '</td>' +
+        '<td class="tcarg">' + t.cargo + '</td>' +
+        '<td style="text-align:right">' +
+          '<button class="btn btn-red btn-sm" onclick="quitarDeCuadrilla(\'' + supId + '\',\'' + (t.trab_id || t.id) + '\')">✕ Quitar</button>' +
+        '</td></tr>';
+    }).join('') +
+    '</tbody></table>';
+}
+
+function buscarParaCuadrilla(q) {
+  var el = document.getElementById('cua-busq-res');
+  var supId = document.getElementById('cua-sup').value;
+  if (!supId) { el.innerHTML = '<p style="font-size:12px;color:var(--text3)">Selecciona un supervisor primero</p>'; return; }
+  if (q.length < 1) { el.innerHTML = ''; return; }
+  var f = allWorkers.filter(function(t) {
+    return t.activo && (
+      t.nombre.toLowerCase().includes(q.toLowerCase()) ||
+      t.id === q.padStart(3,'0')
+    );
+  }).slice(0, 6);
+  if (!f.length) { el.innerHTML = '<p style="font-size:12px;color:var(--text3)">Sin resultados</p>'; return; }
+  el.innerHTML = f.map(function(t) {
+    return '<div style="display:flex;align-items:center;gap:12px;padding:8px 12px;' +
+      'background:var(--surface);border:1px solid var(--border);border-radius:8px;margin-bottom:6px">' +
+      '<span class="tid">' + t.id + '</span>' +
+      '<div style="flex:1"><div class="tnom" style="font-size:13px">' + t.nombre + '</div>' +
+        '<div class="tcarg">' + t.cargo + '</div></div>' +
+      '<button class="btn btn-amber btn-sm" onclick="agregarACuadrilla(\'' + supId + '\',\'' + t.id + '\')">+ Agregar</button>' +
+      '</div>';
+  }).join('');
+}
+
+function agregarACuadrilla(supId, trabId) {
+  fetch(API + '/api/cuadrilla/' + supId + '/' + trabId, { method: 'POST' })
+    .then(function(r) {
+      if (r.ok) {
+        toast('Trabajador agregado a la cuadrilla', 'ok');
+        document.getElementById('cua-busq').value = '';
+        document.getElementById('cua-busq-res').innerHTML = '';
+        cargarCuadrillaAdmin();
+      } else toast('Error al agregar', 'err');
+    });
+}
+
+function quitarDeCuadrilla(supId, trabId) {
+  fetch(API + '/api/cuadrilla/' + supId + '/' + trabId, { method: 'DELETE' })
+    .then(function(r) {
+      if (r.ok) { toast('Quitado de la cuadrilla', 'ok'); cargarCuadrillaAdmin(); }
+      else toast('Error al quitar', 'err');
+    });
+}
+
+// ═══════ CUADRILLAS ═══════
+var allSupervisores = [];
+
+function cargarSupervisoresParaCuadrilla() {
+  fetch(API + '/api/supervisores')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      allSupervisores = data;
+      var sel = document.getElementById('cua-sup');
+      sel.innerHTML = '<option value="">— Seleccionar supervisor —</option>' +
+        data.map(function(s) {
+          return '<option value="' + s.id + '">' + s.nombre + '</option>';
+        }).join('');
+    });
+}
+
+function cargarCuadrillaAdmin() {
+  var supId = document.getElementById('cua-sup').value;
+  if (!supId) return;
+  fetch(API + '/api/cuadrilla/' + supId)
+    .then(function(r) { return r.json(); })
+    .then(function(data) { renderCuadrillaAdmin(data, supId); });
+}
+
+function renderCuadrillaAdmin(members, supId) {
+  var el = document.getElementById('cua-lista');
+  if (!members.length) {
+    el.innerHTML = '<p style="padding:20px;text-align:center;color:var(--text3);font-size:13px">Sin miembros — usa el buscador para agregar trabajadores</p>';
+    return;
+  }
+  el.innerHTML = '<table class="tbl"><thead><tr>' +
+    '<th>ID</th><th>Nombre</th><th>Cargo</th><th style="text-align:right">Acción</th>' +
+    '</tr></thead><tbody>' +
+    members.map(function(t) {
+      var id = t.trab_id || t.id;
+      return '<tr>' +
+        '<td><span class="tid">' + id + '</span></td>' +
+        '<td><div class="tnom">' + t.nombre + '</div></td>' +
+        '<td><span class="tcarg">' + t.cargo + '</span></td>' +
+        '<td style="text-align:right">' +
+          '<button class="btn btn-red btn-sm" ' +
+            'onclick="quitarDeCuadrilla(\'' + supId + '\',\'' + id + '\')">✕ Quitar</button>' +
+        '</td></tr>';
+    }).join('') +
+    '</tbody></table>';
+}
+
+function buscarParaCuadrilla(q) {
+  var el = document.getElementById('cua-busq-res');
+  var supId = document.getElementById('cua-sup').value;
+  if (!supId) {
+    el.innerHTML = '<p style="font-size:12px;color:var(--text3)">Selecciona un supervisor primero</p>';
+    return;
+  }
+  if (q.length < 1) { el.innerHTML = ''; return; }
+  var f = allWorkers.filter(function(t) {
+    return t.activo && (
+      t.nombre.toLowerCase().includes(q.toLowerCase()) ||
+      t.id === q.padStart(3,'0') ||
+      t.cargo.toLowerCase().includes(q.toLowerCase())
+    );
+  }).slice(0, 6);
+  if (!f.length) { el.innerHTML = '<p style="font-size:12px;color:var(--text3)">Sin resultados</p>'; return; }
+  el.innerHTML = f.map(function(t) {
+    return '<div style="display:flex;align-items:center;gap:12px;padding:10px 14px;' +
+      'background:var(--surface);border:1px solid var(--border);border-radius:8px;margin-bottom:6px">' +
+      '<span class="tid" style="min-width:32px">' + t.id + '</span>' +
+      '<div style="flex:1"><div style="font-size:13px;font-weight:700">' + t.nombre + '</div>' +
+        '<div class="tcarg">' + t.cargo + '</div></div>' +
+      '<button class="btn btn-amber btn-sm" ' +
+        'onclick="agregarACuadrilla(\'' + supId + '\',\'' + t.id + '\')">+ Agregar</button>' +
+      '</div>';
+  }).join('');
+}
+
+function agregarACuadrilla(supId, trabId) {
+  fetch(API + '/api/cuadrilla/' + supId + '/' + trabId, { method: 'POST' })
+    .then(function(r) {
+      if (r.ok) {
+        toast('✅ Trabajador agregado a la cuadrilla', 'ok');
+        document.getElementById('cua-busq').value = '';
+        document.getElementById('cua-busq-res').innerHTML = '';
+        cargarCuadrillaAdmin();
+      } else toast('Error al agregar', 'err');
+    });
+}
+
+function quitarDeCuadrilla(supId, trabId) {
+  if (!confirm('¿Quitar este trabajador de la cuadrilla?')) return;
+  fetch(API + '/api/cuadrilla/' + supId + '/' + trabId, { method: 'DELETE' })
+    .then(function(r) {
+      if (r.ok) { toast('Quitado de la cuadrilla', 'ok'); cargarCuadrillaAdmin(); }
+      else toast('Error al quitar', 'err');
+    });
+}
+
+// ═══════ TOAST ═══════
+var _tt;
+function toast(msg, tipo) {
+  tipo = tipo || 'ok';
+  var t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast ' + tipo + ' show';
+  clearTimeout(_tt);
+  _tt = setTimeout(function() { t.classList.remove('show'); }, 4000);
+}
+</script>
+</body>
+</html>
