@@ -28,6 +28,7 @@ interface Fila {
   descripcion: string; unidad: string|null; hh_presup: number
   metrado_presup: number; metrado_proyec: number|null
   nivel: number; parent_codigo: string|null; es_hoja: boolean
+  tipo_costo: string
   hh_ganadas_acum: number; hh_gastadas_acum: number; pct_avance: number; pf_acum: number
 }
 interface Nodo extends Fila {
@@ -108,6 +109,18 @@ function WBSRow({ node, collapsed, onToggle }: { node: Nodo; collapsed: Set<stri
               border:`0.5px solid ${(FASE_COLOR[node.fase] ?? '#AEB9CC')}66`,
               padding:'2px 6px', borderRadius:4, letterSpacing:'.3px', whiteSpace:'nowrap' }}>
               {node.sub_fase ?? node.fase}
+            </span>
+          )}
+        </td>
+        {/* Tipo de costo (DIR/IND) — solo hojas */}
+        <td style={{ padding:'7px 6px', textAlign:'center', width:54 }}>
+          {isLeaf && (
+            <span style={{ fontFamily:'var(--mono)', fontSize:9, fontWeight:700,
+              color: node.tipo_costo === 'INDIRECTO' ? '#FACC15' : '#2DD4A8',
+              background: (node.tipo_costo === 'INDIRECTO' ? '#FACC15' : '#2DD4A8')+'22',
+              border:`0.5px solid ${(node.tipo_costo === 'INDIRECTO' ? '#FACC15' : '#2DD4A8')}55`,
+              padding:'2px 5px', borderRadius:4 }}>
+              {node.tipo_costo === 'INDIRECTO' ? 'IND' : 'DIR'}
             </span>
           )}
         </td>
@@ -233,7 +246,7 @@ export default function WBSArbol({ otm, semana }: { otm: string; semana: number 
         <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
           <thead>
             <tr style={{borderBottom:'1px solid #252f45',background:'#1c2436'}}>
-              {[['Código',200],['Descripción',null],['Fase',90],['Und',60],['Metrado',100],['HH Plan',100],['HH Gastadas',110],['HH Ganadas',110],['% Avance',100],['PF',70]].map(([h,w])=>(
+              {[['Código',200],['Descripción',null],['Fase',90],['Tipo',54],['Und',60],['Metrado',100],['HH Plan',100],['HH Gastadas',110],['HH Ganadas',110],['% Avance',100],['PF',70]].map(([h,w])=>(
                 <th key={String(h)} style={{padding:'9px 8px',fontSize:10,fontWeight:700,textTransform:'uppercase',
                   letterSpacing:'.07em',color:'#8a96ad',textAlign: ['Metrado','HH Plan','HH Gastadas','HH Ganadas','PF'].includes(String(h)) ? 'right' : 'left',
                   whiteSpace:'nowrap',width: w ? w : undefined}}>
@@ -247,7 +260,7 @@ export default function WBSArbol({ otm, semana }: { otm: string; semana: number 
           </tbody>
           <tfoot>
             <tr style={{borderTop:'1px solid #2e3a52',background:'#1c2436'}}>
-              <td colSpan={5} style={{padding:'8px 10px',fontSize:11,color:'#8a96ad',fontWeight:600}}>TOTAL OTM{otm ? ` · ${otm}` : ''}</td>
+              <td colSpan={6} style={{padding:'8px 10px',fontSize:11,color:'#8a96ad',fontWeight:600}}>TOTAL OTM{otm ? ` · ${otm}` : ''}</td>
               <td style={{padding:'8px 12px 8px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:12,color:'#e8edf5',fontWeight:600}}>
                 {totalPlan.toLocaleString('es-PE',{maximumFractionDigits:1})}
               </td>
