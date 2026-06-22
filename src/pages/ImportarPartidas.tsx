@@ -30,6 +30,7 @@ interface FilaPartida {
   metrado_presup: number; metrado_proyec: number | null; hh_presup: number
   hh_gastadas_inicial: number; hh_ganadas_inicial: number
   tipo_costo: 'DIRECTO' | 'INDIRECTO'
+  sistema: string | null
   hitos: HitoFila[]
   nivel: number; parent_codigo: string | null
   _fila: number; _error: string | null; _warn: string | null
@@ -65,10 +66,10 @@ function descargarPlantilla() {
   // Nodos PADRE: FASE vacía (no se registran, solo agrupan).
   // Nodos HOJA: FASE llena (se registran tareo + avance).
   const partidas = [
-    { OTM: 'OTM-0005', CODIGO: '02',             FASE: '',    SUB_FASE: '',        DESCRIPCION: 'TRABAJOS EN INSTALACIONES DE SMCV', UNIDAD: '',   METRADO_PRESUP: '',  METRADO_PROYEC: '', HH_PRESUP: '',     TIPO_COSTO: '',         HH_GASTADAS_INICIAL: '', HH_GANADAS_INICIAL: '' },
-    { OTM: 'OTM-0005', CODIGO: '02.01',          FASE: '',    SUB_FASE: '',        DESCRIPCION: 'DIVERTER DV-041',                   UNIDAD: '',   METRADO_PRESUP: '',  METRADO_PROYEC: '', HH_PRESUP: '',     TIPO_COSTO: '',         HH_GASTADAS_INICIAL: '', HH_GANADAS_INICIAL: '' },
-    { OTM: 'OTM-0005', CODIGO: '02.01.01.01.01', FASE: 'AND', SUB_FASE: 'AND.INS', DESCRIPCION: 'TRANSPORTE INTERNO CAMIÓN GRÚA',    UNIDAD: 'hm', METRADO_PRESUP: 16,  METRADO_PROYEC: '', HH_PRESUP: 17.57,  TIPO_COSTO: 'DIRECTO',  HH_GASTADAS_INICIAL: '', HH_GANADAS_INICIAL: '' },
-    { OTM: 'OTM-0005', CODIGO: '02.01.01.01.02', FASE: 'EST', SUB_FASE: 'EST.LIG', DESCRIPCION: 'PERSONAL DE APOYO CARGUÍO',         UNIDAD: 'hh', METRADO_PRESUP: 32,  METRADO_PROYEC: '', HH_PRESUP: 160,    TIPO_COSTO: 'INDIRECTO', HH_GASTADAS_INICIAL: '', HH_GANADAS_INICIAL: '' },
+    { OTM: 'OTM-0005', CODIGO: '02',             FASE: '',    SUB_FASE: '',        SISTEMA: '',           DESCRIPCION: 'TRABAJOS EN INSTALACIONES DE SMCV', UNIDAD: '',   METRADO_PRESUP: '',  METRADO_PROYEC: '', HH_PRESUP: '',     TIPO_COSTO: '',         HH_GASTADAS_INICIAL: '', HH_GANADAS_INICIAL: '' },
+    { OTM: 'OTM-0005', CODIGO: '02.01',          FASE: '',    SUB_FASE: '',        SISTEMA: '',           DESCRIPCION: 'DIVERTER DV-041',                   UNIDAD: '',   METRADO_PRESUP: '',  METRADO_PROYEC: '', HH_PRESUP: '',     TIPO_COSTO: '',         HH_GASTADAS_INICIAL: '', HH_GANADAS_INICIAL: '' },
+    { OTM: 'OTM-0005', CODIGO: '02.01.01.01.01', FASE: 'AND', SUB_FASE: 'AND.INS', SISTEMA: 'Sistema 1', DESCRIPCION: 'TRANSPORTE INTERNO CAMIÓN GRÚA',    UNIDAD: 'hm', METRADO_PRESUP: 16,  METRADO_PROYEC: '', HH_PRESUP: 17.57,  TIPO_COSTO: 'DIRECTO',  HH_GASTADAS_INICIAL: '', HH_GANADAS_INICIAL: '' },
+    { OTM: 'OTM-0005', CODIGO: '02.01.01.01.02', FASE: 'EST', SUB_FASE: 'EST.LIG', SISTEMA: 'Sistema 1', DESCRIPCION: 'PERSONAL DE APOYO CARGUÍO',         UNIDAD: 'hh', METRADO_PRESUP: 32,  METRADO_PROYEC: '', HH_PRESUP: 160,    TIPO_COSTO: 'INDIRECTO', HH_GASTADAS_INICIAL: '', HH_GANADAS_INICIAL: '' },
   ]
   // OJO: CODIGO de HITOS debe ser EXACTAMENTE el código de la partida hoja.
   const hitos = [
@@ -79,10 +80,10 @@ function descargarPlantilla() {
   ]
   const wb = XLSX.utils.book_new()
   const ws1 = XLSX.utils.json_to_sheet(partidas, {
-    header: ['OTM','CODIGO','FASE','SUB_FASE','DESCRIPCION','UNIDAD','METRADO_PRESUP','METRADO_PROYEC',
+    header: ['OTM','CODIGO','FASE','SUB_FASE','SISTEMA','DESCRIPCION','UNIDAD','METRADO_PRESUP','METRADO_PROYEC',
              'HH_PRESUP','TIPO_COSTO','HH_GASTADAS_INICIAL','HH_GANADAS_INICIAL'],
   })
-  ws1['!cols'] = [{wch:12},{wch:14},{wch:8},{wch:10},{wch:34},{wch:8},{wch:14},{wch:14},{wch:12},{wch:12},{wch:18},{wch:18}]
+  ws1['!cols'] = [{wch:12},{wch:14},{wch:8},{wch:10},{wch:16},{wch:34},{wch:8},{wch:14},{wch:14},{wch:12},{wch:12},{wch:18},{wch:18}]
   XLSX.utils.book_append_sheet(wb, ws1, 'PARTIDAS')
 
   const ws2 = XLSX.utils.json_to_sheet(hitos, { header: ['CODIGO','NUMERO','DESCRIPCION','PESO','ES_PRINCIPAL'] })
@@ -191,6 +192,7 @@ export default function ImportarPartidas() {
         metrado_presup, metrado_proyec: num(n['METRADO_PROYEC']), hh_presup,
         hh_gastadas_inicial, hh_ganadas_inicial,
         tipo_costo: normTipoCosto(n['TIPO_COSTO'] || n['TIPO']),
+        sistema: n['SISTEMA'] || null,
         hitos, nivel, parent_codigo,
         _fila: i + 2, _error, _warn,
       }
@@ -247,7 +249,7 @@ export default function ImportarPartidas() {
       const payload = {
         partidas: pOk.map(p => ({
           codigo: p.codigo, otm_id: p.otm_id, fase: p.fase, sub_fase: p.sub_fase,
-          descripcion: p.descripcion, unidad: p.unidad, sistema: null,
+          descripcion: p.descripcion, unidad: p.unidad, sistema: p.sistema,
           metrado_presup: p.metrado_presup, metrado_proyec: p.metrado_proyec, hh_presup: p.hh_presup,
           tipo_costo: p.tipo_costo,
           hitos: p.hitos.length > 0 ? p.hitos : undefined,
@@ -296,6 +298,8 @@ export default function ImportarPartidas() {
             Carga masiva de partidas desde Excel. Hoja <span className="text-k-text2 font-bold">PARTIDAS</span> obligatoria,
             hoja <span className="text-k-text2 font-bold">HITOS</span> opcional (define los hitos ponderados de cada partida
             — si una partida no aparece ahí, se le asigna un único hito al 100%).
+            La columna <span className="text-k-text2 font-bold">SISTEMA</span> agrupa partidas por zona/sistema (ej. "Sistema 1: Lauder 3B")
+            para el reporte ejecutivo por sistema.{' '}
             La columna <span className="text-k-text2 font-bold">TIPO_COSTO</span> marca cada partida como{' '}
             <span className="text-k-text2 font-bold">DIRECTO</span> (por defecto) o <span className="text-k-text2 font-bold">INDIRECTO</span>{' '}
             (dirección, calidad, seguridad, etc.) — define cómo se separa el PF directo/indirecto.
