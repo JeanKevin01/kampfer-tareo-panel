@@ -202,13 +202,9 @@ export default function TabDiario({ semana, lunes, onSemana, selectedOtm }: Prop
     </div>
   )
 
-  // Días: Lun–Vie siempre; Sáb/Dom solo si hubo actividad ese día.
+  // Semana completa: Lunes a Domingo (7 días).
   const fechas = data?.fechas ?? []
-  const hayActividad = (fs: string) => !!data && data.partidas.some(p => {
-    const d = p.dias[fs]
-    return !!d && ((d.hh_gastadas ?? 0) > 0 || (d.hh_estimada ?? 0) > 0 || d.cant_ejecutada != null)
-  })
-  const diasActivos = fechas.filter((fs, i) => i < 5 || hayActividad(fs))
+  const diasActivos = fechas
 
   // Árbol jerárquico: grupos (padres) + partidas (hojas con captura diaria)
   const items = data
@@ -253,7 +249,7 @@ export default function TabDiario({ semana, lunes, onSemana, selectedOtm }: Prop
           <span className="text-xs text-k-text3">
             {new Date(lunes + 'T12:00:00').toLocaleDateString('es-PE', { day:'2-digit', month:'short' })}
             {' – '}
-            {new Date(data.fechas[4] + 'T12:00:00').toLocaleDateString('es-PE', { day:'2-digit', month:'short' })}
+            {new Date(data.fechas[6] + 'T12:00:00').toLocaleDateString('es-PE', { day:'2-digit', month:'short' })}
           </span>
         )}
 

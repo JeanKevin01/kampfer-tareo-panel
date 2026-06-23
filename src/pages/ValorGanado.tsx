@@ -325,7 +325,7 @@ export default function ValorGanado() {
           selectedOtm={selectedOtm}
         />
       )}
-      {tab === 'config'        && <TabConfig />}
+      {tab === 'config'        && <TabConfig otm={selectedOtm} />}
       {tab === 'importar'      && <ImportarPartidas />}
     </div>
   )
@@ -923,11 +923,11 @@ function JornadaConfig() {
   )
 }
 
-function TabConfig() {
+function TabConfig({ otm }: { otm?: string }) {
   const qc = useQueryClient()
   const { data: partidas = [], isLoading } = useQuery<Partida[]>({
-    queryKey: ['ev-partidas'],
-    queryFn: () => req('/ev/partidas'),
+    queryKey: ['ev-partidas', otm],
+    queryFn: () => req(`/ev/partidas${otm ? `?otm=${otm}` : ''}`),
   })
 
   const [editando, setEditando] = useState<number | null>(null)
