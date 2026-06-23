@@ -87,7 +87,7 @@ interface Reporte {
     pct_avance: number; pf_acum: number; pf_dir_acum: number; pf_sem: number
     eac_hh: number; desvio_hh: number
   }
-  por_fase: ReporteGrupo[]; por_sistema: ReporteGrupo[]; partidas: ReporteFila[]
+  por_fase: ReporteGrupo[]; por_sistema: ReporteGrupo[]; por_naturaleza?: ReporteGrupo[]; partidas: ReporteFila[]
 }
 interface PuntoCurvaFase { semana: number; [key: string]: number | null }
 
@@ -430,7 +430,8 @@ function TabResumen({ semana, otm }: { semana: number; otm?: string }) {
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         <TablaGrupos titulo="Avance por fase / disciplina" grupos={rep.por_fase} />
-        <TablaGrupos titulo="Avance por sistema" grupos={rep.por_sistema} />
+        <TablaGrupos titulo="Avance por área" grupos={rep.por_sistema} />
+        <TablaGrupos titulo="Avance por naturaleza (contractual / adicional)" grupos={rep.por_naturaleza ?? []} />
       </div>
 
       <CurvasFase semana={semana} />
@@ -714,69 +715,49 @@ function TabRegistro({ semana, otm }: { semana: number; otm?: string }) {
                 )
               }
 
-              // Hoja (actividad con hitos)
+              // Hoja (actividad) — TODOS los hitos visibles + % avance en vivo
               const c = faseColor(p.fase)
-              const principal = p.hitos.find(x => x.es_principal) ?? p.hitos[0]
-              const tieneMulti = p.hitos.length > 1
-              const isExp = expanded.has(p.partida_id)
-              const actVal = principal ? Number(avances[principal.hito_id] ?? principal.cant_actual ?? 0) : 0
-              const periodo = actVal - (principal?.cant_anterior ?? 0)
+              const mp = p.metrado_proyec || 0
+              let pct = 0
+              p.hitos.forEach(x => {
+                const cant = Number(avances[x.hito_id] ?? x.cant_actual ?? 0)
+                pct += (x.peso || 0) * (mp > 0 ? Math.min(cant / mp, 1) : 0)
+              })
               return (
                 <Fragment key={p.partida_id}>
-                  <tr className="border-b border-k-border" style={{ background: 'transparent', borderLeft: `3px solid ${c}` }} onMouseEnter={e => (e.currentTarget.style.background = '#1c2436')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                    <td className="py-1 px-2">
-                      <span style={{ color: c, fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 700 }}>{(p.fase ?? '—')}</span>
-                    </td>
-                    <td className="py-1 px-2">
-                      <div className="flex items-center gap-1" style={{ paddingLeft: indent }}>
-                        {tieneMulti && (
-                          <button onClick={() => toggleExp(p.partida_id)} className="text-k-text3 hover:text-k-amber" style={{ fontSize: 10, lineHeight: 1, background: 'none', border: 'none', cursor: 'pointer' }}>
-                            {isExp ? '▾' : '▸'}
-                          </button>
-                        )}
-                        <span className="font-mono text-k-amber" style={{ fontSize: 10 }}>{p.codigo}</span>
-                      </div>
-                    </td>
-                    <td className="py-1 px-2" style={{ maxWidth: 260 }}>
-                      <span className="text-k-text2 truncate block" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={p.descripcion}>{p.descripcion}</span>
-                    </td>
+                  {/* Fila de la partida: % avance calculado en vivo (solo lectura) + HH */}
+                  <tr className="border-b border-k-border" style={{ borderLeft: `3px solid ${c}` }}>
+                    <td className="py-1 px-2"><span style={{ color: c, fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 700 }}>{p.fase ?? '—'}</span></td>
+                    <td className="py-1 px-2"><div className="flex items-center gap-1" style={{ paddingLeft: indent }}><span className="font-mono text-k-amber" style={{ fontSize: 10 }}>{p.codigo}</span></div></td>
+                    <td className="py-1 px-2" style={{ maxWidth: 260 }}><span className="text-k-text2 truncate block" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={p.descripcion}>{p.descripcion}</span></td>
                     <td className="py-1 px-2 text-center text-k-text3 font-mono" style={{ fontSize: 11 }}>{p.unidad ?? '—'}</td>
-                    <td className="py-1 px-2 text-right font-mono text-k-text3" style={{ fontSize: 11 }}>{fmt(p.metrado_proyec)}</td>
-                    <td className="py-1 px-2 text-right font-mono text-k-text3" style={{ fontSize: 11 }}>{fmt(principal?.cant_anterior ?? 0)}</td>
-                    <td className="py-1 px-1" style={{ minWidth: 90 }}>
-                      {principal ? (
-                        <input type="number" step="0.01" min="0"
-                          value={avances[principal.hito_id] ?? ''}
-                          onChange={e => setAvances({ ...avances, [principal.hito_id]: e.target.value })}
-                          className="w-full bg-k-void border border-k-amber/40 focus:border-k-amber rounded px-2 py-1 text-k-text font-mono outline-none text-right transition-colors" style={{ fontSize: 12 }} />
-                      ) : <span className="text-k-text3">—</span>}
-                    </td>
-                    <td className={`py-1 px-2 text-right font-mono font-bold ${periodo > 0 ? 'text-k-green' : periodo < 0 ? 'text-k-red' : 'text-k-text3'}`} style={{ fontSize: 11 }}>
-                      {periodo > 0 ? '+' : ''}{fmt(periodo)}
-                    </td>
-                    <td className="py-1 px-2 text-right font-mono text-k-green" style={{ fontSize: 11 }}>
-                      {p.hh_tareo > 0 ? fmt(p.hh_tareo) : '—'}
-                    </td>
+                    <td className="py-1 px-2 text-right font-mono text-k-text3" style={{ fontSize: 11 }}>{fmt(mp)}</td>
+                    <td className="py-1 px-2" />
+                    <td className="py-1 px-2 text-right"><span className="font-mono font-bold" style={{ fontSize: 12, color: pct >= 1 ? '#2DD4A8' : pct > 0 ? '#3B82F6' : '#4e5a72' }}>{(pct * 100).toFixed(1)}%</span></td>
+                    <td className="py-1 px-2" />
+                    <td className="py-1 px-2 text-right font-mono text-k-green" style={{ fontSize: 11 }}>{p.hh_tareo > 0 ? fmt(p.hh_tareo) : '—'}</td>
                     <td className="py-1 px-1" style={{ minWidth: 70 }}>
-                      <input type="number" step="0.5" min="0"
-                        value={hh[p.partida_id] ?? ''} placeholder="0"
+                      <input type="number" step="0.5" min="0" value={hh[p.partida_id] ?? ''} placeholder="0"
                         onChange={e => setHh({ ...hh, [p.partida_id]: e.target.value })}
                         className="w-full bg-k-void border border-k-border focus:border-k-amber rounded px-2 py-1 text-k-text font-mono outline-none text-right transition-colors" style={{ fontSize: 12 }} />
                     </td>
                   </tr>
-                  {tieneMulti && isExp && p.hitos.map(x => {
+                  {/* Un renglón editable por cada hito (siempre visible) */}
+                  {p.hitos.map(x => {
                     const sub = Number(avances[x.hito_id] ?? x.cant_actual ?? 0)
                     const sp = sub - x.cant_anterior
                     return (
                       <tr key={x.hito_id} className="border-b border-k-border bg-k-raised/30">
-                        <td /><td className="py-1 px-2 pl-6"><span className="text-k-text3 font-bold" style={{ fontSize: 10 }}>H{x.numero}</span></td>
-                        <td className="py-1 px-2" colSpan={2}><span className="text-k-text3" style={{ fontSize: 11 }}>{x.descripcion} ({(x.peso * 100).toFixed(0)}%)</span></td>
-                        <td className="py-1 px-2 text-right font-mono text-k-text3" style={{ fontSize: 11 }}>{fmt(p.metrado_proyec)}</td>
+                        <td />
+                        <td className="py-1 px-2 pl-6"><span className="text-k-text3 font-bold" style={{ fontSize: 10 }}>H{x.numero}{x.es_principal ? ' ★' : ''}</span></td>
+                        <td className="py-1 px-2"><span className="text-k-text3" style={{ fontSize: 11 }}>{x.descripcion} ({(x.peso * 100).toFixed(0)}%)</span></td>
+                        <td className="py-1 px-2 text-center text-k-text3 font-mono" style={{ fontSize: 11 }}>{p.unidad ?? ''}</td>
+                        <td className="py-1 px-2 text-right font-mono text-k-text3" style={{ fontSize: 11 }}>{fmt(mp)}</td>
                         <td className="py-1 px-2 text-right font-mono text-k-text3" style={{ fontSize: 11 }}>{fmt(x.cant_anterior)}</td>
-                        <td className="py-1 px-1">
+                        <td className="py-1 px-1" style={{ minWidth: 90 }}>
                           <input type="number" step="0.01" min="0"
                             value={avances[x.hito_id] ?? ''} onChange={e => setAvances({ ...avances, [x.hito_id]: e.target.value })}
-                            className="w-full bg-k-void border border-k-amber/30 focus:border-k-amber rounded px-2 py-1 font-mono outline-none text-right transition-colors" style={{ fontSize: 11 }} />
+                            className="w-full bg-k-void border border-k-amber/40 focus:border-k-amber rounded px-2 py-1 text-k-text font-mono outline-none text-right transition-colors" style={{ fontSize: 12 }} />
                         </td>
                         <td className={`py-1 px-2 text-right font-mono font-bold ${sp > 0 ? 'text-k-green' : sp < 0 ? 'text-k-red' : 'text-k-text3'}`} style={{ fontSize: 10 }}>{sp > 0 ? '+' : ''}{fmt(sp)}</td>
                         <td colSpan={2} />
