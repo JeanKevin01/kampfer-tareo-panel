@@ -18,7 +18,7 @@ import {
   Target, BarChart3, ClipboardList, PenLine, Settings2,
   Plus, Pencil, Trash2, X, Save, Loader2, TrendingUp, Clock, Gauge,
   Upload, CalendarDays, Users, History, AlertTriangle, Activity,
-  ChevronRight, ChevronDown,
+  ChevronRight, ChevronDown, LayoutGrid,
 } from 'lucide-react'
 import { buildWbsTree, flattenVisible, nivelStyle, NIVEL_LABELS, faseColor } from '@/lib/wbs'
 import ImportarPartidas from '@/pages/ImportarPartidas'
@@ -75,19 +75,34 @@ interface ReporteFila {
   eac_hh: number; desvio_hh: number
 }
 interface ReporteGrupo {
-  grupo: string; hh_proyec: number; hh_ganadas: number; hh_gastadas: number
+  grupo: string; hh_presup?: number; hh_proyec: number; hh_ganadas: number; hh_gastadas: number
   pct_avance: number; pf: number; eac_hh: number
 }
+interface MatrizCelda {
+  disciplina?: string
+  hh_contractual: number; hh_proyec: number; hh_ganadas: number; hh_gastadas: number
+  eac_hh: number; pct_avance: number; pf: number; inc_proyec: number
+}
+interface MatrizArea { area: string; disciplinas: MatrizCelda[]; subtotal: MatrizCelda }
+interface MatrizAreaDisciplina { areas: MatrizArea[]; total: MatrizCelda }
+interface ImproductivaItem { motivo: string; hh: number }
 interface Reporte {
   semana: number
   totales: {
-    hh_proyec: number; hh_ganadas_acum: number; hh_gastadas_acum: number
+    hh_proyec: number; hh_presup?: number; hh_actualizado?: number
+    hh_ganadas_acum: number; hh_gastadas_acum: number
     hh_ganadas_sem: number; hh_gastadas_sem: number
     hh_gastadas_dir_acum: number; hh_gastadas_ind_acum: number
-    pct_avance: number; pf_acum: number; pf_dir_acum: number; pf_sem: number
+    hh_improductivas_acum?: number; hh_improductivas_sem?: number
+    hh_consumidas_acum?: number; index_improductividad?: number
+    pct_avance: number; pct_avance_proyec?: number
+    pf_acum: number; pf_acum_productivo?: number; pf_dir_acum: number; pf_sem: number
     eac_hh: number; desvio_hh: number
   }
-  por_fase: ReporteGrupo[]; por_sistema: ReporteGrupo[]; por_naturaleza?: ReporteGrupo[]; partidas: ReporteFila[]
+  por_fase: ReporteGrupo[]; por_sistema: ReporteGrupo[]; por_naturaleza?: ReporteGrupo[]
+  matriz_area_disciplina?: MatrizAreaDisciplina
+  improductivas?: { acum: number; sem: number; por_motivo: ImproductivaItem[] }
+  partidas: ReporteFila[]
 }
 interface PuntoCurvaFase { semana: number; [key: string]: number | null }
 
@@ -162,7 +177,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 // ============================================================
 // Componente principal
 // ============================================================
-type Tab = 'resumen' | 'partidas' | 'isp' | 'diario' | 'rendimientos' | 'registro' | 'config' | 'importar' | 'historico'
+type Tab = 'resumen' | 'ejecutivo' | 'partidas' | 'isp' | 'diario' | 'rendimientos' | 'registro' | 'config' | 'importar' | 'historico'
 
 export default function ValorGanado() {
   const [tab, setTab] = useState<Tab>('resumen')
@@ -210,6 +225,7 @@ export default function ValorGanado() {
   // hace que tareo_partida alimente HH gastadas automáticamente.
   const TABS: { id: Tab; label: string; icon: typeof Target; secondary?: boolean }[] = [
     { id: 'resumen',       label: 'Resumen',          icon: BarChart3 },
+    { id: 'ejecutivo',     label: 'Resumen Ejecutivo',icon: LayoutGrid },
     { id: 'partidas',      label: 'Partidas',         icon: ClipboardList },
     { id: 'isp',           label: 'ISP',              icon: Activity },
     { id: 'diario',        label: 'Control Diario',   icon: CalendarDays },
@@ -301,6 +317,7 @@ export default function ValorGanado() {
       )}
 
       {tab === 'resumen'  && <TabResumen semana={semana} otm={selectedOtm} />}
+      {tab === 'ejecutivo' && <TabEjecutivo semana={semana} otm={selectedOtm} />}
       {tab === 'partidas' && <WBSArbol otm={selectedOtm} semana={semana} />}
       {tab === 'isp'      && <TabISP semana={semana} otm={selectedOtm} />}
       {tab === 'registro' && <TabRegistro semana={semana} otm={selectedOtm} />}
@@ -350,9 +367,12 @@ function TabResumen({ semana, otm }: { semana: number; otm?: string }) {
   const t = rep.totales
 
   const kpis = [
-    { label: '% Avance del proyecto', value: pct(t.pct_avance), icon: Gauge,
+    // #6: el % avance del proyecto usa el Presupuesto ACTUALIZADO como denominador
+    // (método del gerente). Se muestra, como referencia, el % vs Proyectada.
+    { label: `% Avance proyecto · vs proy ${pct(t.pct_avance_proyec ?? t.pct_avance)}`, value: pct(t.pct_avance), icon: Gauge,
       color: 'text-k-amber', bg: 'bg-amber-500/10', border: 'border-amber-500/20' },
-    { label: 'PF Total (CPI)', value: t.pf_acum.toFixed(2), icon: Target,
+    // #5: el PF Total incluye HH improductivas. Se muestra el PF productivo como referencia.
+    { label: `PF Total (CPI) · prod ${(t.pf_acum_productivo ?? t.pf_acum).toFixed(2)}`, value: t.pf_acum.toFixed(2), icon: Target,
       color: t.pf_acum >= 1 ? 'text-k-green' : 'text-k-red',
       bg: t.pf_acum >= 1 ? 'bg-green-500/10' : 'bg-red-500/10',
       border: t.pf_acum >= 1 ? 'border-green-500/20' : 'border-red-500/20' },
@@ -362,7 +382,8 @@ function TabResumen({ semana, otm }: { semana: number; otm?: string }) {
       border: (t.pf_dir_acum || 0) >= 1 ? 'border-green-500/20' : 'border-red-500/20' },
     { label: `HH Ganadas (sem ${fmt(t.hh_ganadas_sem, 0)})`, value: fmt(t.hh_ganadas_acum, 0), icon: TrendingUp,
       color: 'text-k-green', bg: 'bg-green-500/10', border: 'border-green-500/20' },
-    { label: `HH Gastadas · D ${fmt(t.hh_gastadas_dir_acum || 0, 0)} / I ${fmt(t.hh_gastadas_ind_acum || 0, 0)}`, value: fmt(t.hh_gastadas_acum, 0), icon: Clock,
+    // #5: HH gastadas (D/I) + improductivas y su índice (HH improd / HH consumidas)
+    { label: `HH Gastadas · D ${fmt(t.hh_gastadas_dir_acum || 0, 0)} / I ${fmt(t.hh_gastadas_ind_acum || 0, 0)} · improd ${fmt(t.hh_improductivas_acum ?? 0, 0)} (${pct(t.index_improductividad ?? 0)})`, value: fmt(t.hh_gastadas_acum, 0), icon: Clock,
       color: 'text-k-red', bg: 'bg-red-500/10', border: 'border-red-500/20' },
     { label: `EAC · desvío ${t.desvio_hh >= 0 ? '+' : ''}${fmt(t.desvio_hh, 0)} HH`, value: fmt(t.eac_hh, 0), icon: BarChart3,
       color: 'text-k-blue', bg: 'bg-blue-500/10', border: 'border-blue-500/20' },
@@ -471,6 +492,119 @@ function TablaGrupos({ titulo, grupos }: { titulo: string; grupos: ReporteGrupo[
             )}
           </tbody>
         </table>
+      </div>
+    </div>
+  )
+}
+
+// ============================================================
+// TAB: Resumen Ejecutivo — matriz Área × Disciplina (hoja del gerente)
+// ============================================================
+function KpiMini({ label, value }: { label: string; value: string }) {
+  return (
+    <div className={CARD}>
+      <div className="font-mono text-2xl font-medium text-k-text mb-1">{value}</div>
+      <div className="text-[11px] text-k-text3 uppercase tracking-wide">{label}</div>
+    </div>
+  )
+}
+
+function TabEjecutivo({ semana, otm }: { semana: number; otm?: string }) {
+  // Reusa el mismo endpoint/cache que el Resumen (queryKey idéntico).
+  const { data: rep, isLoading } = useQuery<Reporte>({
+    queryKey: ['ev-reporte', semana, otm],
+    queryFn: () => req(`/ev/reporte?semana=${semana}${otm ? `&otm=${otm}` : ''}`),
+  })
+  if (isLoading || !rep) {
+    return <p className="text-k-text3 text-sm flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Calculando…</p>
+  }
+  const m = rep.matriz_area_disciplina
+  const t = rep.totales
+  if (!m || m.areas.length === 0) {
+    return (
+      <div className={CARD}>
+        <p className="text-k-text3 text-sm">
+          Sin datos para la matriz Área × Disciplina. Verifica que las partidas tengan
+          <strong> Área (sistema)</strong> y <strong>Fase</strong> asignadas.
+        </p>
+      </div>
+    )
+  }
+
+  const numTD = `${TD} text-right font-mono`
+
+  return (
+    <div className="space-y-5">
+      {/* KPIs del proyecto, alineados al método del gerente */}
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
+        <KpiMini label={`% Avance del proyecto · vs proy ${pct(t.pct_avance_proyec ?? t.pct_avance)}`} value={pct(t.pct_avance)} />
+        <KpiMini label={`PF del proyecto · prod ${(t.pf_acum_productivo ?? t.pf_acum).toFixed(2)}`} value={t.pf_acum.toFixed(2)} />
+        <KpiMini label="HH Ganadas / Consumidas" value={`${fmt(t.hh_ganadas_acum, 0)} / ${fmt(t.hh_consumidas_acum ?? t.hh_gastadas_acum, 0)}`} />
+        <KpiMini label={`Improductividad · ${fmt(t.hh_improductivas_acum ?? 0, 0)} HH`} value={pct(t.index_improductividad ?? 0)} />
+      </div>
+
+      <div className={CARD}>
+        <h3 className="text-[11px] font-bold text-k-text3 uppercase tracking-widest mb-3">
+          Resumen Ejecutivo — Área × Disciplina (semana {rep.semana})
+        </h3>
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-k-border">
+                <th className={TH}>Área / Disciplina</th>
+                <th className={`${TH} text-right`}>HH Contractual</th>
+                <th className={`${TH} text-right`}>HH Proyectada</th>
+                <th className={`${TH} text-right`}>HH Ganada</th>
+                <th className={`${TH} text-right`}>HH Gastada</th>
+                <th className={`${TH} text-right`}>% Avance</th>
+                <th className={`${TH} text-right`}>PF</th>
+                <th className={`${TH} text-right`}>% Inc</th>
+              </tr>
+            </thead>
+            <tbody>
+              {m.areas.map(a => (
+                <Fragment key={a.area}>
+                  <tr className="border-b border-k-border" style={{ background: '#141926' }}>
+                    <td className={`${TD} font-bold text-k-text`}>{a.area}</td>
+                    <td className={`${numTD} text-k-text`}>{fmt(a.subtotal.hh_contractual, 0)}</td>
+                    <td className={`${numTD} text-k-text`}>{fmt(a.subtotal.hh_proyec, 0)}</td>
+                    <td className={`${numTD} text-k-green`}>{fmt(a.subtotal.hh_ganadas, 0)}</td>
+                    <td className={`${numTD} text-k-red`}>{fmt(a.subtotal.hh_gastadas, 0)}</td>
+                    <td className={`${numTD} text-k-text`}>{pct(a.subtotal.pct_avance)}</td>
+                    <td className={`${TD} text-right`}><PFChip value={a.subtotal.pf} /></td>
+                    <td className={`${numTD} text-k-text3`}>{pct(a.subtotal.inc_proyec)}</td>
+                  </tr>
+                  {a.disciplinas.map(d => (
+                    <tr key={a.area + '|' + d.disciplina} className="border-b border-k-border last:border-0">
+                      <td className={`${TD} pl-6`}>{d.disciplina}</td>
+                      <td className={numTD}>{fmt(d.hh_contractual, 0)}</td>
+                      <td className={numTD}>{fmt(d.hh_proyec, 0)}</td>
+                      <td className={`${numTD} text-k-green`}>{fmt(d.hh_ganadas, 0)}</td>
+                      <td className={`${numTD} text-k-red`}>{fmt(d.hh_gastadas, 0)}</td>
+                      <td className={numTD}>{pct(d.pct_avance)}</td>
+                      <td className={`${TD} text-right`}><PFChip value={d.pf} /></td>
+                      <td className={`${numTD} text-k-text3`}>{pct(d.inc_proyec)}</td>
+                    </tr>
+                  ))}
+                </Fragment>
+              ))}
+              <tr className="border-t-2 border-k-border2">
+                <td className={`${TD} font-bold text-k-text uppercase`}>Total proyecto</td>
+                <td className={`${numTD} font-bold text-k-text`}>{fmt(m.total.hh_contractual, 0)}</td>
+                <td className={`${numTD} font-bold text-k-text`}>{fmt(m.total.hh_proyec, 0)}</td>
+                <td className={`${numTD} font-bold text-k-green`}>{fmt(m.total.hh_ganadas, 0)}</td>
+                <td className={`${numTD} font-bold text-k-red`}>{fmt(m.total.hh_gastadas, 0)}</td>
+                <td className={`${numTD} font-bold text-k-text`}>{pct(m.total.pct_avance)}</td>
+                <td className={`${TD} text-right`}><PFChip value={m.total.pf} /></td>
+                <td className={`${numTD} text-k-text3`}>{pct(m.total.inc_proyec)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p className="text-[11px] text-k-text3 mt-3">
+          % Avance y PF por disciplina/área se calculan sobre HH Proyectada (igual que la hoja del gerente).
+          El “% Avance del proyecto” superior usa el Presupuesto Actualizado como denominador (#6).
+        </p>
       </div>
     </div>
   )

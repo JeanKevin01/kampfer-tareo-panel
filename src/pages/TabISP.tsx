@@ -1,8 +1,8 @@
 // TabISP.tsx — Informe Semanal de Producción (ISP) estilo Fluor
 // Árbol jerárquico con rollup (mismo esquema visual que el WBS) + detalle semanal
 import { useState, useMemo, useCallback, Fragment as Frag } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { ChevronDown, ChevronRight, Loader2, AlertTriangle } from 'lucide-react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { ChevronDown, ChevronRight, Loader2, AlertTriangle, Plus, Trash2 } from 'lucide-react'
 
 const API = 'https://api.apps1.astraera.space'
 
@@ -248,6 +248,133 @@ function ISPRow({ node, semanas, semanaActual, collapsed, openDetail, onToggle, 
   )
 }
 
+// ── #5: captura de HH improductivas (oficina, semanal por OTM, con motivo) ──
+const MOTIVOS = ['Espera', 'Clima', 'Retrabajo', 'Falta de material', 'Falta de equipo', 'Otros']
+interface ImprodRow { id:number; otm_id:string|null; semana:number; hh:number; motivo:string|null; nota:string|null }
+
+function ImproductivasCard({ semana, otm }: { semana:number; otm?:string }) {
+  const qc = useQueryClient()
+  const [hh, setHh] = useState('')
+  const [motivo, setMotivo] = useState(MOTIVOS[0])
+  const [nota, setNota] = useState('')
+
+  const { data: rows = [], isLoading } = useQuery<ImprodRow[]>({
+    queryKey: ['ev-improd', otm, semana],
+    queryFn: async () => {
+      const qs = new URLSearchParams()
+      if (otm) qs.set('otm', otm)
+      qs.set('semana', String(semana))
+      const r = await fetch(`${API}/ev/improductivas?${qs.toString()}`)
+      if (!r.ok) throw new Error(`Error ${r.status}`)
+      return r.json()
+    },
+  })
+
+  const guardar = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`${API}/ev/improductivas`, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ otm_id: otm || null, semana, hh: Number(hh), motivo, nota: nota || null }),
+      })
+      if (!r.ok) { const j = await r.json().catch(()=>({})); throw new Error(j.detail || `Error ${r.status}`) }
+      return r.json()
+    },
+    onSuccess: () => {
+      setHh(''); setNota('')
+      qc.invalidateQueries({ queryKey:['ev-improd'] })
+      qc.invalidateQueries({ queryKey:['ev-reporte'] })  // refresca Resumen y Resumen Ejecutivo
+    },
+  })
+
+  const borrar = useMutation({
+    mutationFn: async (id:number) => {
+      const r = await fetch(`${API}/ev/improductivas/${id}`, { method:'DELETE' })
+      if (!r.ok) throw new Error(`Error ${r.status}`)
+      return r.json()
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey:['ev-improd'] })
+      qc.invalidateQueries({ queryKey:['ev-reporte'] })
+    },
+  })
+
+  const totalSem = rows.reduce((s,r)=>s+Number(r.hh),0)
+
+  return (
+    <div className="bg-k-surface border border-k-border rounded-xl overflow-hidden">
+      <div className="px-4 py-3 bg-k-raised border-b border-k-border flex items-center justify-between">
+        <h3 className="text-[11px] font-bold text-k-text3 uppercase tracking-wider">
+          HH Improductivas — Sem {semana}{otm ? ` · ${otm}` : ' · (todas las OTMs)'}
+        </h3>
+        <span className="text-[11px] font-mono text-k-amber">{totalSem.toLocaleString('es-PE',{maximumFractionDigits:1})} HH</span>
+      </div>
+      <div className="p-4 space-y-3">
+        {!otm && (
+          <p className="text-[11px] text-k-amber">Selecciona una OTM arriba para registrar las improductivas de esa OTM.</p>
+        )}
+        <div className="flex flex-wrap items-end gap-2">
+          <div>
+            <label className="text-[10px] font-bold text-k-text3 uppercase tracking-wider block mb-1">HH</label>
+            <input type="number" min={0} step="0.5" value={hh} onChange={e=>setHh(e.target.value)}
+              className="w-24 bg-k-raised border border-k-border rounded-lg px-3 py-2 text-sm text-k-text outline-none focus:border-k-amber" />
+          </div>
+          <div>
+            <label className="text-[10px] font-bold text-k-text3 uppercase tracking-wider block mb-1">Motivo</label>
+            <select value={motivo} onChange={e=>setMotivo(e.target.value)}
+              className="bg-k-raised border border-k-border rounded-lg px-3 py-2 text-sm text-k-text outline-none focus:border-k-amber">
+              {MOTIVOS.map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+          </div>
+          <div className="flex-1 min-w-[160px]">
+            <label className="text-[10px] font-bold text-k-text3 uppercase tracking-wider block mb-1">Nota (opcional)</label>
+            <input value={nota} onChange={e=>setNota(e.target.value)}
+              className="w-full bg-k-raised border border-k-border rounded-lg px-3 py-2 text-sm text-k-text outline-none focus:border-k-amber" />
+          </div>
+          <button disabled={!hh || Number(hh)<=0 || guardar.isPending} onClick={()=>guardar.mutate()}
+            className="bg-k-amber hover:bg-k-amber2 disabled:opacity-40 text-black font-bold text-sm px-4 py-2 rounded-lg flex items-center gap-2">
+            {guardar.isPending ? <Loader2 size={14} className="animate-spin"/> : <Plus size={14}/>} Agregar
+          </button>
+        </div>
+        {guardar.isError && <p className="text-[11px] text-red-400">{(guardar.error as Error).message}</p>}
+
+        {isLoading ? (
+          <p className="text-k-text3 text-xs flex items-center gap-2"><Loader2 size={12} className="animate-spin"/> Cargando…</p>
+        ) : rows.length === 0 ? (
+          <p className="text-k-text3 text-xs">Sin HH improductivas registradas esta semana.</p>
+        ) : (
+          <table className="w-full" style={{ fontSize:12 }}>
+            <thead>
+              <tr className="border-b border-k-border">
+                <th className="py-1.5 px-2 text-left text-[10px] font-bold text-k-text3 uppercase">Motivo</th>
+                <th className="py-1.5 px-2 text-right text-[10px] font-bold text-k-text3 uppercase">HH</th>
+                <th className="py-1.5 px-2 text-left text-[10px] font-bold text-k-text3 uppercase">Nota</th>
+                <th className="py-1.5 px-2" />
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(r => (
+                <tr key={r.id} className="border-b border-k-border last:border-0">
+                  <td className="py-1.5 px-2 text-k-text2">{r.motivo || '—'}</td>
+                  <td className="py-1.5 px-2 text-right font-mono text-k-amber">{Number(r.hh).toLocaleString('es-PE',{maximumFractionDigits:1})}</td>
+                  <td className="py-1.5 px-2 text-k-text3">{r.nota || '—'}</td>
+                  <td className="py-1.5 px-2 text-right">
+                    <button onClick={()=>borrar.mutate(r.id)} className="text-k-text3 hover:text-k-red" title="Eliminar">
+                      <Trash2 size={13} />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        <p className="text-[10px] text-k-text3">
+          Son HH consumidas no asignadas a partidas: suman al total y bajan el PF del proyecto (#5).
+        </p>
+      </div>
+    </div>
+  )
+}
+
 export default function TabISP({ semana, otm }: { semana: number; otm?: string }) {
   const [grupFase, setGrupFase] = useState<string|null>(null)
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
@@ -339,6 +466,9 @@ export default function TabISP({ semana, otm }: { semana: number; otm?: string }
           </div>
         ))}
       </div>
+
+      {/* #5: captura de HH improductivas (oficina, semanal por OTM) */}
+      <ImproductivasCard semana={semana} otm={otm} />
 
       {/* Resumen por Fase */}
       <div className="bg-k-surface border border-k-border rounded-xl overflow-hidden">

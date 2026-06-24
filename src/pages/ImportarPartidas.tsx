@@ -2,7 +2,7 @@
 // src/pages/ImportarPartidas.tsx
 // Importador masivo de partidas EV (UNA sola hoja PARTIDAS).
 // Columnas: OTM, CODIGO, FASE, SUB_FASE, AREA, DESCRIPCION, UNIDAD,
-//   METRADO_PRESUP, METRADO_PROYEC, HH_PRESUP, TIPO_COSTO, NATURALEZA,
+//   METRADO_PRESUP, METRADO_PROYEC, HH_PRESUP, HH_ACTUALIZADO (opc), TIPO_COSTO, NATURALEZA,
 //   HH_GASTADAS_INICIAL, HH_GANADAS_INICIAL (opcionales para migrar histórico),
 //   y los hitos EN LÍNEA: HITO1_DESC, HITO1_PESO ... HITO5_DESC, HITO5_PESO.
 //   Los pesos son decimales que SUMAN 1.00. El hito PRINCIPAL = el de mayor peso.
@@ -27,6 +27,7 @@ interface FilaPartida {
   codigo: string; otm_id: string | null; fase: string | null; sub_fase: string | null
   descripcion: string; unidad: string | null
   metrado_presup: number; metrado_proyec: number | null; hh_presup: number
+  hh_actualizado: number | null
   hh_gastadas_inicial: number; hh_ganadas_inicial: number
   tipo_costo: 'DIRECTO' | 'INDIRECTO'
   naturaleza: 'CONTRACTUAL' | 'ADICIONAL'
@@ -91,16 +92,16 @@ function descargarPlantilla() {
   const partidas = [
     { OTM:'OTM-0005', CODIGO:'02',             FASE:'',    SUB_FASE:'',        AREA:'',          DESCRIPCION:'TRABAJOS EN INSTALACIONES DE SMCV', UNIDAD:'',   METRADO_PRESUP:'', METRADO_PROYEC:'', HH_PRESUP:'',    TIPO_COSTO:'',          NATURALEZA:'',            HH_GASTADAS_INICIAL:'', HH_GANADAS_INICIAL:'', HITO1_DESC:'',            HITO1_PESO:'',  HITO2_DESC:'',         HITO2_PESO:'',  HITO3_DESC:'', HITO3_PESO:'', HITO4_DESC:'', HITO4_PESO:'', HITO5_DESC:'', HITO5_PESO:'' },
     { OTM:'OTM-0005', CODIGO:'02.01',          FASE:'',    SUB_FASE:'',        AREA:'',          DESCRIPCION:'DIVERTER DV-041',                   UNIDAD:'',   METRADO_PRESUP:'', METRADO_PROYEC:'', HH_PRESUP:'',    TIPO_COSTO:'',          NATURALEZA:'',            HH_GASTADAS_INICIAL:'', HH_GANADAS_INICIAL:'', HITO1_DESC:'',            HITO1_PESO:'',  HITO2_DESC:'',         HITO2_PESO:'',  HITO3_DESC:'', HITO3_PESO:'', HITO4_DESC:'', HITO4_PESO:'', HITO5_DESC:'', HITO5_PESO:'' },
-    { OTM:'OTM-0005', CODIGO:'02.01.01.01.01', FASE:'AND', SUB_FASE:'AND.INS', AREA:'Sistema 1', DESCRIPCION:'TRANSPORTE INTERNO CAMIÓN GRÚA',    UNIDAD:'hm', METRADO_PRESUP:16, METRADO_PROYEC:'', HH_PRESUP:17.57, TIPO_COSTO:'DIRECTO',   NATURALEZA:'CONTRACTUAL', HH_GASTADAS_INICIAL:'', HH_GANADAS_INICIAL:'', HITO1_DESC:'Preparación', HITO1_PESO:0.10, HITO2_DESC:'Ejecución', HITO2_PESO:0.90, HITO3_DESC:'', HITO3_PESO:'', HITO4_DESC:'', HITO4_PESO:'', HITO5_DESC:'', HITO5_PESO:'' },
-    { OTM:'OTM-0005', CODIGO:'02.01.01.01.02', FASE:'EST', SUB_FASE:'EST.LIG', AREA:'Sistema 1', DESCRIPCION:'PERSONAL DE APOYO CARGUÍO',         UNIDAD:'hh', METRADO_PRESUP:32, METRADO_PROYEC:'', HH_PRESUP:160,   TIPO_COSTO:'INDIRECTO', NATURALEZA:'ADICIONAL',   HH_GASTADAS_INICIAL:'', HH_GANADAS_INICIAL:'', HITO1_DESC:'Ejecución',   HITO1_PESO:1.00, HITO2_DESC:'',         HITO2_PESO:'',  HITO3_DESC:'', HITO3_PESO:'', HITO4_DESC:'', HITO4_PESO:'', HITO5_DESC:'', HITO5_PESO:'' },
+    { OTM:'OTM-0005', CODIGO:'02.01.01.01.01', FASE:'AND', SUB_FASE:'AND.INS', AREA:'Sistema 1', DESCRIPCION:'TRANSPORTE INTERNO CAMIÓN GRÚA',    UNIDAD:'hm', METRADO_PRESUP:16, METRADO_PROYEC:'', HH_PRESUP:17.57, HH_ACTUALIZADO:18, TIPO_COSTO:'DIRECTO',   NATURALEZA:'CONTRACTUAL', HH_GASTADAS_INICIAL:'', HH_GANADAS_INICIAL:'', HITO1_DESC:'Preparación', HITO1_PESO:0.10, HITO2_DESC:'Ejecución', HITO2_PESO:0.90, HITO3_DESC:'', HITO3_PESO:'', HITO4_DESC:'', HITO4_PESO:'', HITO5_DESC:'', HITO5_PESO:'' },
+    { OTM:'OTM-0005', CODIGO:'02.01.01.01.02', FASE:'EST', SUB_FASE:'EST.LIG', AREA:'Sistema 1', DESCRIPCION:'PERSONAL DE APOYO CARGUÍO',         UNIDAD:'hh', METRADO_PRESUP:32, METRADO_PROYEC:'', HH_PRESUP:160,   HH_ACTUALIZADO:'', TIPO_COSTO:'INDIRECTO', NATURALEZA:'ADICIONAL',   HH_GASTADAS_INICIAL:'', HH_GANADAS_INICIAL:'', HITO1_DESC:'Ejecución',   HITO1_PESO:1.00, HITO2_DESC:'',         HITO2_PESO:'',  HITO3_DESC:'', HITO3_PESO:'', HITO4_DESC:'', HITO4_PESO:'', HITO5_DESC:'', HITO5_PESO:'' },
   ]
   const wb = XLSX.utils.book_new()
   const header = ['OTM','CODIGO','FASE','SUB_FASE','AREA','DESCRIPCION','UNIDAD','METRADO_PRESUP','METRADO_PROYEC',
-                  'HH_PRESUP','TIPO_COSTO','NATURALEZA','HH_GASTADAS_INICIAL','HH_GANADAS_INICIAL',
+                  'HH_PRESUP','HH_ACTUALIZADO','TIPO_COSTO','NATURALEZA','HH_GASTADAS_INICIAL','HH_GANADAS_INICIAL',
                   'HITO1_DESC','HITO1_PESO','HITO2_DESC','HITO2_PESO','HITO3_DESC','HITO3_PESO',
                   'HITO4_DESC','HITO4_PESO','HITO5_DESC','HITO5_PESO']
   const ws1 = XLSX.utils.json_to_sheet(partidas, { header })
-  ws1['!cols'] = [{wch:12},{wch:14},{wch:8},{wch:10},{wch:14},{wch:34},{wch:8},{wch:14},{wch:14},{wch:12},{wch:12},{wch:13},{wch:18},{wch:18},
+  ws1['!cols'] = [{wch:12},{wch:14},{wch:8},{wch:10},{wch:14},{wch:34},{wch:8},{wch:14},{wch:14},{wch:12},{wch:14},{wch:12},{wch:13},{wch:18},{wch:18},
                   {wch:16},{wch:10},{wch:16},{wch:10},{wch:16},{wch:10},{wch:16},{wch:10},{wch:16},{wch:10}]
   XLSX.utils.book_append_sheet(wb, ws1, 'PARTIDAS')
   XLSX.writeFile(wb, 'plantilla_partidas_valor_ganado.xlsx')
@@ -180,6 +181,7 @@ export default function ImportarPartidas() {
         codigo, otm_id, fase, sub_fase: n['SUB_FASE'] || n['SUBFASE'] || null,
         descripcion: n['DESCRIPCION'] || '', unidad,
         metrado_presup, metrado_proyec: num(n['METRADO_PROYEC']), hh_presup,
+        hh_actualizado: num(n['HH_ACTUALIZADO']),   // #6: presupuesto actualizado (opcional)
         hh_gastadas_inicial, hh_ganadas_inicial,
         tipo_costo: normTipoCosto(n['TIPO_COSTO'] || n['TIPO']),
         naturaleza: normNaturaleza(n['NATURALEZA']),
@@ -235,6 +237,7 @@ export default function ImportarPartidas() {
           codigo: p.codigo, otm_id: p.otm_id, fase: p.fase, sub_fase: p.sub_fase,
           descripcion: p.descripcion, unidad: p.unidad, sistema: p.sistema,
           metrado_presup: p.metrado_presup, metrado_proyec: p.metrado_proyec, hh_presup: p.hh_presup,
+          hh_actualizado: p.hh_actualizado ?? undefined,
           tipo_costo: p.tipo_costo, naturaleza: p.naturaleza,
           hitos: p.hitos.length > 0 ? p.hitos : undefined,
           nivel: p.nivel, parent_codigo: p.parent_codigo,
@@ -283,6 +286,7 @@ export default function ImportarPartidas() {
             <span className="text-k-text2 font-bold"> AREA</span>: agrupa por zona/sistema.{' '}
             <span className="text-k-text2 font-bold">TIPO_COSTO</span>: DIRECTO (def) / INDIRECTO.{' '}
             <span className="text-k-text2 font-bold">NATURALEZA</span>: CONTRACTUAL (def) / ADICIONAL (órdenes de cambio).{' '}
+            <span className="text-k-text2 font-bold">HH_ACTUALIZADO</span>: presupuesto actualizado (opcional, por defecto = HH_PRESUP) — denominador del % avance del proyecto.{' '}
             Los <span className="text-k-text2 font-bold">hitos van en línea</span> (HITO1_DESC/HITO1_PESO … HITO5): pesos decimales que
             suman <span className="text-k-text2 font-bold">1.00</span>, el principal es el de mayor peso. Si una partida no trae hitos,
             se le asigna uno al 100%. <span className="text-k-text2 font-bold">HH_GASTADAS_INICIAL</span> y{' '}
