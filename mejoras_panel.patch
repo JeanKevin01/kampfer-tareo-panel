@@ -1,0 +1,486 @@
+diff --git a/src/pages/TabISP.tsx b/src/pages/TabISP.tsx
+index 148be03..c51e495 100644
+--- a/src/pages/TabISP.tsx
++++ b/src/pages/TabISP.tsx
+@@ -250,13 +250,20 @@ function ISPRow({ node, semanas, semanaActual, collapsed, openDetail, onToggle,
+ 
+ // ── #5: captura de HH improductivas (oficina, semanal por OTM, con motivo) ──
+ const MOTIVOS = ['Espera', 'Clima', 'Retrabajo', 'Falta de material', 'Falta de equipo', 'Otros']
+-interface ImprodRow { id:number; otm_id:string|null; semana:number; hh:number; motivo:string|null; nota:string|null }
++interface ImprodRow { id:number; otm_id:string|null; semana:number; hh:number; motivo:string|null; nota:string|null; partida_id:number|null }
+ 
+-function ImproductivasCard({ semana, otm }: { semana:number; otm?:string }) {
++function ImproductivasCard({ semana, otm, partidas }: { semana:number; otm?:string; partidas:PartidaISP[] }) {
+   const qc = useQueryClient()
+   const [hh, setHh] = useState('')
+   const [motivo, setMotivo] = useState(MOTIVOS[0])
+   const [nota, setNota] = useState('')
++  const [partidaId, setPartidaId] = useState('')   // #4: atribución opcional a una partida
++  const hojasPart = partidas.filter(p => p.es_hoja)
++  const partLabel = (id:number|null) => {
++    if (!id) return '—'
++    const p = partidas.find(x => x.partida_id === id)
++    return p ? p.codigo : `#${id}`
++  }
+ 
+   const { data: rows = [], isLoading } = useQuery<ImprodRow[]>({
+     queryKey: ['ev-improd', otm, semana],
+@@ -274,13 +281,13 @@ function ImproductivasCard({ semana, otm }: { semana:number; otm?:string }) {
+     mutationFn: async () => {
+       const r = await fetch(`${API}/ev/improductivas`, {
+         method:'POST', headers:{'Content-Type':'application/json'},
+-        body: JSON.stringify({ otm_id: otm || null, semana, hh: Number(hh), motivo, nota: nota || null }),
++        body: JSON.stringify({ otm_id: otm || null, semana, hh: Number(hh), motivo, nota: nota || null, partida_id: partidaId ? Number(partidaId) : null }),
+       })
+       if (!r.ok) { const j = await r.json().catch(()=>({})); throw new Error(j.detail || `Error ${r.status}`) }
+       return r.json()
+     },
+     onSuccess: () => {
+-      setHh(''); setNota('')
++      setHh(''); setNota(''); setPartidaId('')
+       qc.invalidateQueries({ queryKey:['ev-improd'] })
+       qc.invalidateQueries({ queryKey:['ev-reporte'] })  // refresca Resumen y Resumen Ejecutivo
+     },
+@@ -325,6 +332,14 @@ function ImproductivasCard({ semana, otm }: { semana:number; otm?:string }) {
+               {MOTIVOS.map(m => <option key={m} value={m}>{m}</option>)}
+             </select>
+           </div>
++          <div>
++            <label className="text-[10px] font-bold text-k-text3 uppercase tracking-wider block mb-1">Partida (opcional)</label>
++            <select value={partidaId} onChange={e=>setPartidaId(e.target.value)}
++              className="max-w-[220px] bg-k-raised border border-k-border rounded-lg px-3 py-2 text-sm text-k-text outline-none focus:border-k-amber">
++              <option value="">— Toda la OTM —</option>
++              {hojasPart.map(p => <option key={p.partida_id} value={p.partida_id}>{p.codigo} · {p.descripcion.slice(0,28)}</option>)}
++            </select>
++          </div>
+           <div className="flex-1 min-w-[160px]">
+             <label className="text-[10px] font-bold text-k-text3 uppercase tracking-wider block mb-1">Nota (opcional)</label>
+             <input value={nota} onChange={e=>setNota(e.target.value)}
+@@ -346,6 +361,7 @@ function ImproductivasCard({ semana, otm }: { semana:number; otm?:string }) {
+             <thead>
+               <tr className="border-b border-k-border">
+                 <th className="py-1.5 px-2 text-left text-[10px] font-bold text-k-text3 uppercase">Motivo</th>
++                <th className="py-1.5 px-2 text-left text-[10px] font-bold text-k-text3 uppercase">Partida</th>
+                 <th className="py-1.5 px-2 text-right text-[10px] font-bold text-k-text3 uppercase">HH</th>
+                 <th className="py-1.5 px-2 text-left text-[10px] font-bold text-k-text3 uppercase">Nota</th>
+                 <th className="py-1.5 px-2" />
+@@ -355,6 +371,7 @@ function ImproductivasCard({ semana, otm }: { semana:number; otm?:string }) {
+               {rows.map(r => (
+                 <tr key={r.id} className="border-b border-k-border last:border-0">
+                   <td className="py-1.5 px-2 text-k-text2">{r.motivo || '—'}</td>
++                  <td className="py-1.5 px-2 font-mono text-[11px] text-k-text3">{partLabel(r.partida_id)}</td>
+                   <td className="py-1.5 px-2 text-right font-mono text-k-amber">{Number(r.hh).toLocaleString('es-PE',{maximumFractionDigits:1})}</td>
+                   <td className="py-1.5 px-2 text-k-text3">{r.nota || '—'}</td>
+                   <td className="py-1.5 px-2 text-right">
+@@ -468,7 +485,7 @@ export default function TabISP({ semana, otm }: { semana: number; otm?: string }
+       </div>
+ 
+       {/* #5: captura de HH improductivas (oficina, semanal por OTM) */}
+-      <ImproductivasCard semana={semana} otm={otm} />
++      <ImproductivasCard semana={semana} otm={otm} partidas={todas} />
+ 
+       {/* Resumen por Fase */}
+       <div className="bg-k-surface border border-k-border rounded-xl overflow-hidden">
+diff --git a/src/pages/TabProductividad.tsx b/src/pages/TabProductividad.tsx
+new file mode 100644
+index 0000000..7ebba33
+--- /dev/null
++++ b/src/pages/TabProductividad.tsx
+@@ -0,0 +1,135 @@
++// TabProductividad.tsx — Productividad física (HH/unidad) por disciplina, semana a semana
++// Replica la hoja "ProductividadesXSemana" del gerente. Reusa /ev/isp (sin tocar el motor).
++import { useMemo, useState, Fragment } from 'react'
++import { useQuery } from '@tanstack/react-query'
++import { Loader2 } from 'lucide-react'
++
++const API = (import.meta.env.VITE_API_URL as string | undefined) ?? 'https://api.apps1.astraera.space'
++
++interface SemInfo { semana: number; label: string }
++interface SemDato { hh_gast_acum: number; hh_gast_sem: number; cant_acum: number }
++interface PartidaISP {
++  partida_id: number; codigo: string; descripcion: string; fase: string | null
++  unidad: string | null; hh_presup: number; metrado_presup: number; es_hoja: boolean
++  semanas: Record<number, SemDato>
++}
++
++const fmt = (n: number, d = 2) =>
++  isFinite(n) ? n.toLocaleString('es-PE', { minimumFractionDigits: d, maximumFractionDigits: d }) : '—'
++
++// Menor HH/unidad = mejor. Se compara contra el rendimiento presupuestado.
++function rendColor(prod: number, presup: number): string {
++  if (!isFinite(prod) || prod <= 0 || presup <= 0) return '#4e5a72'
++  const r = prod / presup
++  if (r <= 1.0) return '#2DD4A8'   // igual o mejor que lo presupuestado
++  if (r <= 1.15) return '#FACC15'  // hasta 15% peor
++  return '#FF6B6B'                  // más de 15% peor
++}
++
++export default function TabProductividad({ semana, otm }: { semana: number; otm?: string }) {
++  const [modo, setModo] = useState<'sem' | 'acum'>('sem')
++
++  const { data, isLoading, error } = useQuery<{ semanas: SemInfo[]; partidas: PartidaISP[] }>({
++    queryKey: ['ev-isp', otm],
++    queryFn: async () => {
++      const r = await fetch(`${API}/ev/isp${otm ? `?otm=${otm}` : ''}`)
++      if (!r.ok) throw new Error(`Error ${r.status}`)
++      return r.json()
++    },
++    staleTime: 2 * 60_000,
++  })
++
++  const semanas = (data?.semanas ?? []).filter(s => s.semana <= semana)
++  const hojas = useMemo(
++    () => (data?.partidas ?? []).filter(p => p.es_hoja && p.metrado_presup > 0 && p.hh_presup > 0),
++    [data]
++  )
++  const porFase = useMemo(() => {
++    const map: Record<string, PartidaISP[]> = {}
++    hojas.forEach(p => {
++      const f = (p.fase ?? '').split('.')[0] || 'SIN'
++      ;(map[f] ||= []).push(p)
++    })
++    return Object.entries(map).sort((a, b) => a[0].localeCompare(b[0]))
++  }, [hojas])
++
++  if (isLoading) return <p className="text-k-text3 text-sm flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Cargando productividad…</p>
++  if (error) return <p className="text-k-red text-sm">Error: {(error as Error).message}</p>
++  if (!hojas.length) return <p className="text-k-text3 text-sm py-8 text-center">Sin partidas con metrado y HH presupuestadas.</p>
++
++  const prodEnSemana = (p: PartidaISP, s: number): number => {
++    const d = p.semanas[s]; if (!d) return NaN
++    if (modo === 'acum') return d.cant_acum > 0 ? d.hh_gast_acum / d.cant_acum : NaN
++    const prev = p.semanas[s - 1]
++    const cantSem = d.cant_acum - (prev?.cant_acum ?? 0)
++    return cantSem > 0 ? d.hh_gast_sem / cantSem : NaN
++  }
++
++  return (
++    <div className="space-y-4">
++      <div className="flex items-center justify-between flex-wrap gap-2">
++        <div>
++          <h3 className="text-[11px] font-bold text-k-text3 uppercase tracking-widest">Productividad por disciplina (HH / unidad)</h3>
++          <p className="text-[11px] text-k-text3 mt-0.5">
++            Verde = igual o mejor que lo presupuestado · Ámbar = hasta 15% peor · Rojo = &gt;15% peor. Menor HH/unidad es mejor.
++          </p>
++        </div>
++        <div className="flex gap-1">
++          {(['sem', 'acum'] as const).map(m => (
++            <button key={m} onClick={() => setModo(m)}
++              className={`text-[11px] px-3 py-1.5 rounded-lg border transition-colors ${modo === m ? 'bg-k-amber text-black border-k-amber' : 'bg-k-raised border-k-border text-k-text2 hover:border-k-border2'}`}>
++              {m === 'sem' ? 'Semanal' : 'Acumulada'}
++            </button>
++          ))}
++        </div>
++      </div>
++
++      <div className="bg-k-surface border border-k-border rounded-xl overflow-hidden">
++        <div className="overflow-x-auto">
++          <table className="w-full" style={{ fontSize: 12, borderCollapse: 'collapse' }}>
++            <thead>
++              <tr className="border-b border-k-border bg-k-raised">
++                <th className="py-2 px-3 text-left text-[10px] font-bold text-k-text3 uppercase" style={{ minWidth: 240 }}>Partida</th>
++                <th className="py-2 px-3 text-right text-[10px] font-bold text-k-text3 uppercase" style={{ minWidth: 60 }}>Und</th>
++                <th className="py-2 px-3 text-right text-[10px] font-bold text-k-amber uppercase" style={{ minWidth: 80 }}>Presup.</th>
++                {semanas.map(s => (
++                  <th key={s.semana} className="py-2 px-3 text-right text-[10px] font-bold text-k-text3 uppercase" style={{ minWidth: 60 }}>S{s.semana}</th>
++                ))}
++              </tr>
++            </thead>
++            <tbody>
++              {porFase.map(([fase, parts]) => (
++                <Fragment key={fase}>
++                  <tr style={{ background: '#141926' }}>
++                    <td colSpan={3 + semanas.length} className="py-1.5 px-3 text-[11px] font-bold text-k-text uppercase">{fase}</td>
++                  </tr>
++                  {parts.map(p => {
++                    const presup = p.hh_presup / p.metrado_presup
++                    return (
++                      <tr key={p.partida_id} className="border-b border-k-border last:border-0">
++                        <td className="py-1.5 px-3 text-k-text2" title={p.descripcion}>
++                          <span className="font-mono text-[10px] text-k-text3 mr-2">{p.codigo}</span>
++                          {p.descripcion.length > 34 ? p.descripcion.slice(0, 34) + '…' : p.descripcion}
++                        </td>
++                        <td className="py-1.5 px-3 text-right font-mono text-[11px] text-k-text3">{p.unidad ?? '—'}</td>
++                        <td className="py-1.5 px-3 text-right font-mono text-[11px] text-k-amber">{fmt(presup)}</td>
++                        {semanas.map(s => {
++                          const v = prodEnSemana(p, s.semana)
++                          return (
++                            <td key={s.semana} className="py-1.5 px-3 text-right font-mono text-[11px]" style={{ color: rendColor(v, presup) }}>
++                              {isFinite(v) && v > 0 ? fmt(v) : '—'}
++                            </td>
++                          )
++                        })}
++                      </tr>
++                    )
++                  })}
++                </Fragment>
++              ))}
++            </tbody>
++          </table>
++        </div>
++      </div>
++    </div>
++  )
++}
+diff --git a/src/pages/TabSeguimiento.tsx b/src/pages/TabSeguimiento.tsx
+new file mode 100644
+index 0000000..0ac286c
+--- /dev/null
++++ b/src/pages/TabSeguimiento.tsx
+@@ -0,0 +1,94 @@
++// TabSeguimiento.tsx — Informe "Partidas Relevantes" por disciplina (hoja ResPorFase)
++// HH Ganadas / Gastadas y PF acumulado, semana a semana, por fase. Reusa /ev/isp.
++import { useMemo } from 'react'
++import { useQuery } from '@tanstack/react-query'
++import { Loader2 } from 'lucide-react'
++
++const API = (import.meta.env.VITE_API_URL as string | undefined) ?? 'https://api.apps1.astraera.space'
++
++interface SemInfo { semana: number; label: string }
++interface SemDato { hh_gan_acum: number; hh_gast_acum: number }
++interface PartidaISP { fase: string | null; es_hoja: boolean; semanas: Record<number, SemDato> }
++
++const fmt0 = (n: number) => isFinite(n) ? n.toLocaleString('es-PE', { maximumFractionDigits: 0 }) : '—'
++function pfColor(pf: number) {
++  if (!isFinite(pf) || pf <= 0) return '#4e5a72'
++  return pf >= 1 ? '#2DD4A8' : pf >= 0.85 ? '#FACC15' : '#FF6B6B'
++}
++
++export default function TabSeguimiento({ semana, otm }: { semana: number; otm?: string }) {
++  const { data, isLoading, error } = useQuery<{ semanas: SemInfo[]; partidas: PartidaISP[] }>({
++    queryKey: ['ev-isp', otm],
++    queryFn: async () => {
++      const r = await fetch(`${API}/ev/isp${otm ? `?otm=${otm}` : ''}`)
++      if (!r.ok) throw new Error(`Error ${r.status}`)
++      return r.json()
++    },
++    staleTime: 2 * 60_000,
++  })
++
++  const semanas = (data?.semanas ?? []).filter(s => s.semana <= semana)
++  const fases = useMemo(() => {
++    const map: Record<string, Record<number, { gan: number; gast: number }>> = {}
++    ;(data?.partidas ?? []).filter(p => p.es_hoja).forEach(p => {
++      const f = (p.fase ?? '').split('.')[0] || 'SIN'
++      const row = (map[f] ||= {})
++      semanas.forEach(({ semana: s }) => {
++        const d = p.semanas[s]; if (!d) return
++        const acc = (row[s] ||= { gan: 0, gast: 0 })
++        acc.gan += d.hh_gan_acum; acc.gast += d.hh_gast_acum
++      })
++    })
++    return Object.entries(map).sort((a, b) => a[0].localeCompare(b[0]))
++  }, [data, semana])
++
++  if (isLoading) return <p className="text-k-text3 text-sm flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Cargando…</p>
++  if (error) return <p className="text-k-red text-sm">Error: {(error as Error).message}</p>
++  if (!fases.length) return <p className="text-k-text3 text-sm py-8 text-center">Sin datos por disciplina.</p>
++
++  return (
++    <div className="space-y-4">
++      <div>
++        <h3 className="text-[11px] font-bold text-k-text3 uppercase tracking-widest">Seguimiento semanal por disciplina (acumulado)</h3>
++        <p className="text-[11px] text-k-text3 mt-0.5">HH Ganadas vs Gastadas y PF acumulado, semana a semana, por fase.</p>
++      </div>
++      {fases.map(([fase, sem]) => (
++        <div key={fase} className="bg-k-surface border border-k-border rounded-xl overflow-hidden">
++          <div className="px-4 py-2.5 bg-k-raised border-b border-k-border">
++            <h4 className="text-[11px] font-bold text-k-text uppercase tracking-wider">{fase}</h4>
++          </div>
++          <div className="overflow-x-auto">
++            <table className="w-full" style={{ fontSize: 12, borderCollapse: 'collapse' }}>
++              <thead>
++                <tr className="border-b border-k-border">
++                  <th className="py-1.5 px-3 text-left text-[10px] font-bold text-k-text3 uppercase" style={{ minWidth: 130 }}>Métrica</th>
++                  {semanas.map(s => (
++                    <th key={s.semana} className="py-1.5 px-3 text-right text-[10px] font-bold text-k-text3 uppercase" style={{ minWidth: 60 }}>S{s.semana}</th>
++                  ))}
++                </tr>
++              </thead>
++              <tbody>
++                <tr className="border-b border-k-border">
++                  <td className="py-1.5 px-3 text-k-green">HH Ganadas</td>
++                  {semanas.map(s => <td key={s.semana} className="py-1.5 px-3 text-right font-mono text-[11px] text-k-green">{sem[s.semana] ? fmt0(sem[s.semana].gan) : '—'}</td>)}
++                </tr>
++                <tr className="border-b border-k-border">
++                  <td className="py-1.5 px-3 text-k-red">HH Gastadas</td>
++                  {semanas.map(s => <td key={s.semana} className="py-1.5 px-3 text-right font-mono text-[11px] text-k-red">{sem[s.semana] ? fmt0(sem[s.semana].gast) : '—'}</td>)}
++                </tr>
++                <tr>
++                  <td className="py-1.5 px-3 text-k-text2">PF acum</td>
++                  {semanas.map(s => {
++                    const d = sem[s.semana]
++                    const pf = d && d.gast > 0 ? d.gan / d.gast : NaN
++                    return <td key={s.semana} className="py-1.5 px-3 text-right font-mono text-[12px] font-bold" style={{ color: pfColor(pf) }}>{isFinite(pf) ? pf.toFixed(2) : '—'}</td>
++                  })}
++                </tr>
++              </tbody>
++            </table>
++          </div>
++        </div>
++      ))}
++    </div>
++  )
++}
+diff --git a/src/pages/TabValorizacion.tsx b/src/pages/TabValorizacion.tsx
+new file mode 100644
+index 0000000..a26eefe
+--- /dev/null
++++ b/src/pages/TabValorizacion.tsx
+@@ -0,0 +1,104 @@
++// TabValorizacion.tsx — Cantidad ejecutada vs valorizada (#2). Puerta a la Valorización.
++// Ejecutada (del motor EV) vs Valorizada (lo que el cliente reconoce). Variación = ejec - valoriz.
++import { useState, useEffect } from 'react'
++import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
++import { Loader2 } from 'lucide-react'
++
++const API = (import.meta.env.VITE_API_URL as string | undefined) ?? 'https://api.apps1.astraera.space'
++
++interface ValFila {
++  partida_id: number; codigo: string; fase: string | null; descripcion: string
++  unidad: string | null; cantidad_ejecutada: number; cantidad_valorizada: number; variacion: number
++}
++
++const fmt = (n: number) => isFinite(n) ? n.toLocaleString('es-PE', { maximumFractionDigits: 2 }) : '—'
++
++export default function TabValorizacion({ semana, otm }: { semana: number; otm?: string }) {
++  const qc = useQueryClient()
++  const { data, isLoading, error } = useQuery<{ partidas: ValFila[] }>({
++    queryKey: ['ev-valorizado', semana, otm],
++    queryFn: async () => {
++      const r = await fetch(`${API}/ev/valorizado?semana=${semana}${otm ? `&otm=${otm}` : ''}`)
++      if (!r.ok) throw new Error(`Error ${r.status}`)
++      return r.json()
++    },
++  })
++
++  const [draft, setDraft] = useState<Record<number, string>>({})
++  useEffect(() => { setDraft({}) }, [semana, otm])
++
++  const guardar = useMutation({
++    mutationFn: async (p: { partida_id: number; cantidad_valorizada: number }) => {
++      const r = await fetch(`${API}/ev/valorizado`, {
++        method: 'POST', headers: { 'Content-Type': 'application/json' },
++        body: JSON.stringify({ partida_id: p.partida_id, semana, cantidad_valorizada: p.cantidad_valorizada }),
++      })
++      if (!r.ok) throw new Error(`Error ${r.status}`)
++      return r.json()
++    },
++    onSuccess: () => qc.invalidateQueries({ queryKey: ['ev-valorizado'] }),
++  })
++
++  if (isLoading) return <p className="text-k-text3 text-sm flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Cargando…</p>
++  if (error) return <p className="text-k-red text-sm">Error: {(error as Error).message}</p>
++  const filas = data?.partidas ?? []
++  if (!filas.length) return <p className="text-k-text3 text-sm py-8 text-center">Sin partidas para valorizar.</p>
++
++  const guardarFila = (f: ValFila) => {
++    const raw = draft[f.partida_id]
++    if (raw === undefined || raw === '') return
++    const val = Number(raw)
++    if (!isFinite(val) || val < 0 || val === f.cantidad_valorizada) return
++    guardar.mutate({ partida_id: f.partida_id, cantidad_valorizada: val })
++  }
++
++  return (
++    <div className="space-y-4">
++      <div>
++        <h3 className="text-[11px] font-bold text-k-text3 uppercase tracking-widest">Valorización — Sem {semana}</h3>
++        <p className="text-[11px] text-k-text3 mt-0.5">
++          Cantidad <strong>ejecutada</strong> (del avance) vs cantidad <strong>valorizada</strong> (lo que el cliente reconoce).
++          Variación = ejecutada − valorizada (lo ejecutado aún no reconocido). Edita el valor y sal del campo para guardar.
++        </p>
++      </div>
++      <div className="bg-k-surface border border-k-border rounded-xl overflow-hidden">
++        <div className="overflow-x-auto">
++          <table className="w-full" style={{ fontSize: 12 }}>
++            <thead>
++              <tr className="border-b border-k-border bg-k-raised">
++                <th className="py-2 px-3 text-left text-[10px] font-bold text-k-text3 uppercase">Código</th>
++                <th className="py-2 px-3 text-left text-[10px] font-bold text-k-text3 uppercase">Descripción</th>
++                <th className="py-2 px-3 text-right text-[10px] font-bold text-k-text3 uppercase">Und</th>
++                <th className="py-2 px-3 text-right text-[10px] font-bold text-k-text3 uppercase">Ejecutada</th>
++                <th className="py-2 px-3 text-right text-[10px] font-bold text-k-amber uppercase">Valorizada</th>
++                <th className="py-2 px-3 text-right text-[10px] font-bold text-k-text3 uppercase">Variación</th>
++              </tr>
++            </thead>
++            <tbody>
++              {filas.map(f => {
++                const cur = draft[f.partida_id] ?? String(f.cantidad_valorizada)
++                const varNow = f.cantidad_ejecutada - (Number(cur) || 0)
++                return (
++                  <tr key={f.partida_id} className="border-b border-k-border last:border-0">
++                    <td className="py-1.5 px-3 font-mono text-[10px] text-k-text3">{f.codigo}</td>
++                    <td className="py-1.5 px-3 text-k-text2" title={f.descripcion}>{f.descripcion.length > 40 ? f.descripcion.slice(0, 40) + '…' : f.descripcion}</td>
++                    <td className="py-1.5 px-3 text-right font-mono text-[11px] text-k-text3">{f.unidad ?? '—'}</td>
++                    <td className="py-1.5 px-3 text-right font-mono text-[11px] text-k-text">{fmt(f.cantidad_ejecutada)}</td>
++                    <td className="py-1.5 px-3 text-right">
++                      <input type="number" min={0} step="any" value={cur}
++                        onChange={e => setDraft(d => ({ ...d, [f.partida_id]: e.target.value }))}
++                        onBlur={() => guardarFila(f)}
++                        className="w-24 bg-k-raised border border-k-border rounded-lg px-2 py-1 text-right text-[12px] text-k-text outline-none focus:border-k-amber" />
++                    </td>
++                    <td className="py-1.5 px-3 text-right font-mono text-[11px]" style={{ color: varNow > 0.001 ? '#FACC15' : '#2DD4A8' }}>{fmt(varNow)}</td>
++                  </tr>
++                )
++              })}
++            </tbody>
++          </table>
++        </div>
++      </div>
++      {guardar.isPending && <p className="text-[11px] text-k-text3 flex items-center gap-1"><Loader2 size={12} className="animate-spin" /> Guardando…</p>}
++    </div>
++  )
++}
+diff --git a/src/pages/ValorGanado.tsx b/src/pages/ValorGanado.tsx
+index 813f885..27f3669 100644
+--- a/src/pages/ValorGanado.tsx
++++ b/src/pages/ValorGanado.tsx
+@@ -1,6 +1,9 @@
+ import TabISP from './TabISP'
+ import TabDiario from './TabDiario'
+ import TabRendimientos from './TabRendimientos'
++import TabProductividad from './TabProductividad'
++import TabSeguimiento from './TabSeguimiento'
++import TabValorizacion from './TabValorizacion'
+ import CargaHistorica from './CargaHistorica'
+ import WBSArbol from './WBSArbol'
+ // ============================================================
+@@ -18,7 +21,7 @@ import {
+   Target, BarChart3, ClipboardList, PenLine, Settings2,
+   Plus, Pencil, Trash2, X, Save, Loader2, TrendingUp, Clock, Gauge,
+   Upload, CalendarDays, Users, History, AlertTriangle, Activity,
+-  ChevronRight, ChevronDown, LayoutGrid,
++  ChevronRight, ChevronDown, LayoutGrid, Receipt,
+ } from 'lucide-react'
+ import { buildWbsTree, flattenVisible, nivelStyle, NIVEL_LABELS, faseColor } from '@/lib/wbs'
+ import ImportarPartidas from '@/pages/ImportarPartidas'
+@@ -177,7 +180,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
+ // ============================================================
+ // Componente principal
+ // ============================================================
+-type Tab = 'resumen' | 'ejecutivo' | 'partidas' | 'isp' | 'diario' | 'rendimientos' | 'registro' | 'config' | 'importar' | 'historico'
++type Tab = 'resumen' | 'ejecutivo' | 'partidas' | 'isp' | 'diario' | 'rendimientos' | 'productividad' | 'seguimiento' | 'valorizacion' | 'registro' | 'config' | 'importar' | 'historico'
+ 
+ export default function ValorGanado() {
+   const [tab, setTab] = useState<Tab>('resumen')
+@@ -231,6 +234,9 @@ export default function ValorGanado() {
+     { id: 'diario',        label: 'Control Diario',   icon: CalendarDays },
+     { id: 'registro',      label: 'Avances',          icon: PenLine },
+     { id: 'rendimientos',  label: 'Rendimientos',     icon: Users },
++    { id: 'productividad', label: 'Productividad',    icon: Gauge },
++    { id: 'seguimiento',   label: 'Seguimiento',      icon: TrendingUp },
++    { id: 'valorizacion',  label: 'Valorización',     icon: Receipt },
+     { id: 'config',        label: 'Configuración',    icon: Settings2 },
+     { id: 'importar',      label: 'Importar',         icon: Upload },
+     { id: 'historico',     label: 'Migración',        icon: History, secondary: true },
+@@ -342,6 +348,9 @@ export default function ValorGanado() {
+           selectedOtm={selectedOtm}
+         />
+       )}
++      {tab === 'productividad' && <TabProductividad semana={semana} otm={selectedOtm} />}
++      {tab === 'seguimiento'   && <TabSeguimiento semana={semana} otm={selectedOtm} />}
++      {tab === 'valorizacion'  && <TabValorizacion semana={semana} otm={selectedOtm} />}
+       {tab === 'config'        && <TabConfig otm={selectedOtm} />}
+       {tab === 'importar'      && <ImportarPartidas />}
+     </div>

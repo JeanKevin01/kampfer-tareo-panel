@@ -250,13 +250,20 @@ function ISPRow({ node, semanas, semanaActual, collapsed, openDetail, onToggle, 
 
 // ── #5: captura de HH improductivas (oficina, semanal por OTM, con motivo) ──
 const MOTIVOS = ['Espera', 'Clima', 'Retrabajo', 'Falta de material', 'Falta de equipo', 'Otros']
-interface ImprodRow { id:number; otm_id:string|null; semana:number; hh:number; motivo:string|null; nota:string|null }
+interface ImprodRow { id:number; otm_id:string|null; semana:number; hh:number; motivo:string|null; nota:string|null; partida_id:number|null }
 
-function ImproductivasCard({ semana, otm }: { semana:number; otm?:string }) {
+function ImproductivasCard({ semana, otm, partidas }: { semana:number; otm?:string; partidas:PartidaISP[] }) {
   const qc = useQueryClient()
   const [hh, setHh] = useState('')
   const [motivo, setMotivo] = useState(MOTIVOS[0])
   const [nota, setNota] = useState('')
+  const [partidaId, setPartidaId] = useState('')   // #4: atribución opcional a una partida
+  const hojasPart = partidas.filter(p => p.es_hoja)
+  const partLabel = (id:number|null) => {
+    if (!id) return '—'
+    const p = partidas.find(x => x.partida_id === id)
+    return p ? p.codigo : `#${id}`
+  }
 
   const { data: rows = [], isLoading } = useQuery<ImprodRow[]>({
     queryKey: ['ev-improd', otm, semana],
@@ -274,13 +281,13 @@ function ImproductivasCard({ semana, otm }: { semana:number; otm?:string }) {
     mutationFn: async () => {
       const r = await fetch(`${API}/ev/improductivas`, {
         method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ otm_id: otm || null, semana, hh: Number(hh), motivo, nota: nota || null }),
+        body: JSON.stringify({ otm_id: otm || null, semana, hh: Number(hh), motivo, nota: nota || null, partida_id: partidaId ? Number(partidaId) : null }),
       })
       if (!r.ok) { const j = await r.json().catch(()=>({})); throw new Error(j.detail || `Error ${r.status}`) }
       return r.json()
     },
     onSuccess: () => {
-      setHh(''); setNota('')
+      setHh(''); setNota(''); setPartidaId('')
       qc.invalidateQueries({ queryKey:['ev-improd'] })
       qc.invalidateQueries({ queryKey:['ev-reporte'] })  // refresca Resumen y Resumen Ejecutivo
     },
@@ -325,6 +332,14 @@ function ImproductivasCard({ semana, otm }: { semana:number; otm?:string }) {
               {MOTIVOS.map(m => <option key={m} value={m}>{m}</option>)}
             </select>
           </div>
+          <div>
+            <label className="text-[10px] font-bold text-k-text3 uppercase tracking-wider block mb-1">Partida (opcional)</label>
+            <select value={partidaId} onChange={e=>setPartidaId(e.target.value)}
+              className="max-w-[220px] bg-k-raised border border-k-border rounded-lg px-3 py-2 text-sm text-k-text outline-none focus:border-k-amber">
+              <option value="">— Toda la OTM —</option>
+              {hojasPart.map(p => <option key={p.partida_id} value={p.partida_id}>{p.codigo} · {p.descripcion.slice(0,28)}</option>)}
+            </select>
+          </div>
           <div className="flex-1 min-w-[160px]">
             <label className="text-[10px] font-bold text-k-text3 uppercase tracking-wider block mb-1">Nota (opcional)</label>
             <input value={nota} onChange={e=>setNota(e.target.value)}
@@ -346,6 +361,7 @@ function ImproductivasCard({ semana, otm }: { semana:number; otm?:string }) {
             <thead>
               <tr className="border-b border-k-border">
                 <th className="py-1.5 px-2 text-left text-[10px] font-bold text-k-text3 uppercase">Motivo</th>
+                <th className="py-1.5 px-2 text-left text-[10px] font-bold text-k-text3 uppercase">Partida</th>
                 <th className="py-1.5 px-2 text-right text-[10px] font-bold text-k-text3 uppercase">HH</th>
                 <th className="py-1.5 px-2 text-left text-[10px] font-bold text-k-text3 uppercase">Nota</th>
                 <th className="py-1.5 px-2" />
@@ -355,6 +371,7 @@ function ImproductivasCard({ semana, otm }: { semana:number; otm?:string }) {
               {rows.map(r => (
                 <tr key={r.id} className="border-b border-k-border last:border-0">
                   <td className="py-1.5 px-2 text-k-text2">{r.motivo || '—'}</td>
+                  <td className="py-1.5 px-2 font-mono text-[11px] text-k-text3">{partLabel(r.partida_id)}</td>
                   <td className="py-1.5 px-2 text-right font-mono text-k-amber">{Number(r.hh).toLocaleString('es-PE',{maximumFractionDigits:1})}</td>
                   <td className="py-1.5 px-2 text-k-text3">{r.nota || '—'}</td>
                   <td className="py-1.5 px-2 text-right">
@@ -468,7 +485,7 @@ export default function TabISP({ semana, otm }: { semana: number; otm?: string }
       </div>
 
       {/* #5: captura de HH improductivas (oficina, semanal por OTM) */}
-      <ImproductivasCard semana={semana} otm={otm} />
+      <ImproductivasCard semana={semana} otm={otm} partidas={todas} />
 
       {/* Resumen por Fase */}
       <div className="bg-k-surface border border-k-border rounded-xl overflow-hidden">

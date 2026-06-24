@@ -1,6 +1,9 @@
 import TabISP from './TabISP'
 import TabDiario from './TabDiario'
 import TabRendimientos from './TabRendimientos'
+import TabProductividad from './TabProductividad'
+import TabSeguimiento from './TabSeguimiento'
+import TabValorizacion from './TabValorizacion'
 import CargaHistorica from './CargaHistorica'
 import WBSArbol from './WBSArbol'
 // ============================================================
@@ -18,7 +21,7 @@ import {
   Target, BarChart3, ClipboardList, PenLine, Settings2,
   Plus, Pencil, Trash2, X, Save, Loader2, TrendingUp, Clock, Gauge,
   Upload, CalendarDays, Users, History, AlertTriangle, Activity,
-  ChevronRight, ChevronDown, LayoutGrid,
+  ChevronRight, ChevronDown, LayoutGrid, Receipt,
 } from 'lucide-react'
 import { buildWbsTree, flattenVisible, nivelStyle, NIVEL_LABELS, faseColor } from '@/lib/wbs'
 import ImportarPartidas from '@/pages/ImportarPartidas'
@@ -177,7 +180,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 // ============================================================
 // Componente principal
 // ============================================================
-type Tab = 'resumen' | 'ejecutivo' | 'partidas' | 'isp' | 'diario' | 'rendimientos' | 'registro' | 'config' | 'importar' | 'historico'
+type Tab = 'resumen' | 'ejecutivo' | 'partidas' | 'isp' | 'diario' | 'rendimientos' | 'productividad' | 'seguimiento' | 'valorizacion' | 'registro' | 'config' | 'importar' | 'historico'
 
 export default function ValorGanado() {
   const [tab, setTab] = useState<Tab>('resumen')
@@ -231,6 +234,9 @@ export default function ValorGanado() {
     { id: 'diario',        label: 'Control Diario',   icon: CalendarDays },
     { id: 'registro',      label: 'Avances',          icon: PenLine },
     { id: 'rendimientos',  label: 'Rendimientos',     icon: Users },
+    { id: 'productividad', label: 'Productividad',    icon: Gauge },
+    { id: 'seguimiento',   label: 'Seguimiento',      icon: TrendingUp },
+    { id: 'valorizacion',  label: 'Valorización',     icon: Receipt },
     { id: 'config',        label: 'Configuración',    icon: Settings2 },
     { id: 'importar',      label: 'Importar',         icon: Upload },
     { id: 'historico',     label: 'Migración',        icon: History, secondary: true },
@@ -342,6 +348,9 @@ export default function ValorGanado() {
           selectedOtm={selectedOtm}
         />
       )}
+      {tab === 'productividad' && <TabProductividad semana={semana} otm={selectedOtm} />}
+      {tab === 'seguimiento'   && <TabSeguimiento semana={semana} otm={selectedOtm} />}
+      {tab === 'valorizacion'  && <TabValorizacion semana={semana} otm={selectedOtm} />}
       {tab === 'config'        && <TabConfig otm={selectedOtm} />}
       {tab === 'importar'      && <ImportarPartidas />}
     </div>
