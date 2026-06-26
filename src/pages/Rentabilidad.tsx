@@ -6,7 +6,7 @@ import { Loader2, AlertTriangle, TrendingUp, DollarSign } from 'lucide-react'
 
 const API = (import.meta.env.VITE_API_URL as string | undefined) ?? 'https://api.apps1.astraera.space'
 
-interface Cargo { cargo: string; costo_hh: number; hh: number }
+interface Cargo { cargo: string; costo_hh: number | null; hh: number }
 interface OtmRent {
   otm: string; descripcion: string | null
   ingreso_valorizado: number; ingreso_contractual: number
@@ -14,7 +14,7 @@ interface OtmRent {
 }
 interface RentData {
   otms: OtmRent[]
-  total: { ingreso_valorizado: number; costo_mo: number; hh_total: number; margen: number; pct_margen: number }
+  total: { ingreso_valorizado: number; costo_mo: number; hh_total: number; hh_sin_tarifa: number; margen: number; pct_margen: number }
   tarifa_default: number
 }
 
@@ -35,7 +35,7 @@ function Kpi({ label, value, color }: { label: string; value: string; color: str
 function TarifasCard() {
   const qc = useQueryClient()
   const [draft, setDraft] = useState<Record<string, string>>({})
-  const { data, isLoading } = useQuery<{ cargos: Cargo[]; default: number }>({
+  const { data, isLoading } = useQuery<{ cargos: Cargo[]; default: number | null }>({
     queryKey: ['ev-tarifas'],
     queryFn: async () => {
       const r = await fetch(`${API}/ev/tarifas`)
@@ -63,12 +63,13 @@ function TarifasCard() {
     return <div className="bg-k-surface border border-k-border rounded-xl p-5"><Loader2 size={14} className="animate-spin text-k-text3" /></div>
   }
 
-  const save = (cargo: string, actual: number) => {
+  const save = (cargo: string, actual: number | null) => {
     const raw = draft[cargo]
     if (raw === undefined || raw === '') return
     const v = Number(raw)
-    if (!isFinite(v) || v < 0 || v === actual) return
-    guardar.mutate({ cargo, costo_hh: v })
+    if (!isFinite(v) || v < 0) return
+    if (actual != null && v === actual) return   // sin cambios reales
+    guardar.mutate({ cargo, costo_hh: v })        // permite guardar 0 explícito
   }
 
   return (
@@ -94,8 +95,8 @@ function TarifasCard() {
               <td className="py-1.5 px-2 text-k-text font-bold">(Default) — respaldo</td>
               <td className="py-1.5 px-2 text-right text-k-text3">—</td>
               <td className="py-1.5 px-2 text-right">
-                <input type="number" min={0} step="any"
-                  value={draft['(Default)'] ?? String(data.default)}
+                <input type="number" min={0} step="any" placeholder="0"
+                  value={draft['(Default)'] ?? (data.default == null ? '' : String(data.default))}
                   onChange={e => setDraft(d => ({ ...d, ['(Default)']: e.target.value }))}
                   onBlur={() => save('(Default)', data.default)}
                   className="w-24 bg-k-raised border border-k-border rounded-lg px-2 py-1 text-right text-[12px] text-k-text outline-none focus:border-k-amber" />
@@ -106,8 +107,8 @@ function TarifasCard() {
                 <td className="py-1.5 px-2 text-k-text2">{c.cargo}</td>
                 <td className="py-1.5 px-2 text-right font-mono text-[11px] text-k-text3">{fmt0(c.hh)}</td>
                 <td className="py-1.5 px-2 text-right">
-                  <input type="number" min={0} step="any"
-                    value={draft[c.cargo] ?? String(c.costo_hh)}
+                  <input type="number" min={0} step="any" placeholder="0"
+                    value={draft[c.cargo] ?? (c.costo_hh == null ? '' : String(c.costo_hh))}
                     onChange={e => setDraft(d => ({ ...d, [c.cargo]: e.target.value }))}
                     onBlur={() => save(c.cargo, c.costo_hh)}
                     className="w-24 bg-k-raised border border-k-border rounded-lg px-2 py-1 text-right text-[12px] text-k-text outline-none focus:border-k-amber" />
@@ -150,6 +151,18 @@ export default function Rentabilidad() {
         <p className="text-k-text3 text-sm py-8 text-center">Sin HH de tareo para calcular costos todavía.</p>
       ) : (
         <>
+          {data.total.hh_sin_tarifa > 0 && (
+            <div className="flex items-start gap-2.5 rounded-xl border px-4 py-3"
+              style={{ borderColor: '#f59e0b', background: 'rgba(245,158,11,0.08)' }}>
+              <AlertTriangle size={16} className="text-k-amber mt-0.5 shrink-0" />
+              <p className="text-[12px] text-k-text2 leading-relaxed">
+                <strong className="text-k-amber">Tarifas sin configurar.</strong> Hay{' '}
+                <strong>{fmt0(data.total.hh_sin_tarifa)} HH sin tarifa</strong>, así que el{' '}
+                <strong>Costo MO está subestimado</strong> y el margen aún no refleja el costo real.
+                Configura las tarifas de arriba (al menos la <strong>(Default)</strong>) para ver la rentabilidad verdadera.
+              </p>
+            </div>
+          )}
           <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
             <Kpi label="Ingreso valorizado" value={soles(data.total.ingreso_valorizado)} color="#2DD4A8" />
             <Kpi label="Costo MO" value={soles(data.total.costo_mo)} color="#FF6B6B" />
