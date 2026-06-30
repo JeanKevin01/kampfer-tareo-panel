@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, X, Loader2, Lock, Star, FileSpreadsheet, Save, Snowflake } from 'lucide-react'
+import { Plus, X, Loader2, Lock, Star, FileSpreadsheet, Save, Snowflake, Upload, Download } from 'lucide-react'
+import * as XLSX from 'xlsx'
 
 import { API_BASE } from '@/lib/api'
 const API = API_BASE
@@ -26,6 +27,9 @@ export default function Presupuesto() {
   const [sembrar, setSembrar] = useState(true)
   const [rows, setRows] = useState<Linea[]>([])
   const [dirty, setDirty] = useState(false)
+  const [showImport, setShowImport] = useState(false)
+  const [filasImport, setFilasImport] = useState<Linea[]>([])
+  const [importError, setImportError] = useState('')
 
   const versiones = useQuery<Presupuesto[]>({
     queryKey: ['presupuestos'],
@@ -77,6 +81,55 @@ export default function Presupuesto() {
       qc.invalidateQueries({ queryKey: ['presupuestos'] }); qc.invalidateQueries({ queryKey: ['presupuesto', selId] })
     },
     onError: (e: Error) => alert(e.message),
+  })
+
+  function descargarPlantilla() {
+    const datos = [
+      { CODIGO: '10.01', DESCRIPCION: 'Movilización', UNIDAD: 'GLB', FASE: '10', SUB_FASE: '10.01', METRADO: 1, PRECIO_UNITARIO: 2500, HH_META: 200 },
+      { CODIGO: '40.01.01', DESCRIPCION: 'Acero en zapatas', UNIDAD: 'KG', FASE: '40', SUB_FASE: '40.01', METRADO: 168375, PRECIO_UNITARIO: 2.5, HH_META: 12576 },
+    ]
+    const ws = XLSX.utils.json_to_sheet(datos, { header: ['CODIGO', 'DESCRIPCION', 'UNIDAD', 'FASE', 'SUB_FASE', 'METRADO', 'PRECIO_UNITARIO', 'HH_META'] })
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Presupuesto')
+    XLSX.writeFile(wb, 'plantilla_presupuesto.xlsx')
+  }
+
+  function parseArchivo(file: File) {
+    setImportError('')
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      try {
+        const wb = XLSX.read(ev.target?.result, { type: 'array' })
+        const raw = XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets[wb.SheetNames[0]])
+        const num = (v: unknown) => Number(String(v ?? '').replace(/,/g, '')) || 0
+        const filas: Linea[] = raw.map(r => ({
+          codigo: String(r.CODIGO ?? r.codigo ?? '').trim(),
+          descripcion: String(r.DESCRIPCION ?? r.descripcion ?? '').trim() || null,
+          unidad: String(r.UNIDAD ?? r.unidad ?? '').trim() || null,
+          fase: String(r.FASE ?? r.fase ?? '').trim() || null,
+          sub_fase: String(r.SUB_FASE ?? r.sub_fase ?? '').trim() || null,
+          metrado: num(r.METRADO ?? r.metrado),
+          precio_unitario: num(r.PRECIO_UNITARIO ?? r.precio_unitario ?? r.PU),
+          hh_meta: num(r.HH_META ?? r.hh_meta),
+        })).filter(f => f.codigo)
+        if (filas.length === 0) { setImportError('No se encontraron filas con CODIGO. Revisa los encabezados.'); return }
+        setFilasImport(filas)
+      } catch {
+        setImportError('No se pudo leer el archivo. ¿Es un .xlsx válido?')
+      }
+    }
+    reader.readAsArrayBuffer(file)
+  }
+
+  const importar = useMutation({
+    mutationFn: () => fetch(`${API}/ev/presupuesto/${selId}/partidas`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ partidas: filasImport }),
+    }).then(async r => { const j = await r.json(); if (!r.ok) throw new Error(j.detail || 'Error'); return j }),
+    onSuccess: () => {
+      setShowImport(false); setFilasImport([])
+      qc.invalidateQueries({ queryKey: ['presupuestos'] }); qc.invalidateQueries({ queryKey: ['presupuesto', selId] })
+    },
+    onError: (e: Error) => setImportError(e.message),
   })
 
   function editar(i: number, campo: 'metrado' | 'precio_unitario' | 'hh_meta', valor: string) {
@@ -135,6 +188,12 @@ export default function Presupuesto() {
             </div>
             <div className="flex items-center gap-2">
               {esBorrador && (
+                <button onClick={() => { setFilasImport([]); setImportError(''); setShowImport(true) }}
+                  className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-k-border bg-k-raised text-k-text2 hover:bg-k-border">
+                  <Upload size={14} /> Importar Excel
+                </button>
+              )}
+              {esBorrador && (
                 <button onClick={() => guardar.mutate()} disabled={!dirty || guardar.isPending}
                   className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-k-border bg-k-raised text-k-text2 hover:bg-k-border disabled:opacity-40">
                   {guardar.isPending ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Guardar
@@ -181,6 +240,58 @@ export default function Presupuesto() {
                 )}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* Modal importar */}
+      {showImport && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowImport(false)}>
+          <div className="bg-k-surface border border-k-border rounded-xl p-5 w-[640px] max-h-[85vh] overflow-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-bold text-k-text">Importar líneas desde Excel</h2>
+              <button onClick={() => setShowImport(false)} className="text-k-text3 hover:text-k-text"><X size={18} /></button>
+            </div>
+            <div className="flex items-center gap-2 mb-3">
+              <button onClick={descargarPlantilla}
+                className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-k-border bg-k-raised text-k-text2 hover:bg-k-border">
+                <Download size={14} /> Descargar plantilla
+              </button>
+              <label className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg bg-k-amber hover:bg-k-amber2 text-black font-bold cursor-pointer">
+                <Upload size={14} /> Elegir archivo
+                <input type="file" accept=".xlsx,.xls" className="hidden"
+                  onChange={e => { const f = e.target.files?.[0]; if (f) parseArchivo(f) }} />
+              </label>
+            </div>
+            {importError && <p className="text-k-red text-sm mb-3">{importError}</p>}
+            {filasImport.length > 0 && (
+              <>
+                <p className="text-sm text-k-text2 mb-2">{filasImport.length} líneas detectadas (se agregan/actualizan por código):</p>
+                <div className="border border-k-border rounded-lg overflow-auto max-h-[40vh] mb-4">
+                  <table className="w-full text-xs">
+                    <thead><tr className="text-k-text3 border-b border-k-border">
+                      <th className="text-left px-2 py-1">Código</th><th className="text-left px-2 py-1">Descripción</th>
+                      <th className="text-right px-2 py-1">Metrado</th><th className="text-right px-2 py-1">PU</th><th className="text-right px-2 py-1">HH meta</th>
+                    </tr></thead>
+                    <tbody>
+                      {filasImport.slice(0, 100).map((f, i) => (
+                        <tr key={i} className="border-b border-k-border/40">
+                          <td className="px-2 py-1 font-mono text-k-text2">{f.codigo}</td>
+                          <td className="px-2 py-1 text-k-text3 truncate max-w-[220px]">{f.descripcion}</td>
+                          <td className="px-2 py-1 text-right">{fmt(f.metrado)}</td>
+                          <td className="px-2 py-1 text-right">{fmt(f.precio_unitario)}</td>
+                          <td className="px-2 py-1 text-right">{fmt(f.hh_meta)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <button onClick={() => importar.mutate()} disabled={importar.isPending}
+                  className="w-full bg-k-amber hover:bg-k-amber2 text-black font-bold text-sm py-2.5 rounded-lg disabled:opacity-50 flex items-center justify-center gap-2">
+                  {importar.isPending ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />} Importar {filasImport.length} líneas
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}
