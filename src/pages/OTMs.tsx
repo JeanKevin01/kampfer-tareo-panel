@@ -3,7 +3,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Search, Plus, X, Loader2, ChevronDown, Upload, Download, FileSpreadsheet, CheckCircle } from 'lucide-react'
 import * as XLSX from 'xlsx'
 
-const API = 'https://api.apps1.astraera.space'
+import { API_BASE } from '@/lib/api'
+const API = API_BASE
 
 interface OTM {
   id: string; descripcion: string; estado: string; area?: string; cc?: string

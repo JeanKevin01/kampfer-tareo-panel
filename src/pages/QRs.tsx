@@ -3,7 +3,8 @@ import { useQuery } from '@tanstack/react-query'
 import { QRCodeSVG } from 'qrcode.react'
 import { Search, Download, Printer, Loader2 } from 'lucide-react'
 
-const API = 'https://api.apps1.astraera.space'
+import { API_BASE } from '@/lib/api'
+const API = API_BASE
 interface Trabajador { id: string; nombre: string; cargo: string; activo: boolean }
 
 function getSVG(wrapId: string) {

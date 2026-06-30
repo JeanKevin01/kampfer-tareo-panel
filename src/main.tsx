@@ -3,18 +3,18 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
 import { getToken, clearToken } from './lib/auth'
+import { API_BASE } from '@/lib/api'
 
-// Seguridad Fase 1+2: inyecta API key (si está) y el token JWT (Bearer) en TODAS las
-// llamadas a la API, sin tocar cada página. Si la API responde 401 con token presente,
-// la sesión expiró → limpia y recarga (vuelve al login).
-const API_KEY = import.meta.env.VITE_API_KEY as string | undefined
-const API_HOST = (import.meta.env.VITE_API_URL as string | undefined) ?? 'https://api.apps1.astraera.space'
+// Seguridad: inyecta el token JWT (Bearer) en TODAS las llamadas a la API, sin tocar
+// cada página. Si la API responde 401 con token presente, la sesión expiró → limpia y
+// recarga (vuelve al login). NO se usa API key en el cliente (sería visible en el bundle):
+// el panel se autentica solo con el token del usuario.
+const API_HOST = API_BASE
 const _fetch = window.fetch.bind(window)
 window.fetch = async (input: RequestInfo | URL, init: RequestInit = {}) => {
   const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
   if (url && url.startsWith(API_HOST)) {
     const h: Record<string, string> = { ...(init.headers as Record<string, string> || {}) }
-    if (API_KEY) h['X-API-Key'] = API_KEY
     const tk = getToken()
     if (tk) h['Authorization'] = `Bearer ${tk}`
     init.headers = h

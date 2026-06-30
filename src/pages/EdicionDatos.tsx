@@ -2,7 +2,8 @@ import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Search, Pencil, X, Loader2, Save, Users, ClipboardList } from 'lucide-react'
 
-const API = 'https://api.apps1.astraera.space'
+import { API_BASE } from '@/lib/api'
+const API = API_BASE
 
 type Tab = 'trabajadores' | 'otms'
 interface Trabajador { id: string; nombre: string; cargo: string; dni?: string; activo: boolean }

@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Users, User, BarChart2 } from 'lucide-react'
 
-const API = import.meta.env.VITE_API_URL ?? 'https://api.apps1.astraera.space'
+import { API_BASE } from '@/lib/api'
+const API = API_BASE
 
 interface PartidaRend {
   partida_id:    number

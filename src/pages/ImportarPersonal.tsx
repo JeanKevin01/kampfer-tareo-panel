@@ -3,7 +3,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as XLSX from 'xlsx'
 import { Upload, FileSpreadsheet, CheckCircle, XCircle, Loader2, Download, X, UserCog, HardHat } from 'lucide-react'
 
-const API = 'https://api.apps1.astraera.space'
+import { API_BASE } from '@/lib/api'
+const API = API_BASE
 
 interface Fila {
   nombre: string; cargo: string; dni: string; tipo: string

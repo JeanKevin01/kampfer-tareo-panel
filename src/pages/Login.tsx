@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { setToken } from '@/lib/auth'
 import { Lock, User, Loader2 } from 'lucide-react'
 
-const API = (import.meta.env.VITE_API_URL as string | undefined) ?? 'https://api.apps1.astraera.space'
+import { API_BASE } from '@/lib/api'
+const API = API_BASE
 
 export default function Login() {
   const [username, setUsername] = useState('')

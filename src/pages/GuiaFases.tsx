@@ -2,7 +2,8 @@ import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Loader2, ChevronDown, ChevronRight, Info } from 'lucide-react'
 
-const API = 'https://api.apps1.astraera.space'
+import { API_BASE } from '@/lib/api'
+const API = API_BASE
 
 interface Partida { id: number; otm_id: string; fase: string; sub_fase: string; descripcion: string; hh_presup: number; activo: boolean }
 

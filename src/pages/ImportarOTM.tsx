@@ -6,7 +6,8 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Upload, FileSpreadsheet, CheckCircle, AlertCircle, Loader2, Trash2 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 
-const API = 'https://api.apps1.astraera.space'
+import { API_BASE } from '@/lib/api'
+const API = API_BASE
 
 // Plantillas de hitos por tipo de trabajo (Rules of Credit)
 const PLANTILLAS_KEYWORDS: Record<string, string> = {

@@ -2,7 +2,8 @@ import { useState, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Activity, Database, Server, RefreshCw, CheckCircle, XCircle, Zap, Clock, Users, ClipboardList, FileText } from 'lucide-react'
 
-const API = 'https://api.apps1.astraera.space'
+import { API_BASE } from '@/lib/api'
+const API = API_BASE
 
 interface HealthData { version?: string; status?: string; [key: string]: unknown }
 interface Trabajador { id: string; activo: boolean }

@@ -4,7 +4,8 @@ import { useState, useMemo, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ChevronRight, ChevronDown, Loader2 } from 'lucide-react'
 
-const API = 'https://api.apps1.astraera.space'
+import { API_BASE } from '@/lib/api'
+const API = API_BASE
 
 // ── Colores por nivel — tono pastel, más distinguibles entre sí ───
 // Panel usa tema oscuro → pasteles claros con más opacidad de fondo

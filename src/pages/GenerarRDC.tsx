@@ -2,7 +2,8 @@ import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Calendar, Download, Loader2, Plus, X, AlertCircle, FileText, Package, Users } from 'lucide-react'
 
-const API = 'https://api.apps1.astraera.space'
+import { API_BASE } from '@/lib/api'
+const API = API_BASE
 
 interface OTM        { id: string; descripcion: string; estado: string }
 interface Registro   { id: number; trab_id: string; otm_id: string; fecha: string; hh: number | null }

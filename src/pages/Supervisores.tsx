@@ -5,7 +5,8 @@ import {
   Loader2, Users, Search, X, ChevronDown, ChevronUp, UserPlus,
 } from 'lucide-react'
 
-const API = 'https://api.apps1.astraera.space'
+import { API_BASE } from '@/lib/api'
+const API = API_BASE
 
 interface Supervisor  { id: string; nombre: string; email?: string }
 interface Registro    { id: number; supervisor_id: string; otm_id: string; trab_id: string; hh: number | null }

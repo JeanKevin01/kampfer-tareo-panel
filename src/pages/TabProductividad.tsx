@@ -4,7 +4,8 @@ import { useMemo, useState, Fragment } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
 
-const API = (import.meta.env.VITE_API_URL as string | undefined) ?? 'https://api.apps1.astraera.space'
+import { API_BASE } from '@/lib/api'
+const API = API_BASE
 
 interface SemInfo { semana: number; label: string }
 interface SemDato { hh_gast_acum: number; hh_gast_sem: number; cant_acum: number }

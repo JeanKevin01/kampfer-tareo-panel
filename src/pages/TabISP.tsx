@@ -4,7 +4,8 @@ import { useState, useMemo, useCallback, Fragment as Frag } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { ChevronDown, ChevronRight, Loader2, AlertTriangle, Plus, Trash2 } from 'lucide-react'
 
-const API = 'https://api.apps1.astraera.space'
+import { API_BASE } from '@/lib/api'
+const API = API_BASE
 
 const FASE_COLOR: Record<string,string> = {
   FAB:'#2DD4A8',EST:'#60A5FA',MEC:'#FB923C',ELE:'#FACC15',

@@ -5,7 +5,8 @@ import {
 } from 'lucide-react'
 import { currentUser } from '@/lib/auth'
 
-const API = 'https://api.apps1.astraera.space'
+import { API_BASE } from '@/lib/api'
+const API = API_BASE
 
 interface Usuario {
   id: number

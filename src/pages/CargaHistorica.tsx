@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Save, Upload, CheckCircle2, AlertTriangle, ChevronDown } from 'lucide-react'
 
-const API = import.meta.env.VITE_API_URL ?? 'https://api.apps1.astraera.space'
+import { API_BASE } from '@/lib/api'
+const API = API_BASE
 
 interface PartidaHoja {
   id:             number

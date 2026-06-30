@@ -26,7 +26,8 @@ import {
 import { buildWbsTree, flattenVisible, nivelStyle, NIVEL_LABELS, faseColor } from '@/lib/wbs'
 import ImportarPartidas from '@/pages/ImportarPartidas'
 
-const API = 'https://api.apps1.astraera.space'
+import { API_BASE } from '@/lib/api'
+const API = API_BASE
 
 async function req<T>(path: string, options?: RequestInit): Promise<T> {
   const r = await fetch(API + path, {

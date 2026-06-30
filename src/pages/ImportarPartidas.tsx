@@ -15,7 +15,8 @@ import {
   Upload, FileSpreadsheet, CheckCircle, XCircle, Loader2, Download, X, AlertTriangle,
 } from 'lucide-react'
 
-const API = 'https://api.apps1.astraera.space'
+import { API_BASE } from '@/lib/api'
+const API = API_BASE
 
 interface OTMItem { otm_id: string; descripcion?: string; partidas: number }
 

@@ -6,7 +6,8 @@ import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Loader2, CheckCircle, Plus, Trash2, AlertCircle } from 'lucide-react'
 
-const API = 'https://api.apps1.astraera.space'
+import { API_BASE } from '@/lib/api'
+const API = API_BASE
 
 interface Pendiente { otm_id: string; fecha: string; hh: number; registros: number }
 interface PartidaMin { id: number; codigo: string; descripcion: string; otm_id: string|null; fase: string|null; unidad: string|null }

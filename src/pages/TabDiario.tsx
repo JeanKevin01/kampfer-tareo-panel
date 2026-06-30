@@ -3,7 +3,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { ChevronLeft, ChevronRight, ChevronDown, RefreshCw, ClipboardEdit, Check, AlertTriangle } from 'lucide-react'
 import { buildWbsTree, flattenVisible, nivelStyle, faseColor } from '@/lib/wbs'
 
-const API = import.meta.env.VITE_API_URL ?? 'https://api.apps1.astraera.space'
+import { API_BASE } from '@/lib/api'
+const API = API_BASE
 
 /* ── Types ────────────────────────────────────────────── */
 interface DiaCell {
