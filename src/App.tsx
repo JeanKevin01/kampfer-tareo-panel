@@ -10,6 +10,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import Layout from '@/components/Layout'
 import Dashboard from '@/pages/Dashboard'
 import Placeholder from '@/pages/Placeholder'
+import Presupuesto from '@/pages/Presupuesto'
 import Rentabilidad from '@/pages/Rentabilidad'
 import Supervisores from '@/pages/Supervisores'
 import Trabajadores from '@/pages/Trabajadores'
@@ -54,7 +55,7 @@ export default function App() {
             <Route path="otms"         element={<OTMs />} />
             <Route path="rdc"          element={<GenerarRDC />} />
             <Route path="valor-ganado" element={<ValorGanado />} />
-            <Route path="presupuesto"  element={<Placeholder title="Presupuesto por OTM"    desc="Control de HH plan vs real por partida."    icon="💰" />} />
+            <Route path="presupuesto"  element={<Presupuesto />} />
             <Route path="guia-fases"   element={<GuiaFases />} />
             <Route path="inventario"   element={<Placeholder title="Inventario y Materiales" desc="Registro de facturas y control de compras."  icon="📦" />} />
             <Route path="valorizacion" element={<Placeholder title="Valorización"            desc="Consolidado mensual para presentar a SMCV." icon="🧾" />} />
