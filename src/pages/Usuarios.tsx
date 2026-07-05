@@ -4,9 +4,7 @@ import {
   Loader2, ShieldCheck, UserPlus, KeyRound, Ban, X, Check, Lock,
 } from 'lucide-react'
 import { currentUser } from '@/lib/auth'
-
-import { API_BASE } from '@/lib/api'
-const API = API_BASE
+import { api } from '@/lib/api'
 
 interface Usuario {
   id: number
@@ -45,16 +43,11 @@ export default function Usuarios() {
 
   const { data: usuarios = [], isLoading, error } = useQuery<Usuario[]>({
     queryKey: ['usuarios'],
-    queryFn: async () => {
-      const r = await fetch(`${API}/api/admin/usuarios`)
-      if (!r.ok) throw new Error('no-admin')
-      return r.json()
-    },
+    queryFn: () => api<Usuario[]>('/api/admin/usuarios'),
   })
 
   const baja = useMutation({
-    mutationFn: (u: Usuario) =>
-      fetch(`${API}/api/admin/usuarios/${u.id}/baja`, { method: 'PUT' }).then(r => r.json()),
+    mutationFn: (u: Usuario) => api(`/api/admin/usuarios/${u.id}/baja`, { method: 'PUT' }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['usuarios'] }); flash('Usuario dado de baja') },
   })
 
@@ -159,26 +152,15 @@ function ModalCrear({ onClose, onDone }: { onClose: () => void; onDone: () => vo
   // (esa identidad viaja en su token y evita que envíe tareo a nombre de otro).
   const { data: supervisores = [] } = useQuery<Supervisor[]>({
     queryKey: ['supervisores-activos'],
-    queryFn: async () => {
-      const r = await fetch(`${API}/api/supervisores`)
-      if (!r.ok) throw new Error('supervisores')
-      return r.json()
-    },
+    queryFn: () => api<Supervisor[]>('/api/supervisores'),
     enabled: rol === 'supervisor',
   })
 
   const crear = useMutation({
-    mutationFn: async () => {
+    mutationFn: () => {
       const body: Record<string, string> = { username, nombre, rol, password }
       if (rol === 'supervisor') body.supervisor_id = supervisorId
-      const r = await fetch(`${API}/api/admin/usuarios`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      })
-      const d = await r.json().catch(() => ({}))
-      if (!r.ok) throw new Error(d.detail || 'No se pudo crear')
-      return d
+      return api('/api/admin/usuarios', { method: 'POST', body: JSON.stringify(body) })
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['usuarios'] }); onDone() },
     onError: (e: Error) => setError(e.message),
@@ -239,16 +221,9 @@ function ModalPassword({ usuario, onClose, onDone }: { usuario: Usuario; onClose
   const [error, setError] = useState('')
 
   const guardar = useMutation({
-    mutationFn: async () => {
-      const r = await fetch(`${API}/api/admin/usuarios/${usuario.id}/password`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password }),
-      })
-      const d = await r.json().catch(() => ({}))
-      if (!r.ok) throw new Error(d.detail || 'No se pudo cambiar')
-      return d
-    },
+    mutationFn: () => api(`/api/admin/usuarios/${usuario.id}/password`, {
+      method: 'PUT', body: JSON.stringify({ password }),
+    }),
     onSuccess: onDone,
     onError: (e: Error) => setError(e.message),
   })
