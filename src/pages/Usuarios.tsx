@@ -14,7 +14,13 @@ interface Usuario {
   rol: string
   nombre: string | null
   activo: boolean
+  supervisor_id?: string | null
   creado_en: string
+}
+
+interface Supervisor {
+  id: string
+  nombre: string
 }
 
 const ROLES = [
@@ -110,7 +116,7 @@ export default function Usuarios() {
                 <div className="text-[11px] text-k-text3">@{u.username}{!u.activo && ' · inactivo'}</div>
               </div>
               <span className={`text-[10px] font-bold uppercase tracking-wider border rounded px-2 py-0.5 ${rolStyle(u.rol)}`}>
-                {u.rol}
+                {u.rol}{u.rol === 'supervisor' && u.supervisor_id ? ` · ${u.supervisor_id}` : ''}
               </span>
               <button onClick={() => setCambiarPwd(u)} title="Cambiar contraseña"
                 className="text-k-text3 hover:text-k-amber p-1.5 rounded-lg hover:bg-k-raised transition-colors">
@@ -146,14 +152,29 @@ function ModalCrear({ onClose, onDone }: { onClose: () => void; onDone: () => vo
   const [nombre, setNombre] = useState('')
   const [rol, setRol] = useState('oficina')
   const [password, setPassword] = useState('')
+  const [supervisorId, setSupervisorId] = useState('')
   const [error, setError] = useState('')
+
+  // F0.6: un usuario con rol supervisor queda ligado a un supervisor del padrón
+  // (esa identidad viaja en su token y evita que envíe tareo a nombre de otro).
+  const { data: supervisores = [] } = useQuery<Supervisor[]>({
+    queryKey: ['supervisores-activos'],
+    queryFn: async () => {
+      const r = await fetch(`${API}/api/supervisores`)
+      if (!r.ok) throw new Error('supervisores')
+      return r.json()
+    },
+    enabled: rol === 'supervisor',
+  })
 
   const crear = useMutation({
     mutationFn: async () => {
+      const body: Record<string, string> = { username, nombre, rol, password }
+      if (rol === 'supervisor') body.supervisor_id = supervisorId
       const r = await fetch(`${API}/api/admin/usuarios`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, nombre, rol, password }),
+        body: JSON.stringify(body),
       })
       const d = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(d.detail || 'No se pudo crear')
@@ -186,13 +207,24 @@ function ModalCrear({ onClose, onDone }: { onClose: () => void; onDone: () => vo
             ))}
           </div>
         </Campo>
+        {rol === 'supervisor' && (
+          <Campo label="Supervisor del padrón (su identidad en campo)">
+            <select value={supervisorId} onChange={e => setSupervisorId(e.target.value)}
+              className={inputCls}>
+              <option value="">— Elegir supervisor —</option>
+              {supervisores.map(s => (
+                <option key={s.id} value={s.id}>{s.id} · {s.nombre}</option>
+              ))}
+            </select>
+          </Campo>
+        )}
         <Campo label="Contraseña">
           <input type="text" value={password} onChange={e => setPassword(e.target.value)}
             placeholder="mínimo 4 caracteres" className={inputCls} />
         </Campo>
         {error && <p className="text-xs text-k-red font-bold">{error}</p>}
         <button onClick={() => { setError(''); crear.mutate() }}
-          disabled={crear.isPending || !username || password.length < 4}
+          disabled={crear.isPending || !username || password.length < 4 || (rol === 'supervisor' && !supervisorId)}
           className="w-full flex items-center justify-center gap-2 bg-k-amber text-k-void font-bold rounded-lg py-2.5 text-sm disabled:opacity-50">
           {crear.isPending ? <Loader2 size={15} className="animate-spin" /> : <UserPlus size={15} />} Crear usuario
         </button>
