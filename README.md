@@ -1,73 +1,33 @@
-# React + TypeScript + Vite
+# kampfer-panel
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Panel web del sistema KAMPFER (*del tareo al Resultado Operativo sin Excel*): dashboard de tareo,
+padrón y QRs, Valor Ganado/ISP, presupuesto y Resultado Operativo para oficina técnica.
 
-Currently, two official plugins are available:
+React 19 · Vite · TypeScript · TanStack Query · Tailwind · Recharts.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Comandos
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm ci          # instalar
+npm run dev     # desarrollo (http://localhost:5173)
+npm run lint    # eslint (hoy con errores pre-existentes; ver nota CI)
+npm run build   # build de producción (bloqueante en CI)
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Configuración
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+- `VITE_API_URL` — URL del API (default: `https://api.apps1.astraera.space`), ver `src/lib/api.ts`.
+- Auth: JWT en localStorage; el interceptor global vive en `src/main.tsx` (inyecta `Authorization`
+  y maneja 401 → logout).
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+## Deploy
+
+**Cloudflare Pages con deploy AUTOMÁTICO al hacer push a `main`.** Antes de pushear: `npm run build`
+local en verde. El CI de GitHub Actions (`.github/workflows/build.yml`) valida build (bloqueante) y
+lint (informativo hasta saldar los errores pre-existentes — tarea F5 del plan).
+
+## Estructura
+
+- `src/pages/` — una página por ruta (rutas en `src/App.tsx`, menú en `src/components/Sidebar.tsx`).
+- `src/lib/` — `api.ts` (API_BASE), `auth.ts` (token), `wbs.ts` (árbol WBS compartido).
+- `ValorGanado.tsx` — hub del módulo EV con tabs (TabISP, TabDiario, etc.).
