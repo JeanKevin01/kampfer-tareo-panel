@@ -33,7 +33,7 @@ const NAV: NavGroup[] = [
     items: [
       { path: '/registros',    label: 'Registros y HH', icon: Table2 },
       { path: '/reportes',     label: 'Analytics',      icon: BarChart3 },
-      { path: '/monitor-tareo', label: 'Monitor',       icon: Activity },
+      { path: '/monitor-tareo', label: 'Monitor tareo', icon: Activity },
     ],
   },
   {
@@ -53,7 +53,7 @@ const NAV: NavGroup[] = [
     label: 'Gestión',
     items: [
       { path: '/edicion',      label: 'Edición Datos',  icon: PenLine },
-      { path: '/monitor',      label: 'Monitor',        icon: Activity },
+      { path: '/monitor',      label: 'Monitor sistema', icon: Activity },
       { path: '/bitacora',     label: 'Bitácora',       icon: History },
       { path: '/usuarios',     label: 'Usuarios',       icon: ShieldCheck, adminOnly: true },
     ],
