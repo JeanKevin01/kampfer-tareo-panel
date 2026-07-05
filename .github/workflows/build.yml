@@ -1,0 +1,22 @@
+name: Build
+on:
+  push:
+    branches: [main, 'fase*/**']
+  pull_request: {}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      # Lint informativo: hay 43 errores pre-existentes (2026-07-04). Cuando se limpien
+      # (tarea F5), quitar continue-on-error para hacerlo bloqueante.
+      - name: Lint (informativo)
+        run: npm ci --no-audit --no-fund && npm run lint
+        continue-on-error: true
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build
