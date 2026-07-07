@@ -1,26 +1,49 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, X, Loader2, Lock, Star, FileSpreadsheet, Save, Snowflake, Upload, Download } from 'lucide-react'
+import {
+  Plus, X, Loader2, Lock, Star, FileSpreadsheet, Save, Snowflake, Upload,
+  Download, ChevronRight, ChevronDown, Layers,
+} from 'lucide-react'
 import * as XLSX from 'xlsx'
 
-import { API_BASE } from '@/lib/api'
-const API = API_BASE
+import { api, ApiError } from '@/lib/api'
+
 const PROYECTO_ID = 1   // TODO: vendrá del selector de proyecto (tenant) cuando se active el scoping
+
+type Tipo = 'META' | 'CONTRACTUAL'
 
 interface Presupuesto {
   id: number; proyecto_id: number; version: number; estado: 'BORRADOR' | 'CONGELADO'
-  vigente: boolean; nota?: string | null; creado_en?: string; congelado_en?: string | null; lineas?: number
+  vigente: boolean; nota?: string | null; creado_en?: string; congelado_en?: string | null
+  lineas?: number; tipo: Tipo; moneda?: string
 }
 interface Linea {
   id?: number; codigo: string; descripcion?: string | null; unidad?: string | null
   fase?: string | null; sub_fase?: string | null
   metrado: number; precio_unitario: number; hh_meta: number
+  rendimiento_mo?: number | null; nivel?: number | null; parent_codigo?: string | null
+  area?: string | null
+}
+interface RecursoAPU {
+  id: number; tipo: 'MO' | 'MAT' | 'EQ' | 'SUB'; codigo?: string | null
+  descripcion: string; unidad?: string | null; cuadrilla?: number | null
+  cantidad: number; precio: number; parcial: number
+  sub_codigo?: string | null; sub_descripcion?: string | null
+}
+interface ResumenImportPU {
+  partidas: number; hojas: number; subpartidas: number; recursos: number
+  hh_dia: number; hh_meta_total: number; costo_meta_total: number
+  errores: string[]; avisos: string[]
 }
 
 const fmt = (n: number) => (n || 0).toLocaleString('es-PE', { maximumFractionDigits: 2 })
+const TIPO_REC_CLR: Record<string, string> = {
+  MO: 'text-k-green', MAT: 'text-k-blue', EQ: 'text-k-amber', SUB: 'text-purple-400',
+}
 
 export default function Presupuesto() {
   const qc = useQueryClient()
+  const [tipo, setTipo] = useState<Tipo>('CONTRACTUAL')
   const [selId, setSelId] = useState<number | null>(null)
   const [showCrear, setShowCrear] = useState(false)
   const [nota, setNota] = useState('')
@@ -30,15 +53,17 @@ export default function Presupuesto() {
   const [showImport, setShowImport] = useState(false)
   const [filasImport, setFilasImport] = useState<Linea[]>([])
   const [importError, setImportError] = useState('')
+  const [showImportPU, setShowImportPU] = useState(false)
 
   const versiones = useQuery<Presupuesto[]>({
     queryKey: ['presupuestos'],
-    queryFn: () => fetch(`${API}/ev/presupuesto?proyecto_id=${PROYECTO_ID}`).then(r => r.json()),
+    queryFn: () => api<Presupuesto[]>(`/ev/presupuesto?proyecto_id=${PROYECTO_ID}`),
   })
+  const versionesTipo = (versiones.data ?? []).filter(v => (v.tipo ?? 'CONTRACTUAL') === tipo)
 
   const detalle = useQuery<{ presupuesto: Presupuesto; partidas: Linea[] }>({
     queryKey: ['presupuesto', selId],
-    queryFn: () => fetch(`${API}/ev/presupuesto/${selId}`).then(r => r.json()),
+    queryFn: () => api(`/ev/presupuesto/${selId}`),
     enabled: selId != null,
   })
 
@@ -48,36 +73,41 @@ export default function Presupuesto() {
   }, [detalle.data])
 
   const pres = detalle.data?.presupuesto
-  const esBorrador = pres?.estado === 'BORRADOR'
+  const esMeta = pres?.tipo === 'META'
+  // La META nace del import de la plantilla PU y no se edita línea a línea.
+  const esBorrador = pres?.estado === 'BORRADOR' && !esMeta
+  const mon = pres?.moneda === 'USD' ? '$' : 'S/'
 
   const totales = useMemo(() => {
-    const hh = rows.reduce((s, r) => s + (Number(r.hh_meta) || 0), 0)
-    const venta = rows.reduce((s, r) => s + (Number(r.metrado) || 0) * (Number(r.precio_unitario) || 0), 0)
+    const hojas = rows.filter(r => (r.nivel ?? 1) >= 1 && (esMeta ? r.fase : true))
+    const hh = hojas.reduce((s, r) => s + (Number(r.hh_meta) || 0), 0)
+    const venta = hojas.reduce((s, r) => s + (Number(r.metrado) || 0) * (Number(r.precio_unitario) || 0), 0)
     return { hh, venta }
-  }, [rows])
+  }, [rows, esMeta])
 
   const crear = useMutation({
-    mutationFn: () => fetch(`${API}/ev/presupuesto`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ proyecto_id: PROYECTO_ID, nota, sembrar }),
-    }).then(async r => { const j = await r.json(); if (!r.ok) throw new Error(j.detail || 'Error'); return j }),
+    mutationFn: () => api('/ev/presupuesto', {
+      method: 'POST', body: JSON.stringify({ proyecto_id: PROYECTO_ID, nota, sembrar }),
+    }) as Promise<{ id: number }>,
     onSuccess: (j) => { qc.invalidateQueries({ queryKey: ['presupuestos'] }); setShowCrear(false); setNota(''); setSelId(j.id) },
   })
 
   const guardar = useMutation({
-    mutationFn: () => fetch(`${API}/ev/presupuesto/${selId}/partidas`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ partidas: rows }),
-    }).then(async r => { const j = await r.json(); if (!r.ok) throw new Error(j.detail || 'Error'); return j }),
+    mutationFn: () => api(`/ev/presupuesto/${selId}/partidas`, {
+      method: 'POST', body: JSON.stringify({ partidas: rows }),
+    }),
     onSuccess: () => { setDirty(false); qc.invalidateQueries({ queryKey: ['presupuestos'] }); qc.invalidateQueries({ queryKey: ['presupuesto', selId] }) },
   })
 
   const congelar = useMutation({
-    mutationFn: () => fetch(`${API}/ev/presupuesto/${selId}/congelar`, { method: 'POST' })
-      .then(async r => { const j = await r.json(); if (!r.ok) throw new Error(j.detail || 'Error'); return j }),
+    mutationFn: () => api(`/ev/presupuesto/${selId}/congelar`, { method: 'POST' }) as
+      Promise<{ sincronizadas: number; no_encontradas: number; tipo: Tipo; celdas_costo_meta: number }>,
     onSuccess: (j) => {
-      alert(`Congelado y activado.\nLíneas sincronizadas a ev_partidas: ${j.sincronizadas}` +
-            (j.no_encontradas ? `\nNo encontradas (código sin partida): ${j.no_encontradas}` : ''))
+      alert(`Congelado y activado (${j.tipo}).\n` +
+            (j.tipo === 'META'
+              ? `HH meta sincronizadas a ${j.sincronizadas} partidas del control.\nCosto meta materializado: ${j.celdas_costo_meta} celdas (fase × recurso).`
+              : `Líneas sincronizadas a ev_partidas: ${j.sincronizadas}`) +
+            (j.no_encontradas ? `\nSin partida en el control (por código): ${j.no_encontradas}` : ''))
       qc.invalidateQueries({ queryKey: ['presupuestos'] }); qc.invalidateQueries({ queryKey: ['presupuesto', selId] })
     },
     onError: (e: Error) => alert(e.message),
@@ -121,10 +151,9 @@ export default function Presupuesto() {
   }
 
   const importar = useMutation({
-    mutationFn: () => fetch(`${API}/ev/presupuesto/${selId}/partidas`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ partidas: filasImport }),
-    }).then(async r => { const j = await r.json(); if (!r.ok) throw new Error(j.detail || 'Error'); return j }),
+    mutationFn: () => api(`/ev/presupuesto/${selId}/partidas`, {
+      method: 'POST', body: JSON.stringify({ partidas: filasImport }),
+    }),
     onSuccess: () => {
       setShowImport(false); setFilasImport([])
       qc.invalidateQueries({ queryKey: ['presupuestos'] }); qc.invalidateQueries({ queryKey: ['presupuesto', selId] })
@@ -137,23 +166,47 @@ export default function Presupuesto() {
     setDirty(true)
   }
 
+  const lineasVisibles = rows.filter(r => (r.nivel ?? 1) >= 1)
+  const subpartidas = rows.filter(r => (r.nivel ?? 1) === 0)
+
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-k-text">Presupuesto · línea base</h1>
-          <p className="text-k-text2 text-sm">Versiones del presupuesto del proyecto. Al <b>congelar</b> se activa y sincroniza metas/PU al control.</p>
+          <h1 className="text-xl font-bold text-k-text">Presupuesto · líneas base</h1>
+          <p className="text-k-text2 text-sm">
+            <b>Meta</b> = costo interno con APU (del Excel PU) · <b>Contractual</b> = venta (PU cliente).
+            Al <b>congelar</b> se activa y sincroniza al control.
+          </p>
         </div>
-        <button onClick={() => setShowCrear(true)}
-          className="flex items-center gap-2 bg-k-amber hover:bg-k-amber2 text-black font-bold text-sm px-4 py-2.5 rounded-lg transition-colors">
-          <Plus size={16} /> Nueva versión
-        </button>
+        {tipo === 'CONTRACTUAL' ? (
+          <button onClick={() => setShowCrear(true)}
+            className="flex items-center gap-2 bg-k-amber hover:bg-k-amber2 text-black font-bold text-sm px-4 py-2.5 rounded-lg transition-colors">
+            <Plus size={16} /> Nueva versión
+          </button>
+        ) : (
+          <button onClick={() => setShowImportPU(true)}
+            className="flex items-center gap-2 bg-k-amber hover:bg-k-amber2 text-black font-bold text-sm px-4 py-2.5 rounded-lg transition-colors">
+            <Upload size={16} /> Importar plantilla PU (.xls)
+          </button>
+        )}
       </div>
 
-      {/* Versiones */}
+      {/* Tabs Meta | Contractual */}
+      <div className="flex gap-1 border-b border-k-border">
+        {(['CONTRACTUAL', 'META'] as Tipo[]).map(t => (
+          <button key={t} onClick={() => { setTipo(t); setSelId(null) }}
+            className={`px-4 py-2 text-sm font-bold rounded-t-lg border-b-2 transition-colors ${
+              tipo === t ? 'border-k-amber text-k-amber' : 'border-transparent text-k-text3 hover:text-k-text2'}`}>
+            {t === 'META' ? 'Meta (costo)' : 'Contractual (venta)'}
+          </button>
+        ))}
+      </div>
+
+      {/* Versiones del tipo activo */}
       {versiones.isLoading ? <Loader2 className="animate-spin text-k-text3" /> : (
         <div className="flex flex-wrap gap-3">
-          {(versiones.data ?? []).map(v => (
+          {versionesTipo.map(v => (
             <button key={v.id} onClick={() => setSelId(v.id)}
               className={`text-left rounded-xl border px-4 py-3 min-w-[170px] transition-colors ${
                 selId === v.id ? 'border-k-amber bg-amber-500/10' : 'border-k-border bg-k-surface hover:bg-k-raised'}`}>
@@ -167,11 +220,17 @@ export default function Presupuesto() {
                   v.estado === 'CONGELADO' ? 'text-k-blue bg-blue-500/10 border-blue-500/20' : 'text-k-amber bg-amber-500/10 border-amber-500/20'}`}>
                   {v.estado}{v.estado === 'CONGELADO' && ' '}{v.estado === 'CONGELADO' && <Lock size={9} className="inline" />}
                 </span>
-                <span className="text-[11px] text-k-text3">{v.lineas ?? 0} líneas</span>
+                <span className="text-[11px] text-k-text3">{v.lineas ?? 0} líneas · {v.moneda ?? 'PEN'}</span>
               </div>
             </button>
           ))}
-          {(versiones.data ?? []).length === 0 && <p className="text-k-text3 text-sm">Aún no hay versiones. Crea la primera (puedes sembrarla desde las partidas actuales).</p>}
+          {versionesTipo.length === 0 && (
+            <p className="text-k-text3 text-sm">
+              {tipo === 'META'
+                ? 'Aún no hay presupuesto META. Impórtalo desde la plantilla PU (.xls) del presupuesto.'
+                : 'Aún no hay versiones. Crea la primera (puedes sembrarla desde las partidas actuales).'}
+            </p>
+          )}
         </div>
       )}
 
@@ -181,9 +240,9 @@ export default function Presupuesto() {
           <div className="flex items-center justify-between px-4 py-3 border-b border-k-border">
             <div className="text-sm text-k-text2">
               {detalle.isLoading ? 'Cargando…' : <>
-                <b className="text-k-text">Versión {pres?.version}</b> · {pres?.estado}
+                <b className="text-k-text">Versión {pres?.version}</b> · {pres?.tipo} · {pres?.estado}
                 {pres?.vigente && <span className="text-k-amber"> · vigente</span>}
-                <span className="text-k-text3"> · HH meta {fmt(totales.hh)} · Venta S/ {fmt(totales.venta)}</span>
+                <span className="text-k-text3"> · HH meta {fmt(totales.hh)} · {esMeta ? 'Costo' : 'Venta'} {mon} {fmt(totales.venta)}</span>
               </>}
             </div>
             <div className="flex items-center gap-2">
@@ -199,14 +258,14 @@ export default function Presupuesto() {
                   {guardar.isPending ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Guardar
                 </button>
               )}
-              {esBorrador && (
-                <button onClick={() => { if (confirm('¿Congelar esta versión? Quedará inmutable, se activará y sincronizará al control. Para cambiar luego, crea una versión nueva.')) congelar.mutate() }}
+              {pres?.estado === 'BORRADOR' && (
+                <button onClick={() => { if (confirm('¿Congelar esta versión? Quedará inmutable, se activará y sincronizará al control. Para cambiar luego, crea/importa una versión nueva.')) congelar.mutate() }}
                   disabled={congelar.isPending}
                   className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg bg-k-blue/90 hover:bg-k-blue text-white font-bold disabled:opacity-40">
                   {congelar.isPending ? <Loader2 size={14} className="animate-spin" /> : <Snowflake size={14} />} Congelar y activar
                 </button>
               )}
-              {!esBorrador && <span className="flex items-center gap-1.5 text-sm text-k-text3"><Lock size={14} /> Congelado (solo lectura)</span>}
+              {pres?.estado === 'CONGELADO' && <span className="flex items-center gap-1.5 text-sm text-k-text3"><Lock size={14} /> Congelado (solo lectura)</span>}
             </div>
           </div>
 
@@ -214,37 +273,39 @@ export default function Presupuesto() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-[11px] uppercase tracking-wide text-k-text3 border-b border-k-border">
+                  {esMeta && <th className="w-8"></th>}
                   <th className="text-left px-4 py-2">Código</th>
                   <th className="text-left px-4 py-2">Descripción</th>
                   <th className="text-left px-2 py-2">Und</th>
                   <th className="text-right px-2 py-2">Metrado</th>
-                  <th className="text-right px-2 py-2">PU (S/)</th>
+                  <th className="text-right px-2 py-2">PU ({mon})</th>
                   <th className="text-right px-2 py-2">HH meta</th>
-                  <th className="text-right px-4 py-2">Venta (S/)</th>
+                  {esMeta && <th className="text-right px-2 py-2" title="rendimiento MO (und/día)">Rend. MO</th>}
+                  <th className="text-right px-4 py-2">{esMeta ? 'Costo' : 'Venta'} ({mon})</th>
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r, i) => (
-                  <tr key={r.codigo} className="border-b border-k-border/50 hover:bg-k-raised/40">
-                    <td className="px-4 py-1.5 font-mono text-k-text2">{r.codigo}</td>
-                    <td className="px-4 py-1.5 text-k-text2 max-w-[280px] truncate">{r.descripcion}</td>
-                    <td className="px-2 py-1.5 text-k-text3">{r.unidad}</td>
-                    <td className="px-2 py-1.5 text-right">{cell(esBorrador, r.metrado, v => editar(i, 'metrado', v))}</td>
-                    <td className="px-2 py-1.5 text-right">{cell(esBorrador, r.precio_unitario, v => editar(i, 'precio_unitario', v))}</td>
-                    <td className="px-2 py-1.5 text-right">{cell(esBorrador, r.hh_meta, v => editar(i, 'hh_meta', v))}</td>
-                    <td className="px-4 py-1.5 text-right text-k-text">{fmt((Number(r.metrado) || 0) * (Number(r.precio_unitario) || 0))}</td>
-                  </tr>
+                {lineasVisibles.map((r) => (
+                  esMeta
+                    ? <FilaMeta key={r.codigo} linea={r} />
+                    : <FilaEditable key={r.codigo} linea={r} editable={esBorrador}
+                        onEdit={(campo, v) => editar(rows.indexOf(r), campo, v)} />
                 ))}
-                {rows.length === 0 && !detalle.isLoading && (
-                  <tr><td colSpan={7} className="px-4 py-6 text-center text-k-text3">Sin líneas. (Si la creaste sin sembrar, agrégalas o usa el importador.)</td></tr>
+                {lineasVisibles.length === 0 && !detalle.isLoading && (
+                  <tr><td colSpan={9} className="px-4 py-6 text-center text-k-text3">Sin líneas. (Si la creaste sin sembrar, agrégalas o usa el importador.)</td></tr>
                 )}
               </tbody>
             </table>
           </div>
+          {esMeta && subpartidas.length > 0 && (
+            <div className="px-4 py-2 border-t border-k-border text-[11px] text-k-text3 flex items-center gap-1.5">
+              <Layers size={12} /> {subpartidas.length} subpartidas (recetas anidadas) — se muestran dentro del APU de cada partida.
+            </div>
+          )}
         </div>
       )}
 
-      {/* Modal importar */}
+      {/* Modal importar xlsx simple (CONTRACTUAL) */}
       {showImport && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowImport(false)}>
           <div className="bg-k-surface border border-k-border rounded-xl p-5 w-[640px] max-h-[85vh] overflow-auto" onClick={e => e.stopPropagation()}>
@@ -296,12 +357,18 @@ export default function Presupuesto() {
         </div>
       )}
 
-      {/* Modal crear versión */}
+      {/* Modal importar plantilla PU (META) */}
+      {showImportPU && (
+        <ModalImportPU onClose={() => setShowImportPU(false)}
+          onDone={(id) => { setShowImportPU(false); qc.invalidateQueries({ queryKey: ['presupuestos'] }); setTipo('META'); setSelId(id) }} />
+      )}
+
+      {/* Modal crear versión (CONTRACTUAL) */}
       {showCrear && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowCrear(false)}>
           <div className="bg-k-surface border border-k-border rounded-xl p-5 w-[420px]" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
-              <h2 className="font-bold text-k-text">Nueva versión de presupuesto</h2>
+              <h2 className="font-bold text-k-text">Nueva versión contractual</h2>
               <button onClick={() => setShowCrear(false)} className="text-k-text3 hover:text-k-text"><X size={18} /></button>
             </div>
             <label className="block text-xs text-k-text3 mb-1">Nota (opcional)</label>
@@ -319,6 +386,188 @@ export default function Presupuesto() {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+// ── Fila CONTRACTUAL (editable en borrador) ────────────────────
+function FilaEditable({ linea: r, editable, onEdit }: {
+  linea: Linea; editable: boolean
+  onEdit: (campo: 'metrado' | 'precio_unitario' | 'hh_meta', v: string) => void
+}) {
+  return (
+    <tr className="border-b border-k-border/50 hover:bg-k-raised/40">
+      <td className="px-4 py-1.5 font-mono text-k-text2">{r.codigo}</td>
+      <td className="px-4 py-1.5 text-k-text2 max-w-[280px] truncate">{r.descripcion}</td>
+      <td className="px-2 py-1.5 text-k-text3">{r.unidad}</td>
+      <td className="px-2 py-1.5 text-right">{cell(editable, r.metrado, v => onEdit('metrado', v))}</td>
+      <td className="px-2 py-1.5 text-right">{cell(editable, r.precio_unitario, v => onEdit('precio_unitario', v))}</td>
+      <td className="px-2 py-1.5 text-right">{cell(editable, r.hh_meta, v => onEdit('hh_meta', v))}</td>
+      <td className="px-4 py-1.5 text-right text-k-text">{fmt((Number(r.metrado) || 0) * (Number(r.precio_unitario) || 0))}</td>
+    </tr>
+  )
+}
+
+// ── Fila META: jerarquía + APU expandible ──────────────────────
+function FilaMeta({ linea: r }: { linea: Linea }) {
+  const [abierto, setAbierto] = useState(false)
+  const esHoja = !!r.fase
+  const nivel = r.nivel ?? 1
+
+  const apu = useQuery<RecursoAPU[]>({
+    queryKey: ['apu', r.id],
+    queryFn: () => api<RecursoAPU[]>(`/ev/presupuesto/partida/${r.id}/apu`),
+    enabled: abierto && esHoja && r.id != null,
+  })
+
+  return (
+    <>
+      <tr className={`border-b border-k-border/50 ${esHoja ? 'hover:bg-k-raised/40 cursor-pointer' : 'bg-k-raised/30'}`}
+        onClick={() => esHoja && setAbierto(a => !a)}>
+        <td className="pl-3 py-1.5 text-k-text3">
+          {esHoja && (abierto ? <ChevronDown size={14} /> : <ChevronRight size={14} />)}
+        </td>
+        <td className="px-4 py-1.5 font-mono text-k-text2" style={{ paddingLeft: `${16 + (nivel - 1) * 14}px` }}>{r.codigo}</td>
+        <td className={`px-4 py-1.5 max-w-[280px] truncate ${esHoja ? 'text-k-text2' : 'text-k-text font-bold'}`}>{r.descripcion}</td>
+        <td className="px-2 py-1.5 text-k-text3">{r.unidad}</td>
+        <td className="px-2 py-1.5 text-right text-k-text2">{esHoja ? fmt(r.metrado) : ''}</td>
+        <td className="px-2 py-1.5 text-right text-k-text2">{esHoja ? fmt(r.precio_unitario) : ''}</td>
+        <td className="px-2 py-1.5 text-right text-k-text2">{esHoja ? fmt(r.hh_meta) : ''}</td>
+        <td className="px-2 py-1.5 text-right text-k-text3">{esHoja && r.rendimiento_mo ? fmt(Number(r.rendimiento_mo)) : ''}</td>
+        <td className="px-4 py-1.5 text-right text-k-text">
+          {esHoja ? fmt((Number(r.metrado) || 0) * (Number(r.precio_unitario) || 0)) : ''}
+        </td>
+      </tr>
+      {abierto && esHoja && (
+        <tr className="bg-k-void/40">
+          <td colSpan={9} className="px-8 py-2">
+            {apu.isLoading ? (
+              <span className="text-k-text3 text-xs flex items-center gap-2"><Loader2 size={12} className="animate-spin" /> Cargando APU…</span>
+            ) : (
+              <table className="w-full text-xs">
+                <thead><tr className="text-k-text3 border-b border-k-border/60">
+                  <th className="text-left px-2 py-1">Tipo</th><th className="text-left px-2 py-1">Código</th>
+                  <th className="text-left px-2 py-1">Recurso</th><th className="text-left px-2 py-1">Und</th>
+                  <th className="text-right px-2 py-1">Cuadrilla</th><th className="text-right px-2 py-1">Cantidad</th>
+                  <th className="text-right px-2 py-1">Precio</th><th className="text-right px-2 py-1">Parcial</th>
+                </tr></thead>
+                <tbody>
+                  {(apu.data ?? []).map(rec => (
+                    <tr key={rec.id} className="border-b border-k-border/30">
+                      <td className={`px-2 py-1 font-bold ${TIPO_REC_CLR[rec.tipo] ?? ''}`}>{rec.tipo}</td>
+                      <td className="px-2 py-1 font-mono text-k-text3">{rec.codigo}</td>
+                      <td className="px-2 py-1 text-k-text2">
+                        {rec.descripcion}
+                        {rec.tipo === 'SUB' && rec.sub_codigo && <span className="text-k-text3"> → {rec.sub_codigo}</span>}
+                      </td>
+                      <td className="px-2 py-1 text-k-text3">{rec.unidad}</td>
+                      <td className="px-2 py-1 text-right text-k-text3">{rec.cuadrilla != null ? fmt(Number(rec.cuadrilla)) : ''}</td>
+                      <td className="px-2 py-1 text-right text-k-text2">{Number(rec.cantidad).toLocaleString('es-PE', { maximumFractionDigits: 4 })}</td>
+                      <td className="px-2 py-1 text-right text-k-text2">{Number(rec.precio).toLocaleString('es-PE', { maximumFractionDigits: 4 })}</td>
+                      <td className="px-2 py-1 text-right text-k-text">{Number(rec.parcial).toLocaleString('es-PE', { maximumFractionDigits: 4 })}</td>
+                    </tr>
+                  ))}
+                  {(apu.data ?? []).length === 0 && (
+                    <tr><td colSpan={8} className="px-2 py-2 text-k-text3">Esta partida no tiene APU (PU 0 / no considerada en la meta).</td></tr>
+                  )}
+                </tbody>
+              </table>
+            )}
+          </td>
+        </tr>
+      )}
+    </>
+  )
+}
+
+// ── Modal: importar plantilla PU (.xls) → preview → confirmar ──
+function ModalImportPU({ onClose, onDone }: { onClose: () => void; onDone: (id: number) => void }) {
+  const [file, setFile] = useState<File | null>(null)
+  const [preview, setPreview] = useState<{ resumen: ResumenImportPU; muestra: Linea[] } | null>(null)
+  const [error, setError] = useState('')
+
+  const subir = useMutation({
+    mutationFn: async (confirmar: boolean) => {
+      if (!file) throw new Error('Elige el archivo .xls')
+      const fd = new FormData()
+      fd.append('file', file)
+      return api(`/ev/presupuesto/importar-pu?proyecto_id=${PROYECTO_ID}&confirmar=${confirmar}`,
+        { method: 'POST', body: fd })
+    },
+    onError: (e: Error) => setError(e instanceof ApiError ? e.detail : e.message),
+  })
+
+  const previsualizar = () => {
+    setError('')
+    subir.mutate(false, { onSuccess: (j) => setPreview(j as { resumen: ResumenImportPU; muestra: Linea[] }) })
+  }
+  const confirmar = () => {
+    setError('')
+    subir.mutate(true, { onSuccess: (j) => onDone((j as { id: number }).id) })
+  }
+
+  const res = preview?.resumen
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-k-surface border border-k-border rounded-xl p-5 w-[680px] max-h-[85vh] overflow-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-1">
+          <h2 className="font-bold text-k-text">Importar presupuesto META (plantilla PU)</h2>
+          <button onClick={onClose} className="text-k-text3 hover:text-k-text"><X size={18} /></button>
+        </div>
+        <p className="text-xs text-k-text3 mb-4">
+          El .xls con hojas <b>PtoMeta</b> y <b>PU-Meta</b> (formato del presupuesto meta con APU).
+          Crea una versión nueva en borrador; nada se activa hasta que la congeles.
+        </p>
+
+        <label className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg bg-k-amber hover:bg-k-amber2 text-black font-bold cursor-pointer w-fit mb-3">
+          <Upload size={14} /> {file ? file.name : 'Elegir archivo .xls'}
+          <input type="file" accept=".xls" className="hidden"
+            onChange={e => { setFile(e.target.files?.[0] ?? null); setPreview(null); setError('') }} />
+        </label>
+
+        {file && !preview && (
+          <button onClick={previsualizar} disabled={subir.isPending}
+            className="w-full border border-k-border bg-k-raised hover:bg-k-border text-k-text text-sm font-bold py-2.5 rounded-lg disabled:opacity-50 flex items-center justify-center gap-2">
+            {subir.isPending ? <Loader2 size={15} className="animate-spin" /> : <FileSpreadsheet size={15} />} Analizar archivo (no guarda nada)
+          </button>
+        )}
+        {error && <p className="text-k-red text-sm my-3 whitespace-pre-wrap">{error}</p>}
+
+        {res && (
+          <div className="space-y-3 mt-3">
+            <div className="grid grid-cols-4 gap-2 text-center">
+              {[['Partidas', res.hojas], ['Subpartidas', res.subpartidas], ['Recursos APU', res.recursos],
+                ['HH meta', fmt(res.hh_meta_total)]].map(([l, v]) => (
+                <div key={l} className="bg-k-raised border border-k-border rounded-lg py-2">
+                  <div className="text-lg font-bold text-k-text">{v}</div>
+                  <div className="text-[10px] uppercase text-k-text3">{l}</div>
+                </div>
+              ))}
+            </div>
+            <div className="text-sm text-k-text2 text-center">
+              Costo meta total: <b className="text-k-text">$ {fmt(res.costo_meta_total)}</b> · jornada {res.hh_dia} HH/día
+            </div>
+            {res.errores.length > 0 && (
+              <div className="border border-red-500/30 bg-red-500/10 rounded-lg p-3 text-xs text-k-red max-h-32 overflow-auto">
+                <b>{res.errores.length} errores (corrígelos en el Excel; no se puede confirmar):</b>
+                {res.errores.slice(0, 20).map((e, i) => <div key={i}>· {e}</div>)}
+              </div>
+            )}
+            {res.avisos.length > 0 && (
+              <div className="border border-amber-500/30 bg-amber-500/10 rounded-lg p-3 text-xs text-k-amber max-h-32 overflow-auto">
+                <b>{res.avisos.length} avisos (no bloquean):</b>
+                {res.avisos.slice(0, 20).map((a, i) => <div key={i}>· {a}</div>)}
+              </div>
+            )}
+            <button onClick={confirmar} disabled={subir.isPending || res.errores.length > 0}
+              className="w-full bg-k-amber hover:bg-k-amber2 text-black font-bold text-sm py-2.5 rounded-lg disabled:opacity-50 flex items-center justify-center gap-2">
+              {subir.isPending ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+              Confirmar import ({res.hojas} partidas, versión nueva en borrador)
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

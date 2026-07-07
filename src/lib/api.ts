@@ -27,7 +27,10 @@ export async function api<T = unknown>(path: string, init: RequestInit = {}): Pr
   const headers: Record<string, string> = { ...(init.headers as Record<string, string> || {}) }
   const tk = getToken()
   if (tk) headers['Authorization'] = `Bearer ${tk}`
-  if (init.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json'
+  // FormData define su propio Content-Type (boundary del multipart) — no pisarlo.
+  if (init.body && !(init.body instanceof FormData) && !headers['Content-Type']) {
+    headers['Content-Type'] = 'application/json'
+  }
 
   const res = await fetch(`${API_BASE}${path}`, { ...init, headers })
 
