@@ -44,9 +44,9 @@ const NAV: NavGroup[] = [
       { path: '/valor-ganado', label: 'Valor Ganado',   icon: Target },
       { path: '/presupuesto',  label: 'Presupuesto',    icon: FileSpreadsheet },
       { path: '/guia-fases',   label: 'Guía de Fases',  icon: FileText },
-      { path: '/inventario',   label: 'Inventario',     icon: Package },
+      { path: '/inventario',   label: 'Costos',         icon: Package },
       { path: '/valorizacion', label: 'Valorización',   icon: Receipt },
-      { path: '/rentabilidad', label: 'Rentabilidad',   icon: TrendingUp },
+      { path: '/rentabilidad', label: 'Resultado Op.',  icon: TrendingUp },
     ],
   },
   {

@@ -11,7 +11,9 @@ import Layout from '@/components/Layout'
 import Dashboard from '@/pages/Dashboard'
 import Placeholder from '@/pages/Placeholder'
 import Presupuesto from '@/pages/Presupuesto'
-import Rentabilidad from '@/pages/Rentabilidad'
+import ResultadoOperativo from '@/pages/ResultadoOperativo'
+import Costos from '@/pages/Costos'
+import Valorizacion from '@/pages/Valorizacion'
 import Supervisores from '@/pages/Supervisores'
 import Trabajadores from '@/pages/Trabajadores'
 import OTMs from '@/pages/OTMs'
@@ -57,9 +59,9 @@ export default function App() {
             <Route path="valor-ganado" element={<ValorGanado />} />
             <Route path="presupuesto"  element={<Presupuesto />} />
             <Route path="guia-fases"   element={<GuiaFases />} />
-            <Route path="inventario"   element={<Placeholder title="Inventario y Materiales" desc="Registro de facturas y control de compras."  icon="📦" />} />
-            <Route path="valorizacion" element={<Placeholder title="Valorización"            desc="Consolidado mensual para presentar a SMCV." icon="🧾" />} />
-            <Route path="rentabilidad" element={<Rentabilidad />} />
+            <Route path="inventario"   element={<Costos />} />
+            <Route path="valorizacion" element={<Valorizacion />} />
+            <Route path="rentabilidad" element={<ResultadoOperativo />} />
             <Route path="edicion"      element={<EdicionDatos />} />
             <Route path="monitor"      element={<Monitor />} />
             <Route path="bitacora"     element={<Bitacora />} />
