@@ -55,6 +55,23 @@ export const etiqueta = (dic: Record<string, string>, sigla?: string | null): st
 export const nombreLargo = (dic: Record<string, string>, sigla?: string | null): string =>
   (sigla && dic[sigla]) || sigla || '—'
 
+// ── Last Planner: catálogos de CNC y restricciones (espejo del API) ──
+/** Causas de No Cumplimiento (para el Pareto del PPC). */
+export const CNC: Record<string, string> = {
+  MATERIALES: 'Falta de materiales', MANO_OBRA: 'Falta de mano de obra',
+  EQUIPOS: 'Falta de equipos', INFORMACION: 'Falta de información / ingeniería',
+  CLIMA: 'Clima', INTERFERENCIA: 'Interferencia con otra disciplina',
+  PRERREQUISITO: 'Prerrequisito no terminado', CLIENTE: 'Cambio de prioridad del cliente',
+  PROGRAMACION: 'Mala programación / estimación', OTROS: 'Otros',
+}
+
+/** Tipos de restricción del lookahead. */
+export const TIPOS_RESTRICCION: Record<string, string> = {
+  MATERIALES: 'Materiales', MANO_OBRA: 'Mano de obra', EQUIPOS: 'Equipos',
+  INFORMACION: 'Información / planos', PRERREQUISITO: 'Prerrequisito',
+  PERMISOS: 'Permisos', ESPACIO: 'Espacio / acceso', OTROS: 'Otros',
+}
+
 // ── Catálogo de fases (tabla `fases` del API, GET /ev/fases) ──
 export interface Fase {
   id: number

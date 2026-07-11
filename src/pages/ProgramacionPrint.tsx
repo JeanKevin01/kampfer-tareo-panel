@@ -8,6 +8,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Printer } from 'lucide-react'
 import { api, API_BASE } from '@/lib/api'
 import { lunesDe, iso } from '@/lib/semana'
+import { CNC } from '@/lib/catalogos'
 import type { Semana, Reporte } from '@/pages/Programacion'
 
 const PROYECTO_ID = 1
@@ -55,6 +56,23 @@ export default function ProgramacionPrint() {
             {s.actividades.length} actividades programadas · {s.reportes.length} reportes de campo ·
             generado el {new Date().toLocaleDateString('es-PE', { day: 'numeric', month: 'long', year: 'numeric' })}
           </div>
+          {(() => {
+            const comp = s.actividades.filter(a => a.estado !== 'CANCELADO')
+            const cump = comp.filter(a => a.estado === 'EJECUTADO').length
+            const nc = comp.filter(a => a.estado === 'NO_CUMPLIDA')
+            if (!comp.length) return null
+            return (
+              <div style={{ fontSize: 13, marginTop: 6 }}>
+                <b>PPC de la semana: {Math.round((cump / comp.length) * 100)}%</b>
+                {' '}({cump} de {comp.length} compromisos cumplidos)
+                {nc.length > 0 && (
+                  <span> · Causas: {Object.entries(nc.reduce((m: Record<string, number>, a) => {
+                    const k = CNC[a.causa_nc_cat ?? ''] ?? 'Otros'; m[k] = (m[k] || 0) + 1; return m
+                  }, {})).map(([k, n]) => `${k} (${n})`).join(', ')}</span>
+                )}
+              </div>
+            )
+          })()}
         </div>
 
         {s.fechas.map((f, i) => {
@@ -84,9 +102,9 @@ export default function ProgramacionPrint() {
                     </div>
                   )}
                   {a.descripcion && <div style={{ fontSize: 12, margin: '4px 0' }}>{a.descripcion}</div>}
-                  {a.estado === 'NO_CUMPLIDA' && a.causa_nc && (
+                  {a.estado === 'NO_CUMPLIDA' && (a.causa_nc_cat || a.causa_nc) && (
                     <div style={{ fontSize: 12, margin: '4px 0', color: '#8f1d1d' }}>
-                      <b>Causa de no cumplimiento:</b> {a.causa_nc}
+                      <b>Causa de no cumplimiento:</b> {CNC[a.causa_nc_cat ?? ''] ?? ''}{a.causa_nc ? ` — ${a.causa_nc}` : ''}
                     </div>
                   )}
                   {a.reportes.map(id => { const r = repsPorId.get(id); return r ? <BloqueReporte key={id} rep={r} /> : null })}
