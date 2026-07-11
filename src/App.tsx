@@ -26,6 +26,7 @@ import Login from '@/pages/Login'
 import Usuarios from '@/pages/Usuarios'
 import Programacion from '@/pages/Programacion'
 import ProgramacionPrint from '@/pages/ProgramacionPrint'
+import MatrizHistorica from '@/pages/MatrizHistorica'
 import { currentUser } from '@/lib/auth'
 
 const qc = new QueryClient({
@@ -57,6 +58,7 @@ export default function App() {
             <Route path="qrs"          element={<QRs />} />
             <Route path="impresion-qr" element={<ImpresionQR />} />
             <Route path="registros"    element={<RegistrosHH />} />
+            <Route path="matriz"       element={<MatrizHistorica />} />
             <Route path="reportes"     element={<Reportes />} />
             <Route path="monitor-tareo" element={<MonitorTareo />} />
             <Route path="otms"         element={<OTMs />} />

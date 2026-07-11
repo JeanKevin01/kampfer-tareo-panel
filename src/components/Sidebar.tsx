@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom'
 import {
   LayoutDashboard, UserCheck, Users, Upload, QrCode, Printer,
-  Table2, BarChart3, ClipboardList, FileSpreadsheet, Package, CalendarDays,
+  Table2, BarChart3, ClipboardList, FileSpreadsheet, Package, CalendarDays, Grid3X3,
   Receipt, TrendingUp, PenLine, Activity, History, ChevronRight, Target,
   FileText, LogOut, ShieldCheck, PanelLeftClose, PanelLeft,
   type LucideIcon,
@@ -33,6 +33,7 @@ const NAV: NavGroup[] = [
     label: 'Tareo',
     items: [
       { path: '/registros',    label: 'Registros y HH', icon: Table2 },
+      { path: '/matriz',       label: 'Matriz histórica', icon: Grid3X3 },
       { path: '/reportes',     label: 'Analytics',      icon: BarChart3 },
       { path: '/monitor-tareo', label: 'Monitor tareo', icon: Activity },
     ],
