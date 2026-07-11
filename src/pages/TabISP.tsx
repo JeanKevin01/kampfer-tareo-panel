@@ -5,15 +5,11 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { ChevronDown, ChevronRight, Loader2, AlertTriangle, Plus, Trash2 } from 'lucide-react'
 
 import { API_BASE } from '@/lib/api'
+import { FASE_COLOR } from '@/lib/wbs'
 const API = API_BASE
 
-const FASE_COLOR: Record<string,string> = {
-  FAB:'#2DD4A8',EST:'#60A5FA',MEC:'#FB923C',ELE:'#FACC15',
-  TUB:'#A78BFA',INS:'#F472B6',CIV:'#94A3B8',AND:'#34D399',
-  APY:'#86EFAC',ING:'#FCD34D',COM:'#C4B5FD',
-}
-
 // Colores por nivel WBS (igual que WBSArbol) — Raíz/Sección/Sub-sección/Detalle
+// (alphas más suaves que los de lib/wbs.ts a propósito: fondo de tabla densa)
 const NIVEL_COLOR: Record<number, { text:string; bg:string; border:string; bold:boolean }> = {
   1: { text:'#FF9B9B', bg:'rgba(255,123,123,0.16)', border:'#FF9B9B', bold:true  }, // raíz
   2: { text:'#7FE0D4', bg:'rgba(127,224,212,0.15)', border:'#7FE0D4', bold:true  }, // sección

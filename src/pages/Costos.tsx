@@ -1,11 +1,14 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Loader2, Lock, Unlock, Upload, Trash2, X, Calendar } from 'lucide-react'
+import { Plus, Loader2, Lock, Unlock, Upload, Trash2, X, Calendar, Download } from 'lucide-react'
+import * as XLSX from 'xlsx'
 import { api } from '@/lib/api'
+import {
+  RECURSOS, RECURSOS_ALTA_MANUAL, TIPOS_DOC, TIPOS_DOC_ALTA_MANUAL,
+  etiqueta, nombreLargo, type Fase, etiquetaFase, nombreFase,
+} from '@/lib/catalogos'
 
 const PROYECTO_ID = 1
-const RECURSOS = ['MAT', 'EQP', 'EQT', 'SUB', 'DIR', 'GG'] as const
-const TIPOS_DOC = ['FACTURA', 'OC', 'VALE', 'OTRO'] as const
 
 interface Periodo { id: number; anio: number; mes: number; tipo_cambio: number; estado: string }
 interface Doc {
@@ -22,6 +25,7 @@ export default function Costos() {
   const qc = useQueryClient()
   const [perSel, setPerSel] = useState<number | 0>(0)
   const [showImport, setShowImport] = useState(false)
+  const [showNuevaFase, setShowNuevaFase] = useState(false)
   const [form, setForm] = useState({ tipo_doc: 'FACTURA', proveedor: '', numero_doc: '',
     fecha: new Date().toISOString().slice(0, 10), tipo_recurso: 'MAT', directo: true,
     fase: '', moneda: 'PEN', monto: '', glosa: '' })
@@ -30,6 +34,10 @@ export default function Costos() {
   const periodos = useQuery<Periodo[]>({
     queryKey: ['periodos'],
     queryFn: () => api(`/ev/periodos?proyecto_id=${PROYECTO_ID}`),
+  })
+  const fases = useQuery<Fase[]>({
+    queryKey: ['fases'],
+    queryFn: () => api(`/ev/fases?proyecto_id=${PROYECTO_ID}`),
   })
   const docs = useQuery<{ documentos: Doc[]; total: number; n: number }>({
     queryKey: ['costo-docs', perSel],
@@ -116,16 +124,28 @@ export default function Costos() {
       {/* Alta rápida */}
       <div className="bg-k-surface border border-k-border rounded-xl p-4">
         <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-          <select value={form.tipo_doc} onChange={e => setForm({ ...form, tipo_doc: e.target.value })} className={inputCls}>
-            {TIPOS_DOC.map(t => <option key={t}>{t}</option>)}
+          <select value={form.tipo_doc} onChange={e => setForm({ ...form, tipo_doc: e.target.value })}
+            className={inputCls} title="Tipo de documento">
+            {TIPOS_DOC_ALTA_MANUAL.map(t => <option key={t} value={t}>{etiqueta(TIPOS_DOC, t)}</option>)}
           </select>
           <input placeholder="Proveedor" value={form.proveedor} onChange={e => setForm({ ...form, proveedor: e.target.value })} className={inputCls} />
           <input placeholder="Nº doc" value={form.numero_doc} onChange={e => setForm({ ...form, numero_doc: e.target.value })} className={inputCls} />
           <input type="date" value={form.fecha} onChange={e => setForm({ ...form, fecha: e.target.value })} className={inputCls} />
-          <select value={form.tipo_recurso} onChange={e => setForm({ ...form, tipo_recurso: e.target.value, directo: !['DIR', 'GG'].includes(e.target.value) })} className={inputCls}>
-            {RECURSOS.map(t => <option key={t}>{t}</option>)}
+          <select value={form.tipo_recurso}
+            onChange={e => setForm({ ...form, tipo_recurso: e.target.value, directo: !['DIR', 'GG'].includes(e.target.value) })}
+            className={inputCls} title="Tipo de recurso (la MO no se digita: sale del tareo)">
+            {RECURSOS_ALTA_MANUAL.map(t => <option key={t} value={t}>{etiqueta(RECURSOS, t)}</option>)}
           </select>
-          <input placeholder="Fase (ej. 11)" value={form.fase} onChange={e => setForm({ ...form, fase: e.target.value })} className={inputCls} />
+          <select value={form.fase}
+            onChange={e => {
+              if (e.target.value === '__nueva__') { setShowNuevaFase(true); return }
+              setForm({ ...form, fase: e.target.value })
+            }}
+            className={inputCls} title="Fase del catálogo (administra las fases en Guía de Fases → Catálogo)">
+            <option value="">Sin fase (costo general)</option>
+            {(fases.data ?? []).map(f => <option key={f.id} value={f.codigo}>{etiquetaFase(f)}</option>)}
+            <option value="__nueva__">+ Nueva fase…</option>
+          </select>
           <select value={form.moneda} onChange={e => setForm({ ...form, moneda: e.target.value })} className={inputCls}>
             <option>PEN</option><option>USD</option>
           </select>
@@ -159,11 +179,16 @@ export default function Costos() {
               {(docs.data?.documentos ?? []).map(d => (
                 <tr key={d.id} className="border-b border-k-border/40 hover:bg-k-raised/40">
                   <td className="px-3 py-1.5 text-k-text3">{MESES[d.mes]} {d.anio}</td>
-                  <td className="px-3 py-1.5 text-k-text2">{d.tipo_doc}</td>
+                  <td className="px-3 py-1.5 text-k-text2" title={nombreLargo(TIPOS_DOC, d.tipo_doc)}>{nombreLargo(TIPOS_DOC, d.tipo_doc)}</td>
                   <td className="px-3 py-1.5 text-k-text2">{d.proveedor}</td>
                   <td className="px-3 py-1.5 font-mono text-k-text3">{d.numero_doc}</td>
-                  <td className="px-3 py-1.5"><span className={d.directo ? 'text-k-green' : 'text-k-amber'}>{d.tipo_recurso}</span></td>
-                  <td className="px-3 py-1.5 text-k-text2">{d.fase}</td>
+                  <td className="px-3 py-1.5" title={nombreLargo(RECURSOS, d.tipo_recurso)}>
+                    <span className={d.directo ? 'text-k-green' : 'text-k-amber'}>{d.tipo_recurso}</span>
+                    <span className="text-k-text3"> · {nombreLargo(RECURSOS, d.tipo_recurso)}</span>
+                  </td>
+                  <td className="px-3 py-1.5 text-k-text2 max-w-[160px] truncate" title={nombreFase(fases.data, d.fase)}>
+                    {d.fase ? nombreFase(fases.data, d.fase) : ''}
+                  </td>
                   <td className="px-3 py-1.5 text-right text-k-text">{d.moneda === 'USD' ? '$' : 'S/'} {fmt(d.monto)}</td>
                   <td className="px-3 py-1.5 text-k-text3 max-w-[200px] truncate">{d.glosa}</td>
                   <td className="px-3 py-1.5 text-k-text3">{d.fuente}</td>
@@ -181,12 +206,83 @@ export default function Costos() {
         </div>
       </div>
 
-      {showImport && <ModalImport onClose={() => { setShowImport(false); invalidar() }} />}
+      {showImport && <ModalImport fases={fases.data ?? []} onClose={() => { setShowImport(false); invalidar() }} />}
+      {showNuevaFase && (
+        <ModalNuevaFase
+          onClose={() => setShowNuevaFase(false)}
+          onCreada={(codigo) => { setShowNuevaFase(false); setForm(f => ({ ...f, fase: codigo })); qc.invalidateQueries({ queryKey: ['fases'] }) }}
+        />
+      )}
     </div>
   )
 }
 
-function ModalImport({ onClose }: { onClose: () => void }) {
+function ModalNuevaFase({ onClose, onCreada }: { onClose: () => void; onCreada: (codigo: string) => void }) {
+  const [codigo, setCodigo] = useState('')
+  const [nombre, setNombre] = useState('')
+  const [error, setError] = useState('')
+
+  const crear = useMutation({
+    mutationFn: () => api<Fase>('/ev/fases', {
+      method: 'POST',
+      body: JSON.stringify({ proyecto_id: PROYECTO_ID, codigo, nombre }),
+    }),
+    onSuccess: (f) => onCreada(f.codigo),
+    onError: (e: Error) => setError(e.message),
+  })
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-k-surface border border-k-border rounded-xl p-5 w-[380px]" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="font-bold text-k-text">Nueva fase</h2>
+          <button onClick={onClose} className="text-k-text3 hover:text-k-text"><X size={18} /></button>
+        </div>
+        <div className="space-y-2">
+          <input placeholder="Código (ej. 11 o CIV)" value={codigo} onChange={e => setCodigo(e.target.value)}
+            className={`${inputCls} w-full`} autoFocus />
+          <input placeholder="Nombre (ej. Obras civiles)" value={nombre} onChange={e => setNombre(e.target.value)}
+            className={`${inputCls} w-full`} />
+          {error && <p className="text-k-red text-xs">{error}</p>}
+          <button onClick={() => crear.mutate()} disabled={crear.isPending || !codigo.trim() || !nombre.trim()}
+            className="w-full bg-k-amber text-black font-bold text-sm py-2.5 rounded-lg disabled:opacity-40">
+            {crear.isPending ? 'Creando…' : 'Crear fase'}
+          </button>
+          <p className="text-[11px] text-k-text3">La fase queda en el catálogo del proyecto (editable en Guía de Fases → Catálogo).</p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function descargarPlantillaCostos(fases: Fase[]) {
+  const wb = XLSX.utils.book_new()
+  const docsWs = XLSX.utils.json_to_sheet([
+    { PROVEEDOR: 'FERRETERIA EL SOL SAC', NUMERO_DOC: 'F001-000123', FECHA: '2026-07-05', TIPO_DOC: 'FACTURA',
+      TIPO_RECURSO: 'MAT', DIRECTO: 'SI', FASE: fases[0]?.codigo ?? '11', MONEDA: 'PEN', MONTO: 1250.5, GLOSA: 'Pernos y soldadura' },
+    { PROVEEDOR: 'GRUAS ANDINAS EIRL', NUMERO_DOC: 'F002-000456', FECHA: '2026-07-08', TIPO_DOC: 'OC',
+      TIPO_RECURSO: 'EQT', DIRECTO: 'SI', FASE: fases[0]?.codigo ?? '11', MONEDA: 'PEN', MONTO: 3800, GLOSA: 'Alquiler grúa 25t' },
+  ], { header: ['PROVEEDOR', 'NUMERO_DOC', 'FECHA', 'TIPO_DOC', 'TIPO_RECURSO', 'DIRECTO', 'FASE', 'MONEDA', 'MONTO', 'GLOSA'] })
+  docsWs['!cols'] = [{ wch: 28 }, { wch: 14 }, { wch: 12 }, { wch: 10 }, { wch: 13 }, { wch: 9 }, { wch: 8 }, { wch: 8 }, { wch: 10 }, { wch: 30 }]
+  XLSX.utils.book_append_sheet(wb, docsWs, 'DOCUMENTOS')
+
+  const leyenda = [
+    { CAMPO: 'TIPO_DOC', VALOR: '', SIGNIFICADO: 'Tipo de documento — valores válidos:' },
+    ...TIPOS_DOC_ALTA_MANUAL.map(t => ({ CAMPO: '', VALOR: t, SIGNIFICADO: TIPOS_DOC[t] })),
+    { CAMPO: 'TIPO_RECURSO', VALOR: '', SIGNIFICADO: 'Tipo de recurso — valores válidos (la MO no se importa: sale del tareo):' },
+    ...RECURSOS_ALTA_MANUAL.map(t => ({ CAMPO: '', VALOR: t, SIGNIFICADO: RECURSOS[t] })),
+    { CAMPO: 'DIRECTO', VALOR: 'SI / NO', SIGNIFICADO: 'SI = costo directo de obra · NO = indirecto (DIR y GG siempre son NO)' },
+    { CAMPO: 'FECHA', VALOR: 'YYYY-MM-DD', SIGNIFICADO: 'Determina el mes contable (el periodo debe estar ABIERTO)' },
+    { CAMPO: 'FASE', VALOR: '', SIGNIFICADO: 'Fases del catálogo del proyecto:' },
+    ...fases.map(f => ({ CAMPO: '', VALOR: f.codigo, SIGNIFICADO: f.nombre })),
+  ]
+  const leyWs = XLSX.utils.json_to_sheet(leyenda, { header: ['CAMPO', 'VALOR', 'SIGNIFICADO'] })
+  leyWs['!cols'] = [{ wch: 16 }, { wch: 14 }, { wch: 60 }]
+  XLSX.utils.book_append_sheet(wb, leyWs, 'LEYENDA')
+  XLSX.writeFile(wb, 'plantilla_costos_kampfer.xlsx')
+}
+
+function ModalImport({ fases, onClose }: { fases: Fase[]; onClose: () => void }) {
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<{ resumen: { filas: number; total: number; errores: string[] } } | null>(null)
   const [error, setError] = useState('')
@@ -211,12 +307,19 @@ function ModalImport({ onClose }: { onClose: () => void }) {
         <p className="text-xs text-k-text3 mb-3">
           Columnas: PROVEEDOR, NUMERO_DOC, FECHA (YYYY-MM-DD), TIPO_DOC, TIPO_RECURSO, DIRECTO, FASE, MONEDA, MONTO, GLOSA.
           Reimportar el mismo archivo REEMPLAZA sus documentos (idempotente).
+          La hoja LEYENDA de la plantilla lista los valores válidos y las fases del proyecto.
         </p>
-        <label className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg bg-k-amber text-black font-bold cursor-pointer w-fit mb-3">
-          <Upload size={14} /> {file ? file.name : 'Elegir archivo'}
-          <input type="file" accept=".xlsx" className="hidden"
-            onChange={e => { setFile(e.target.files?.[0] ?? null); setPreview(null); setError(''); setOk('') }} />
-        </label>
+        <div className="flex items-center gap-2 mb-3">
+          <label className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg bg-k-amber text-black font-bold cursor-pointer w-fit">
+            <Upload size={14} /> {file ? file.name : 'Elegir archivo'}
+            <input type="file" accept=".xlsx" className="hidden"
+              onChange={e => { setFile(e.target.files?.[0] ?? null); setPreview(null); setError(''); setOk('') }} />
+          </label>
+          <button onClick={() => descargarPlantillaCostos(fases)}
+            className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-k-border bg-k-raised text-k-text2 hover:bg-k-border">
+            <Download size={14} /> Descargar plantilla
+          </button>
+        </div>
         {file && !preview && (
           <button onClick={() => subir.mutate(false, { onSuccess: j => setPreview(j as never) })}
             disabled={subir.isPending}

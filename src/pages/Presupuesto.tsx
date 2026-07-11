@@ -6,7 +6,8 @@ import {
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 
-import { api, ApiError } from '@/lib/api'
+import { api, ApiError, apiBlob, descargarBlob } from '@/lib/api'
+import { RECURSOS_APU, nombreLargo } from '@/lib/catalogos'
 
 const PROYECTO_ID = 1   // TODO: vendrá del selector de proyecto (tenant) cuando se active el scoping
 
@@ -454,7 +455,10 @@ function FilaMeta({ linea: r }: { linea: Linea }) {
                 <tbody>
                   {(apu.data ?? []).map(rec => (
                     <tr key={rec.id} className="border-b border-k-border/30">
-                      <td className={`px-2 py-1 font-bold ${TIPO_REC_CLR[rec.tipo] ?? ''}`}>{rec.tipo}</td>
+                      <td className={`px-2 py-1 font-bold ${TIPO_REC_CLR[rec.tipo] ?? ''}`}
+                        title={nombreLargo(RECURSOS_APU, rec.tipo)}>
+                        {rec.tipo} <span className="font-normal text-k-text3">· {nombreLargo(RECURSOS_APU, rec.tipo)}</span>
+                      </td>
                       <td className="px-2 py-1 font-mono text-k-text3">{rec.codigo}</td>
                       <td className="px-2 py-1 text-k-text2">
                         {rec.descripcion}
@@ -520,11 +524,21 @@ function ModalImportPU({ onClose, onDone }: { onClose: () => void; onDone: (id: 
           Crea una versión nueva en borrador; nada se activa hasta que la congeles.
         </p>
 
-        <label className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg bg-k-amber hover:bg-k-amber2 text-black font-bold cursor-pointer w-fit mb-3">
-          <Upload size={14} /> {file ? file.name : 'Elegir archivo .xls'}
-          <input type="file" accept=".xls" className="hidden"
-            onChange={e => { setFile(e.target.files?.[0] ?? null); setPreview(null); setError('') }} />
-        </label>
+        <div className="flex items-center gap-2 mb-3">
+          <label className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg bg-k-amber hover:bg-k-amber2 text-black font-bold cursor-pointer w-fit">
+            <Upload size={14} /> {file ? file.name : 'Elegir archivo .xls'}
+            <input type="file" accept=".xls" className="hidden"
+              onChange={e => { setFile(e.target.files?.[0] ?? null); setPreview(null); setError('') }} />
+          </label>
+          <button
+            onClick={async () => {
+              try { descargarBlob(await apiBlob('/ev/presupuesto/plantilla-pu'), 'plantilla_pu.xls') }
+              catch (e) { setError((e as Error).message) }
+            }}
+            className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-k-border bg-k-raised text-k-text2 hover:bg-k-border">
+            <Download size={14} /> Descargar plantilla
+          </button>
+        </div>
 
         {file && !preview && (
           <button onClick={previsualizar} disabled={subir.isPending}

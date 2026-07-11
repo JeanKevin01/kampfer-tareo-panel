@@ -1,9 +1,11 @@
 import { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { Loader2, ChevronDown, ChevronRight, Info } from 'lucide-react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { Loader2, ChevronDown, ChevronRight, Info, Plus, BookOpen, Database } from 'lucide-react'
 
-import { API_BASE } from '@/lib/api'
+import { API_BASE, api } from '@/lib/api'
+import type { Fase as FaseCat } from '@/lib/catalogos'
 const API = API_BASE
+const PROYECTO_ID = 1
 
 interface Partida { id: number; otm_id: string; fase: string; sub_fase: string; descripcion: string; hh_presup: number; activo: boolean }
 
@@ -129,8 +131,116 @@ function BarDisciplina({ fase, hh, total, partidas, otms, active, onClick }: {
   )
 }
 
+// ── Tab "Catálogo del proyecto": CRUD de la tabla `fases` del API ──
+const inputCat = 'bg-k-raised border border-k-border rounded px-2 py-1 text-xs text-k-text outline-none focus:border-k-amber'
+
+function CatalogoFases() {
+  const qc = useQueryClient()
+  const [nueva, setNueva] = useState({ codigo: '', nombre: '', color: '#D97706' })
+  const [error, setError] = useState('')
+
+  const fases = useQuery<FaseCat[]>({
+    queryKey: ['fases', 'todas'],
+    queryFn: () => api(`/ev/fases?proyecto_id=${PROYECTO_ID}&incluir_inactivas=true`),
+  })
+
+  const invalidar = () => { qc.invalidateQueries({ queryKey: ['fases'] }); setError('') }
+
+  const crear = useMutation({
+    mutationFn: () => api('/ev/fases', {
+      method: 'POST', body: JSON.stringify({ proyecto_id: PROYECTO_ID, ...nueva }),
+    }),
+    onSuccess: () => { invalidar(); setNueva({ codigo: '', nombre: '', color: '#D97706' }) },
+    onError: (e: Error) => setError(e.message),
+  })
+  const editar = useMutation({
+    mutationFn: ({ id, ...campos }: { id: number } & Partial<FaseCat>) =>
+      api(`/ev/fases/${id}`, { method: 'PUT', body: JSON.stringify(campos) }),
+    onSuccess: invalidar,
+    onError: (e: Error) => setError(e.message),
+  })
+
+  return (
+    <div className="bg-k-surface border border-k-border rounded-xl overflow-hidden">
+      <div className="px-5 py-4 border-b border-k-border bg-k-raised">
+        <h2 className="text-sm font-bold text-k-text">Catálogo de fases del proyecto</h2>
+        <p className="text-[11px] text-k-text3 mt-0.5">
+          Estas fases alimentan los desplegables (Costos, importadores) y los nombres del Resultado Operativo.
+          El código no se puede cambiar después de creado; una fase que ya no aplica se desactiva.
+        </p>
+      </div>
+
+      {/* Alta */}
+      <div className="px-4 py-3 border-b border-k-border flex flex-wrap items-center gap-2">
+        <input placeholder="Código (ej. 11 o CIV)" value={nueva.codigo}
+          onChange={e => setNueva({ ...nueva, codigo: e.target.value })} className={`${inputCat} w-36`} />
+        <input placeholder="Nombre (ej. Obras civiles)" value={nueva.nombre}
+          onChange={e => setNueva({ ...nueva, nombre: e.target.value })} className={`${inputCat} w-64`} />
+        <input type="color" value={nueva.color} title="Color"
+          onChange={e => setNueva({ ...nueva, color: e.target.value })}
+          className="w-8 h-7 rounded border border-k-border bg-k-raised cursor-pointer" />
+        <button onClick={() => crear.mutate()} disabled={crear.isPending || !nueva.codigo.trim() || !nueva.nombre.trim()}
+          className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-k-amber text-black font-bold disabled:opacity-40">
+          <Plus size={12} /> Agregar fase
+        </button>
+        {error && <span className="text-k-red text-xs">{error}</span>}
+      </div>
+
+      {/* Tabla */}
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="text-[10px] uppercase text-k-text3 border-b border-k-border">
+              <th className="text-left px-4 py-2">Código</th>
+              <th className="text-left px-3 py-2">Nombre</th>
+              <th className="text-left px-3 py-2">Color</th>
+              <th className="text-left px-3 py-2">Orden</th>
+              <th className="text-left px-3 py-2">Activa</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(fases.data ?? []).map(f => (
+              <tr key={f.id} className={`border-b border-k-border/40 ${f.activo ? '' : 'opacity-45'}`}>
+                <td className="px-4 py-1.5 font-mono font-bold" style={{ color: f.color || undefined }}>{f.codigo}</td>
+                <td className="px-3 py-1.5">
+                  <input defaultValue={f.nombre} className={`${inputCat} w-72`}
+                    onBlur={e => { const v = e.target.value.trim(); if (v && v !== f.nombre) editar.mutate({ id: f.id, nombre: v }) }} />
+                </td>
+                <td className="px-3 py-1.5">
+                  <input type="color" defaultValue={f.color || '#888780'}
+                    onBlur={e => { if (e.target.value !== f.color) editar.mutate({ id: f.id, color: e.target.value }) }}
+                    className="w-8 h-6 rounded border border-k-border bg-k-raised cursor-pointer" />
+                </td>
+                <td className="px-3 py-1.5">
+                  <input type="number" defaultValue={f.orden} className={`${inputCat} w-16`}
+                    onBlur={e => { const v = Number(e.target.value); if (v !== f.orden) editar.mutate({ id: f.id, orden: v }) }} />
+                </td>
+                <td className="px-3 py-1.5">
+                  <input type="checkbox" checked={f.activo} className="accent-amber-500 cursor-pointer"
+                    onChange={e => editar.mutate({ id: f.id, activo: e.target.checked })} />
+                </td>
+              </tr>
+            ))}
+            {fases.isLoading && (
+              <tr><td colSpan={5} className="px-4 py-6 text-center text-k-text3">
+                <Loader2 size={14} className="animate-spin inline mr-2" />Cargando catálogo…
+              </td></tr>
+            )}
+            {!fases.isLoading && (fases.data ?? []).length === 0 && (
+              <tr><td colSpan={5} className="px-4 py-6 text-center text-k-text3">
+                Catálogo vacío (aplica la migración 0018 en el API).
+              </td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 export default function GuiaFases() {
   const [activeFase, setActiveFase] = useState<string | null>(null)
+  const [tab, setTab] = useState<'guia' | 'catalogo'>('guia')
 
   const { data: partidas = [], isLoading } = useQuery<Partida[]>({
     queryKey: ['ev-partidas-all'],
@@ -161,6 +271,20 @@ export default function GuiaFases() {
   return (
     <div className="space-y-6">
 
+      {/* Tabs: guía de referencia vs catálogo editable */}
+      <div className="flex gap-2">
+        {([['guia', 'Guía de referencia', BookOpen], ['catalogo', 'Catálogo del proyecto', Database]] as const).map(([k, l, Icon]) => (
+          <button key={k} onClick={() => setTab(k)}
+            className={`flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border font-medium ${
+              tab === k ? 'border-k-amber bg-amber-500/10 text-k-amber' : 'border-k-border text-k-text2 hover:bg-k-raised'}`}>
+            <Icon size={14} /> {l}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'catalogo' && <CatalogoFases />}
+
+      {tab === 'guia' && <>
       {/* KPIs */}
       <div className="grid grid-cols-3 gap-4">
         {[
@@ -258,6 +382,7 @@ export default function GuiaFases() {
           </div>
         </div>
       </div>
+      </>}
     </div>
   )
 }

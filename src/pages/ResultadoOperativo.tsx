@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Loader2, Download, RefreshCw, Pencil } from 'lucide-react'
 import { api, API_BASE } from '@/lib/api'
+import { RECURSOS, CONCEPTOS_VENTA, nombreLargo } from '@/lib/catalogos'
 import { getToken } from '@/lib/auth'
 import Rentabilidad from '@/pages/Rentabilidad'
 
@@ -149,7 +150,7 @@ function TObra({ ro }: { ro: RO }) {
           <tbody>
             {t.venta.filter(c => c.mes || c.acum).map(c => (
               <tr key={c.concepto} className="border-b border-k-border/40">
-                <td className="px-4 py-1.5 text-k-text2">{c.concepto.replace('_', ' ')}</td>
+                <td className="px-4 py-1.5 text-k-text2">{nombreLargo(CONCEPTOS_VENTA, c.concepto)}</td>
                 <td className="px-4 py-1.5 text-right text-k-text2">{fmt(c.mes)}</td>
                 <td className="px-4 py-1.5 text-right text-k-text">{fmt(c.acum)}</td>
                 <td className="px-4 py-1.5 text-right text-k-text3">{fmt(c.margen_previsto_acum)}</td>
@@ -180,7 +181,7 @@ function TObra({ ro }: { ro: RO }) {
               if (!dm && !da && !im && !ia) return null
               return (
                 <tr key={r} className="border-b border-k-border/40">
-                  <td className="px-4 py-1.5 text-k-text2">{r}</td>
+                  <td className="px-4 py-1.5 text-k-text2" title={nombreLargo(RECURSOS, r)}>{r} <span className="text-k-text3">· {nombreLargo(RECURSOS, r)}</span></td>
                   <td className="px-4 py-1.5 text-right text-k-text2">{fmt(dm)}</td>
                   <td className="px-4 py-1.5 text-right text-k-text">{fmt(da)}</td>
                   <td className="px-4 py-1.5 text-right text-k-text2">{fmt(im)}</td>
@@ -222,7 +223,8 @@ function RFases({ filas }: { filas: FilaFase[] }) {
       <table className="w-full text-xs">
         <thead><tr className="text-[10px] uppercase text-k-text3 border-b border-k-border">
           {['Fase', 'MAT', 'MO', 'EQP', 'EQT', 'SUB', 'DIR', 'GG', 'TOTAL', 'VENTA', 'MARGEN', '%', 'META'].map(h => (
-            <th key={h} className={`px-2.5 py-2 ${h === 'Fase' ? 'text-left' : 'text-right'}`}>{h}</th>
+            <th key={h} className={`px-2.5 py-2 ${h === 'Fase' ? 'text-left' : 'text-right'}`}
+              title={nombreLargo(RECURSOS, h)}>{h}</th>
           ))}
         </tr></thead>
         <tbody>

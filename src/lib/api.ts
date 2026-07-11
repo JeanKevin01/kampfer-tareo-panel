@@ -44,3 +44,33 @@ export async function api<T = unknown>(path: string, init: RequestInit = {}): Pr
   }
   return res.json() as Promise<T>
 }
+
+/** Igual que `api()` pero devuelve el cuerpo crudo como Blob — para descargas
+ *  (plantillas, exports .xlsx) que necesitan el token en el header. */
+export async function apiBlob(path: string, init: RequestInit = {}): Promise<Blob> {
+  const headers: Record<string, string> = { ...(init.headers as Record<string, string> || {}) }
+  const tk = getToken()
+  if (tk) headers['Authorization'] = `Bearer ${tk}`
+
+  const res = await fetch(`${API_BASE}${path}`, { ...init, headers })
+
+  if (res.status === 401 && tk) {
+    clearToken()
+    location.reload()
+  }
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new ApiError(res.status, (data as { detail?: string }).detail || `Error ${res.status}`)
+  }
+  return res.blob()
+}
+
+/** Dispara la descarga de un Blob en el navegador con el nombre dado. */
+export function descargarBlob(blob: Blob, nombre: string) {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = nombre
+  a.click()
+  URL.revokeObjectURL(url)
+}

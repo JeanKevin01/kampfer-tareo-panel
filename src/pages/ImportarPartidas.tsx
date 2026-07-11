@@ -386,12 +386,14 @@ export default function ImportarPartidas() {
                     <td className="py-1.5 px-3 text-[11px] font-bold" style={{color: f.fase ? '#3B82F6' : '#888'}}>{f.fase ?? <span style={{color:'#888',fontStyle:'italic'}}>padre WBS</span>}</td>
                     <td className="py-1.5 px-3 text-[10px] font-bold">
                       {f.fase
-                        ? <span style={{color: f.tipo_costo === 'INDIRECTO' ? '#F59E0B' : '#10B981'}}>{f.tipo_costo === 'INDIRECTO' ? 'IND' : 'DIR'}</span>
+                        ? <span title={f.tipo_costo === 'INDIRECTO' ? 'Costo indirecto' : 'Costo directo'}
+                            style={{color: f.tipo_costo === 'INDIRECTO' ? '#F59E0B' : '#10B981'}}>{f.tipo_costo === 'INDIRECTO' ? 'IND' : 'DIR'}</span>
                         : <span className="text-k-text3">—</span>}
                     </td>
                     <td className="py-1.5 px-3 text-[10px] font-bold">
                       {f.fase
-                        ? <span style={{color: f.naturaleza === 'ADICIONAL' ? '#C084FC' : '#60A5FA'}}>{f.naturaleza === 'ADICIONAL' ? 'ADIC' : 'CONTR'}</span>
+                        ? <span title={f.naturaleza === 'ADICIONAL' ? 'Partida adicional' : 'Partida contractual'}
+                            style={{color: f.naturaleza === 'ADICIONAL' ? '#C084FC' : '#60A5FA'}}>{f.naturaleza === 'ADICIONAL' ? 'ADIC' : 'CONTR'}</span>
                         : <span className="text-k-text3">—</span>}
                     </td>
                     <td className="py-1.5 px-3 text-[11px] text-k-text2">{f.sistema ?? '—'}</td>
