@@ -36,7 +36,8 @@ export default function MatrizHistorica() {
   const [otm, setOtm] = useState('')
   const [colapsados, setColapsados] = useState<Set<string>>(new Set())
 
-  const otms = useQuery<{ id: string; descripcion: string }[]>({
+  // OJO: /ev/otms devuelve `otm_id` (no `id`).
+  const otms = useQuery<{ otm_id: string; descripcion: string }[]>({
     queryKey: ['otms-lista'],
     queryFn: () => api('/ev/otms'),
   })
@@ -128,7 +129,7 @@ export default function MatrizHistorica() {
         )}
         <select value={otm} onChange={e => setOtm(e.target.value)} className={inputCls}>
           <option value="">Todas las OTM</option>
-          {(otms.data ?? []).map(o => <option key={o.id} value={o.id}>{o.id}</option>)}
+          {(otms.data ?? []).map(o => <option key={o.otm_id} value={o.otm_id} title={o.descripcion}>{o.otm_id}</option>)}
         </select>
         {mz.isFetching && <Loader2 size={14} className="animate-spin text-k-text3" />}
       </div>

@@ -72,12 +72,23 @@ export default function ProgramacionPrint() {
                     {a.otm_id ? `[${a.otm_id}] ` : ''}{a.titulo}
                     <span style={{
                       fontSize: 10, fontWeight: 700, marginLeft: 8, padding: '2px 8px', borderRadius: 10,
-                      background: a.estado === 'EJECUTADO' ? '#d8f5dc' : a.estado === 'CANCELADO' ? '#fbdcdc' : '#fdf0d0',
-                      color: a.estado === 'EJECUTADO' ? '#186a2b' : a.estado === 'CANCELADO' ? '#8f1d1d' : '#7c5a10',
-                    }}>{a.estado}</span>
+                      background: a.estado === 'EJECUTADO' ? '#d8f5dc' : a.estado === 'NO_CUMPLIDA' ? '#fbdcdc' : a.estado === 'CANCELADO' ? '#e8e8e8' : '#fdf0d0',
+                      color: a.estado === 'EJECUTADO' ? '#186a2b' : a.estado === 'NO_CUMPLIDA' ? '#8f1d1d' : a.estado === 'CANCELADO' ? '#666' : '#7c5a10',
+                    }}>{a.estado === 'NO_CUMPLIDA' ? 'NO CUMPLIDA' : a.estado}</span>
                   </div>
-                  {a.responsable && <div style={{ fontSize: 12, color: '#555' }}>Responsable: {a.responsable}</div>}
+                  {(a.supervisor_nombre || a.responsable) && (
+                    <div style={{ fontSize: 12, color: '#555' }}>
+                      {a.supervisor_nombre ? `Supervisor: ${a.supervisor_nombre}` : ''}
+                      {a.supervisor_nombre && a.responsable ? ' · ' : ''}
+                      {a.responsable ? `Responsable: ${a.responsable}` : ''}
+                    </div>
+                  )}
                   {a.descripcion && <div style={{ fontSize: 12, margin: '4px 0' }}>{a.descripcion}</div>}
+                  {a.estado === 'NO_CUMPLIDA' && a.causa_nc && (
+                    <div style={{ fontSize: 12, margin: '4px 0', color: '#8f1d1d' }}>
+                      <b>Causa de no cumplimiento:</b> {a.causa_nc}
+                    </div>
+                  )}
                   {a.reportes.map(id => { const r = repsPorId.get(id); return r ? <BloqueReporte key={id} rep={r} /> : null })}
                 </div>
               ))}

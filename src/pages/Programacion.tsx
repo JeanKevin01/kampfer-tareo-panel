@@ -21,7 +21,9 @@ export interface Reporte {
 export interface Actividad {
   id: number; fecha: string; otm_id?: string | null; otm_desc?: string | null
   partida_id?: number | null; titulo: string; descripcion?: string | null
-  estado: 'PROGRAMADO' | 'EJECUTADO' | 'CANCELADO'; responsable?: string | null
+  estado: 'PROGRAMADO' | 'EJECUTADO' | 'CANCELADO' | 'NO_CUMPLIDA'
+  responsable?: string | null; causa_nc?: string | null
+  supervisor_id?: string | null; supervisor_nombre?: string | null
   creado_por?: string; reportes: number[]
 }
 export interface Semana { lunes: string; fechas: string[]; actividades: Actividad[]; reportes: Reporte[] }
@@ -29,7 +31,12 @@ export interface Semana { lunes: string; fechas: string[]; actividades: Activida
 const ESTADO_CLR: Record<string, string> = {
   PROGRAMADO: 'text-k-amber bg-amber-500/10 border-amber-500/30',
   EJECUTADO: 'text-k-green bg-green-500/10 border-green-500/30',
-  CANCELADO: 'text-k-red bg-red-500/10 border-red-500/30',
+  CANCELADO: 'text-k-text3 bg-k-raised border-k-border',
+  NO_CUMPLIDA: 'text-k-red bg-red-500/10 border-red-500/30',
+}
+const ESTADO_LBL: Record<string, string> = {
+  PROGRAMADO: 'PROGRAMADO', EJECUTADO: 'EJECUTADO',
+  CANCELADO: 'CANCELADO', NO_CUMPLIDA: 'NO CUMPLIDA',
 }
 
 const fmtDia = (f: string) => `${Number(f.slice(8, 10))} ${MESES[Number(f.slice(5, 7))]}`
@@ -126,9 +133,13 @@ export default function Programacion() {
         })}
       </div>
 
+      {sem.isError && (
+        <p className="text-k-red text-sm">No se pudo cargar la semana: {(sem.error as Error).message}</p>
+      )}
       <p className="text-[11px] text-k-text3">
-        <span className="text-k-amber font-bold">PROGRAMADO</span> lo crea el planner ·
-        pasa a <span className="text-k-green font-bold"> EJECUTADO</span> solo cuando llega un reporte de campo vinculado ·
+        <span className="text-k-amber font-bold">PROGRAMADO</span> lo crea el planner (asignado a un supervisor) ·
+        pasa a <span className="text-k-green font-bold"> EJECUTADO</span> cuando llega el reporte de campo vinculado ·
+        <span className="text-k-red font-bold"> NO CUMPLIDA</span> registra la causa de no cumplimiento ·
         los reportes sin actividad aparecen como tarjetas con 📷 en su día.
       </p>
 
@@ -150,10 +161,17 @@ function TarjetaActividad({ act, reps, onClick }: { act: Actividad; reps: Report
       className="rounded-lg border border-k-border bg-k-raised/60 hover:bg-k-raised cursor-pointer p-2 space-y-1">
       <div className="flex items-center gap-1 flex-wrap">
         {act.otm_id && <span className="font-mono text-[9px] px-1.5 py-0.5 rounded bg-blue-500/15 text-k-blue border border-blue-500/20">{act.otm_id}</span>}
-        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${ESTADO_CLR[act.estado]}`}>{act.estado}</span>
+        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${ESTADO_CLR[act.estado]}`}>{ESTADO_LBL[act.estado]}</span>
       </div>
       <div className="text-[12px] text-k-text leading-snug">{act.titulo}</div>
-      {act.responsable && <div className="text-[10px] text-k-text3 flex items-center gap-1"><User size={9} /> {act.responsable}</div>}
+      {(act.supervisor_nombre || act.responsable) && (
+        <div className="text-[10px] text-k-text3 flex items-center gap-1">
+          <User size={9} /> {act.supervisor_nombre || act.responsable}
+        </div>
+      )}
+      {act.estado === 'NO_CUMPLIDA' && act.causa_nc && (
+        <div className="text-[10px] text-k-red/90 leading-snug line-clamp-2">Causa: {act.causa_nc}</div>
+      )}
       {thumbs.length > 0 && (
         <div className="flex gap-1 pt-0.5">
           {thumbs.map(f => (
@@ -204,23 +222,33 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
   const act = editar ? datos.act : null
   const [form, setForm] = useState({
     titulo: act?.titulo ?? '', otm_id: act?.otm_id ?? '', descripcion: act?.descripcion ?? '',
-    responsable: act?.responsable ?? '', fecha: editar ? act!.fecha : datos.fecha,
+    responsable: act?.responsable ?? '', supervisor_id: act?.supervisor_id ?? '',
+    fecha: editar ? act!.fecha : datos.fecha,
   })
   const [error, setError] = useState('')
 
-  const otms = useQuery<{ id: string; descripcion: string }[]>({
+  // OJO: /ev/otms devuelve `otm_id` (no `id`) — usar otro nombre rompe el select.
+  const otms = useQuery<{ otm_id: string; descripcion: string }[]>({
     queryKey: ['otms-lista'],
     queryFn: () => api('/ev/otms'),
   })
+  const sups = useQuery<{ id: string; nombre: string }[]>({
+    queryKey: ['supervisores-lista'],
+    queryFn: () => api('/api/supervisores'),
+  })
 
   const guardar = useMutation({
-    mutationFn: () => editar
-      ? api(`/ev/programacion/actividades/${act!.id}`, { method: 'PUT', body: JSON.stringify({ ...form, otm_id: form.otm_id || null }) })
-      : api('/ev/programacion/actividades', { method: 'POST', body: JSON.stringify({ ...form, otm_id: form.otm_id || null, proyecto_id: PROYECTO_ID }) }),
+    mutationFn: () => {
+      const body = { ...form, otm_id: form.otm_id || null, supervisor_id: form.supervisor_id || null }
+      return editar
+        ? api(`/ev/programacion/actividades/${act!.id}`, { method: 'PUT', body: JSON.stringify(body) })
+        : api('/ev/programacion/actividades', { method: 'POST', body: JSON.stringify({ ...body, proyecto_id: PROYECTO_ID }) })
+    },
     onSuccess: onChange, onError: (e: Error) => setError(e.message),
   })
   const estado = useMutation({
-    mutationFn: (estado: string) => api(`/ev/programacion/actividades/${act!.id}`, { method: 'PUT', body: JSON.stringify({ estado }) }),
+    mutationFn: (cambio: { estado: string; causa_nc?: string }) =>
+      api(`/ev/programacion/actividades/${act!.id}`, { method: 'PUT', body: JSON.stringify(cambio) }),
     onSuccess: onChange, onError: (e: Error) => setError(e.message),
   })
   const borrar = useMutation({
@@ -236,7 +264,7 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-bold text-k-text">{editar ? 'Actividad' : 'Programar actividad'}</h2>
           <div className="flex items-center gap-2">
-            {act && <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${ESTADO_CLR[act.estado]}`}>{act.estado}</span>}
+            {act && <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${ESTADO_CLR[act.estado]}`}>{ESTADO_LBL[act.estado]}</span>}
             <button onClick={onClose} className="text-k-text3 hover:text-k-text"><X size={18} /></button>
           </div>
         </div>
@@ -246,13 +274,25 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
             onChange={e => setForm({ ...form, titulo: e.target.value })} className={inputCls} autoFocus={!editar} />
           <div className="grid grid-cols-2 gap-2">
             <input type="date" value={form.fecha} onChange={e => setForm({ ...form, fecha: e.target.value })} className={inputCls} />
-            <select value={form.otm_id ?? ''} onChange={e => setForm({ ...form, otm_id: e.target.value })} className={inputCls}>
+            <select value={form.otm_id ?? ''} onChange={e => setForm({ ...form, otm_id: e.target.value })}
+              className={inputCls} title={(otms.data ?? []).find(o => o.otm_id === form.otm_id)?.descripcion || 'OTM'}>
               <option value="">Sin OTM</option>
-              {(otms.data ?? []).map(o => <option key={o.id} value={o.id}>{o.id} — {o.descripcion?.slice(0, 30)}</option>)}
+              {(otms.data ?? []).map(o => (
+                <option key={o.otm_id} value={o.otm_id} title={o.descripcion}>
+                  {o.otm_id}{o.descripcion ? ` — ${o.descripcion.slice(0, 42)}${o.descripcion.length > 42 ? '…' : ''}` : ''}
+                </option>
+              ))}
             </select>
           </div>
-          <input placeholder="Responsable / cuadrilla" value={form.responsable ?? ''}
-            onChange={e => setForm({ ...form, responsable: e.target.value })} className={inputCls} />
+          <div className="grid grid-cols-2 gap-2">
+            <select value={form.supervisor_id ?? ''} onChange={e => setForm({ ...form, supervisor_id: e.target.value })}
+              className={inputCls} title="Supervisor asignado: la actividad le aparecerá en su app de campo">
+              <option value="">Sin supervisor asignado</option>
+              {(sups.data ?? []).map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+            </select>
+            <input placeholder="Responsable / cuadrilla" value={form.responsable ?? ''}
+              onChange={e => setForm({ ...form, responsable: e.target.value })} className={inputCls} />
+          </div>
           <textarea placeholder="Descripción (alcance del día, metrados previstos…)" value={form.descripcion ?? ''}
             onChange={e => setForm({ ...form, descripcion: e.target.value })} rows={3} className={inputCls} />
           {error && <p className="text-k-red text-xs">{error}</p>}
@@ -262,16 +302,32 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
           </button>
         </div>
 
+        {editar && act!.estado === 'NO_CUMPLIDA' && act!.causa_nc && (
+          <div className="mt-3 rounded-lg border border-red-500/25 bg-red-500/5 px-3 py-2">
+            <p className="text-[10px] uppercase font-bold text-k-red">Causa de no cumplimiento</p>
+            <p className="text-xs text-k-text2">{act!.causa_nc}</p>
+          </div>
+        )}
+
         {editar && (
-          <div className="flex gap-2 mt-3">
+          <div className="flex gap-2 mt-3 flex-wrap">
             {act!.estado !== 'EJECUTADO' && (
-              <button onClick={() => estado.mutate('EJECUTADO')}
+              <button onClick={() => estado.mutate({ estado: 'EJECUTADO' })}
                 className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border border-green-500/30 text-k-green hover:bg-green-500/10">
                 <CheckCircle2 size={12} /> Marcar ejecutada
               </button>
             )}
+            {act!.estado === 'PROGRAMADO' && (
+              <button onClick={() => {
+                const causa = prompt('Causa de no cumplimiento (ej. falta de materiales, lluvia, interferencia):')
+                if (causa?.trim()) estado.mutate({ estado: 'NO_CUMPLIDA', causa_nc: causa.trim() })
+              }}
+                className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border border-red-500/30 text-k-red hover:bg-red-500/10">
+                <Ban size={12} /> No cumplida…
+              </button>
+            )}
             {act!.estado !== 'CANCELADO' && (
-              <button onClick={() => estado.mutate('CANCELADO')}
+              <button onClick={() => estado.mutate({ estado: 'CANCELADO' })}
                 className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border border-k-border text-k-text3 hover:bg-k-raised">
                 <Ban size={12} /> Cancelar
               </button>
@@ -379,7 +435,10 @@ function PanelAlmacenamiento({ onCambio }: { onCambio: () => void }) {
         </tbody>
       </table>
       <p className="px-4 py-2 text-[10px] text-k-text3 border-t border-k-border">
-        Recomendación: imprime el <b>Reporte semanal</b> (PDF con fotos) y purga las semanas con más de ~2-8 semanas de antigüedad para liberar disco.
+        La purga es <b>automática</b>: cada día el sistema borra las fotos con más de ~2 meses
+        (9 semanas; configurable con MEDIA_RETENCION_SEMANAS). Los textos de los reportes se
+        conservan siempre. El botón Purgar es solo para liberar disco antes de tiempo — imprime
+        el <b>Reporte semanal</b> (PDF con fotos) antes: es tu archivo permanente.
       </p>
     </div>
   )
