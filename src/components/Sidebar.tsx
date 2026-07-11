@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom'
 import {
   LayoutDashboard, UserCheck, Users, Upload, QrCode, Printer,
-  Table2, BarChart3, ClipboardList, FileSpreadsheet, Package,
+  Table2, BarChart3, ClipboardList, FileSpreadsheet, Package, CalendarDays,
   Receipt, TrendingUp, PenLine, Activity, History, ChevronRight, Target,
   FileText, LogOut, ShieldCheck, PanelLeftClose, PanelLeft,
   type LucideIcon,
@@ -16,6 +16,7 @@ const NAV: NavGroup[] = [
     label: 'Operaciones',
     items: [
       { path: '/dashboard',    label: 'Dashboard',      icon: LayoutDashboard },
+      { path: '/programacion', label: 'Programación',   icon: CalendarDays },
       { path: '/supervisores', label: 'Supervisores',   icon: UserCheck },
     ],
   },

@@ -24,6 +24,8 @@ import Monitor from '@/pages/Monitor'
 import MonitorTareo from '@/pages/MonitorTareo'
 import Login from '@/pages/Login'
 import Usuarios from '@/pages/Usuarios'
+import Programacion from '@/pages/Programacion'
+import ProgramacionPrint from '@/pages/ProgramacionPrint'
 import { currentUser } from '@/lib/auth'
 
 const qc = new QueryClient({
@@ -43,9 +45,12 @@ export default function App() {
     <QueryClientProvider client={qc}>
       <BrowserRouter>
         <Routes>
+          {/* Fuera del Layout: vista imprimible (fondo blanco, sin sidebar) */}
+          <Route path="/programacion/imprimir" element={<ProgramacionPrint />} />
           <Route path="/" element={<Layout />}>
             <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="dashboard"    element={<Dashboard />} />
+            <Route path="programacion" element={<Programacion />} />
             <Route path="supervisores" element={<Supervisores />} />
             <Route path="trabajadores" element={<Trabajadores />} />
             <Route path="importar"     element={<ImportarPersonal />} />
