@@ -7,6 +7,7 @@ import {
 import { api, API_BASE } from '@/lib/api'
 import { CNC, TIPOS_RESTRICCION } from '@/lib/catalogos'
 import { lunesDe, iso } from '@/lib/semana'
+import { LookaheadGrid, EvaluacionSemanal, type ActGrid } from '@/components/LookaheadGrid'
 
 const PROYECTO_ID = 1
 const DIAS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
@@ -27,6 +28,7 @@ export interface Actividad {
   responsable?: string | null; causa_nc?: string | null; causa_nc_cat?: string | null
   supervisor_id?: string | null; supervisor_nombre?: string | null
   rest_total?: number; rest_pend?: number
+  fecha_fin?: string | null; metrado_prog?: number | null; und?: string | null
   creado_por?: string; reportes: number[]
 }
 export interface Restriccion {
@@ -49,12 +51,16 @@ const ESTADO_LBL: Record<string, string> = {
 }
 
 const fmtDia = (f: string) => `${Number(f.slice(8, 10))} ${MESES[Number(f.slice(5, 7))]}`
+// La fila del lookahead-grid trae los mismos campos que Actividad salvo reportes.
+const desdeGrid = (a: ActGrid): Actividad =>
+  ({ ...a, estado: a.estado as Actividad['estado'], reportes: [] })
 const mediaUrl = (u: string | null) => (u ? `${API_BASE}${u}` : '')
 const fmtMB = (b: number) => `${(b / 1024 / 1024).toFixed(1)} MB`
 
 export default function Programacion() {
   const qc = useQueryClient()
   const [vista, setVista] = useState<'semana' | 'lookahead' | 'ppc'>('semana')
+  const [laModo, setLaModo] = useState<'tabla' | 'tarjetas'>('tabla')
   const [lunes, setLunes] = useState(() => iso(lunesDe(new Date())))
   const [modalAct, setModalAct] = useState<{ modo: 'crear'; fecha: string } | { modo: 'editar'; act: Actividad } | null>(null)
   const [repVer, setRepVer] = useState<Reporte | null>(null)
@@ -113,8 +119,21 @@ export default function Programacion() {
       </div>
 
       {vista === 'lookahead' && (
-        <Lookahead onEditar={a => setModalAct({ modo: 'editar', act: a })}
-          onCrear={f => setModalAct({ modo: 'crear', fecha: f })} />
+        <div className="space-y-3">
+          <div className="flex gap-1.5">
+            {([['tabla', 'Tabla (Excel)'], ['tarjetas', 'Tarjetas']] as const).map(([k, l]) => (
+              <button key={k} onClick={() => setLaModo(k)}
+                className={`text-[11px] px-2.5 py-1.5 rounded-lg border ${
+                  laModo === k ? 'border-k-amber text-k-amber bg-amber-500/10' : 'border-k-border text-k-text3 hover:bg-k-raised'}`}>
+                {l}
+              </button>
+            ))}
+          </div>
+          {laModo === 'tabla'
+            ? <LookaheadGrid onEditar={a => setModalAct({ modo: 'editar', act: desdeGrid(a) })} />
+            : <Lookahead onEditar={a => setModalAct({ modo: 'editar', act: a })}
+                onCrear={f => setModalAct({ modo: 'crear', fecha: f })} />}
+        </div>
       )}
       {vista === 'ppc' && <PanelPPC />}
 
@@ -269,6 +288,9 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
     responsable: act?.responsable ?? '', supervisor_id: act?.supervisor_id ?? '',
     partida_id: act?.partida_id ?? 0,
     fecha: editar ? act!.fecha : datos.fecha,
+    fecha_fin: act?.fecha_fin ?? '',
+    metrado_prog: act?.metrado_prog != null ? String(act.metrado_prog) : '',
+    und: act?.und ?? '',
   })
   const [error, setError] = useState('')
   const [showNC, setShowNC] = useState(false)
@@ -291,11 +313,27 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
 
   const guardar = useMutation({
     mutationFn: () => {
-      const body = { ...form, otm_id: form.otm_id || null, supervisor_id: form.supervisor_id || null,
-        partida_id: form.partida_id || null }
-      return editar
-        ? api(`/ev/programacion/actividades/${act!.id}`, { method: 'PUT', body: JSON.stringify(body) })
-        : api('/ev/programacion/actividades', { method: 'POST', body: JSON.stringify({ ...body, proyecto_id: PROYECTO_ID }) })
+      const base = {
+        titulo: form.titulo, descripcion: form.descripcion, responsable: form.responsable,
+        otm_id: form.otm_id || null, supervisor_id: form.supervisor_id || null,
+        partida_id: form.partida_id || null, und: form.und.trim() || null,
+      }
+      const metrado = form.metrado_prog.trim() === '' ? null : Number(form.metrado_prog)
+      if (!editar) {
+        return api('/ev/programacion/actividades', {
+          method: 'POST',
+          body: JSON.stringify({ ...base, proyecto_id: PROYECTO_ID, fecha: form.fecha,
+            fecha_fin: form.fecha_fin || null, metrado_prog: metrado }),
+        })
+      }
+      // Al editar, fecha/fecha_fin/metrado solo viajan si CAMBIARON: el API
+      // redistribuye las celdas diarias al recibirlos y no queremos pisar las
+      // ediciones celda a celda por guardar un cambio de título.
+      const body: Record<string, unknown> = { ...base }
+      if (form.fecha !== act!.fecha) body.fecha = form.fecha
+      if ((form.fecha_fin || null) !== (act!.fecha_fin ?? null)) body.fecha_fin = form.fecha_fin || null
+      if ((metrado ?? null) !== (act!.metrado_prog ?? null)) body.metrado_prog = metrado
+      return api(`/ev/programacion/actividades/${act!.id}`, { method: 'PUT', body: JSON.stringify(body) })
     },
     onSuccess: onChange, onError: (e: Error) => setError(e.message),
   })
@@ -325,8 +363,27 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
         <div className="space-y-2">
           <input placeholder="Título (ej. Hormigonado fundación chancador — etapa 1)" value={form.titulo}
             onChange={e => setForm({ ...form, titulo: e.target.value })} className={inputCls} autoFocus={!editar} />
+          <div className="grid grid-cols-3 gap-2">
+            <div>
+              <label className="text-[9px] uppercase font-bold text-k-text3">F. Inicio</label>
+              <input type="date" value={form.fecha} onChange={e => setForm({ ...form, fecha: e.target.value })} className={inputCls} />
+            </div>
+            <div>
+              <label className="text-[9px] uppercase font-bold text-k-text3">F. Fin (opcional)</label>
+              <input type="date" value={form.fecha_fin ?? ''} min={form.fecha}
+                onChange={e => setForm({ ...form, fecha_fin: e.target.value })} className={inputCls} />
+            </div>
+            <div>
+              <label className="text-[9px] uppercase font-bold text-k-text3" title="Se distribuye por día entre F.Inicio y F.Fin (LookAhead)">Metrado + und</label>
+              <div className="flex gap-1">
+                <input placeholder="90" inputMode="decimal" value={form.metrado_prog}
+                  onChange={e => setForm({ ...form, metrado_prog: e.target.value })} className={inputCls} />
+                <input placeholder="m3" value={form.und ?? ''} maxLength={10}
+                  onChange={e => setForm({ ...form, und: e.target.value })} className={`${inputCls} w-16`} style={{ width: 64 }} />
+              </div>
+            </div>
+          </div>
           <div className="grid grid-cols-2 gap-2">
-            <input type="date" value={form.fecha} onChange={e => setForm({ ...form, fecha: e.target.value })} className={inputCls} />
             <select value={form.otm_id ?? ''} onChange={e => setForm({ ...form, otm_id: e.target.value })}
               className={inputCls} title={(otms.data ?? []).find(o => o.otm_id === form.otm_id)?.descripcion || 'OTM'}>
               <option value="">Sin OTM</option>
@@ -637,6 +694,9 @@ function PanelPPC() {
 
   return (
     <div className="space-y-4">
+      {/* F030b: la evaluación semanal comprometido vs alcanzado */}
+      <EvaluacionSemanal />
+
       <div className="flex items-center gap-2">
         <select value={nSem} onChange={e => setNSem(Number(e.target.value))} className={inputCls}>
           {[4, 8, 12, 26].map(n => <option key={n} value={n}>Últimas {n} semanas</option>)}
