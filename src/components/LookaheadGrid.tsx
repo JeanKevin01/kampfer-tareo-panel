@@ -7,7 +7,7 @@
 // alcanzado de la semana, con cumplimiento SI/NO y causa).
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Loader2, Printer } from 'lucide-react'
 import { api } from '@/lib/api'
 import { CNC } from '@/lib/catalogos'
 import { lunesDe, iso } from '@/lib/semana'
@@ -125,6 +125,10 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
           className="bg-k-raised border border-k-border rounded-lg px-2.5 py-2 text-sm text-k-text outline-none">
           {[3, 4, 5, 6].map(n => <option key={n} value={n}>{n} semanas</option>)}
         </select>
+        <button onClick={() => window.open(`/programacion/lookahead-imprimir?desde=${desde}&semanas=${nSemanas}`, '_blank')}
+          className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-k-border bg-k-raised text-k-text2 hover:bg-k-border">
+          <Printer size={14} /> Exportar PDF
+        </button>
         {grid.isFetching && <Loader2 size={14} className="animate-spin text-k-text3" />}
       </div>
 

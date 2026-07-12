@@ -8,6 +8,7 @@ import { api, API_BASE } from '@/lib/api'
 import { CNC, TIPOS_RESTRICCION } from '@/lib/catalogos'
 import { lunesDe, iso } from '@/lib/semana'
 import { LookaheadGrid, EvaluacionSemanal, type ActGrid } from '@/components/LookaheadGrid'
+import { ProgramarLote } from '@/components/ProgramarLote'
 
 const PROYECTO_ID = 1
 const DIAS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
@@ -63,6 +64,7 @@ export default function Programacion() {
   const [laModo, setLaModo] = useState<'tabla' | 'tarjetas'>('tabla')
   const [lunes, setLunes] = useState(() => iso(lunesDe(new Date())))
   const [modalAct, setModalAct] = useState<{ modo: 'crear'; fecha: string } | { modo: 'editar'; act: Actividad } | null>(null)
+  const [modalLote, setModalLote] = useState<string | null>(null)   // fecha base del wizard por partidas
   const [repVer, setRepVer] = useState<Reporte | null>(null)
   const [verAlmacen, setVerAlmacen] = useState(false)
 
@@ -94,6 +96,10 @@ export default function Programacion() {
           <p className="text-k-text2 text-sm">Plan del planner + reportes con fotos desde campo, en el mismo calendario.</p>
         </div>
         <div className="flex items-center gap-2">
+          <button onClick={() => setModalLote(lunes)}
+            className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg bg-k-amber text-black font-bold">
+            <Plus size={14} /> Programar por partidas
+          </button>
           <button onClick={() => setVerAlmacen(v => !v)}
             className={`flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border ${verAlmacen ? 'border-k-amber text-k-amber' : 'border-k-border bg-k-raised text-k-text2 hover:bg-k-border'}`}>
             <HardDrive size={14} /> Almacenamiento
@@ -132,7 +138,7 @@ export default function Programacion() {
           {laModo === 'tabla'
             ? <LookaheadGrid onEditar={a => setModalAct({ modo: 'editar', act: desdeGrid(a) })} />
             : <Lookahead onEditar={a => setModalAct({ modo: 'editar', act: a })}
-                onCrear={f => setModalAct({ modo: 'crear', fecha: f })} />}
+                onCrear={f => setModalLote(f)} />}
         </div>
       )}
       {vista === 'ppc' && <PanelPPC />}
@@ -164,7 +170,7 @@ export default function Programacion() {
                   <div className={`text-[10px] uppercase font-bold ${esHoy ? 'text-k-green' : 'text-k-text3'}`}>{DIAS[i]}{esHoy ? ' · HOY' : ''}</div>
                   <div className="text-sm font-bold text-k-text">{fmtDia(f)}</div>
                 </div>
-                <button title="Programar actividad" onClick={() => setModalAct({ modo: 'crear', fecha: f })}
+                <button title="Programar en este día (por partidas)" onClick={() => setModalLote(f)}
                   className="p-1 rounded-lg text-k-text3 hover:text-k-amber hover:bg-k-raised"><Plus size={15} /></button>
               </div>
               <div className="p-1.5 space-y-1.5 flex-1">
@@ -195,6 +201,12 @@ export default function Programacion() {
       </p>
       </>}
 
+      {modalLote && (
+        <ProgramarLote fechaBase={modalLote}
+          onClose={() => setModalLote(null)}
+          onCreado={() => { invalidar(); setModalLote(null) }}
+          onLibre={() => { const f = modalLote; setModalLote(null); setModalAct({ modo: 'crear', fecha: f }) }} />
+      )}
       {modalAct && (
         <ModalActividad datos={modalAct} repsPorId={repsPorId}
           onClose={() => setModalAct(null)}
@@ -305,11 +317,22 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
     queryFn: () => api('/api/supervisores'),
   })
   // Partidas de control de la OTM elegida (LPS: 1 actividad = 1 partida)
-  const partidas = useQuery<{ id: number; codigo: string; descripcion?: string }[]>({
+  const partidas = useQuery<{ id: number; codigo: string; descripcion?: string; unidad?: string | null; metrado_presup?: number | string | null }[]>({
     queryKey: ['partidas-otm', form.otm_id],
     queryFn: () => api(`/ev/partidas?otm=${encodeURIComponent(form.otm_id!)}`),
     enabled: !!form.otm_id,
   })
+  // Al elegir partida, el metrado meta se prellena con el del presupuesto
+  // (editable: es la "opción de trabajar con el metrado meta" de Jean).
+  const elegirPartida = (pid: number) => {
+    const p = (partidas.data ?? []).find(x => x.id === pid)
+    const base = Number(p?.metrado_presup)
+    setForm(f => ({
+      ...f, partida_id: pid,
+      metrado_prog: f.metrado_prog.trim() === '' && Number.isFinite(base) && base > 0 ? String(base) : f.metrado_prog,
+      und: !f.und && p?.unidad ? p.unidad : f.und,
+    }))
+  }
 
   const guardar = useMutation({
     mutationFn: () => {
@@ -395,7 +418,7 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
             </select>
           </div>
           {form.otm_id && (
-            <select value={form.partida_id || ''} onChange={e => setForm({ ...form, partida_id: Number(e.target.value) || 0 })}
+            <select value={form.partida_id || ''} onChange={e => elegirPartida(Number(e.target.value) || 0)}
               className={inputCls} title="Partida de control que se trabajará (1 actividad = 1 partida)">
               <option value="">Sin partida específica (trabajo general de la OTM)</option>
               {(partidas.data ?? []).map(p => (

@@ -26,6 +26,7 @@ import Login from '@/pages/Login'
 import Usuarios from '@/pages/Usuarios'
 import Programacion from '@/pages/Programacion'
 import ProgramacionPrint from '@/pages/ProgramacionPrint'
+import LookaheadPrint from '@/pages/LookaheadPrint'
 import MatrizHistorica from '@/pages/MatrizHistorica'
 import { currentUser } from '@/lib/auth'
 
@@ -46,8 +47,9 @@ export default function App() {
     <QueryClientProvider client={qc}>
       <BrowserRouter>
         <Routes>
-          {/* Fuera del Layout: vista imprimible (fondo blanco, sin sidebar) */}
+          {/* Fuera del Layout: vistas imprimibles (fondo blanco, sin sidebar) */}
           <Route path="/programacion/imprimir" element={<ProgramacionPrint />} />
+          <Route path="/programacion/lookahead-imprimir" element={<LookaheadPrint />} />
           <Route path="/" element={<Layout />}>
             <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="dashboard"    element={<Dashboard />} />
