@@ -55,7 +55,7 @@ export default function LookaheadPrint() {
         </h1>
         <div style={{ fontSize: 11, color: '#555' }}>
           {nActs} actividades · generado el {new Date().toLocaleDateString('es-PE', { day: 'numeric', month: 'long', year: 'numeric' })} ·
-          {' '}celda superior = metrado programado · celda inferior = metrado real (avance diario EV)
+          {' '}celda: programado (azul) / real (verde = más, ámbar = igual, rojo = menos que lo programado) · ∅ = salto intencional
         </div>
       </div>
 
@@ -125,10 +125,14 @@ function GrupoPrint({ grupo, fechas }: { grupo: GridResp['grupos'][number]; fech
           <td style={tdC}>{fmtCorta(a.fecha_fin)}</td>
           {fechas.map(f => {
             const p = a.prog[f]; const r = a.real[f]
+            const esSalto = (a.dias_salto ?? []).includes(f)
+            const clrR = r == null ? undefined
+              : r > (p ?? 0) + 0.0005 ? '#186a2b' : r >= (p ?? 0) - 0.0005 ? '#8a6d1a' : '#a11212'
             return (
-              <td key={f} style={{ ...tdC, padding: '1px 2px', background: p ? '#e2f2e4' : undefined }}>
-                {p ? <div style={{ color: '#186a2b', fontWeight: 700 }}>{num(p)}</div> : null}
-                {r ? <div style={{ color: '#1a4f9c' }}>{num(r)}</div> : null}
+              <td key={f} style={{ ...tdC, padding: '1px 2px', background: esSalto ? '#e8e8e8' : p ? '#e2eefb' : undefined }}>
+                {esSalto ? <span style={{ color: '#999' }}>∅</span> : null}
+                {p ? <div style={{ color: '#1a4f9c', fontWeight: 700 }}>{num(p)}</div> : null}
+                {r != null ? <div style={{ color: clrR, fontWeight: 700 }}>{num(r)}</div> : null}
               </td>
             )
           })}

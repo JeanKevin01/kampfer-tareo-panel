@@ -9,6 +9,7 @@ import { CNC, TIPOS_RESTRICCION } from '@/lib/catalogos'
 import { lunesDe, iso } from '@/lib/semana'
 import { LookaheadGrid, EvaluacionSemanal, type ActGrid } from '@/components/LookaheadGrid'
 import { ProgramarLote } from '@/components/ProgramarLote'
+import { CalendarioLaboral } from '@/components/CalendarioLaboral'
 
 const PROYECTO_ID = 1
 const DIAS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
@@ -30,6 +31,7 @@ export interface Actividad {
   supervisor_id?: string | null; supervisor_nombre?: string | null
   rest_total?: number; rest_pend?: number
   fecha_fin?: string | null; metrado_prog?: number | null; und?: string | null
+  dias_salto?: string[]
   creado_por?: string; reportes: number[]
 }
 export interface Restriccion {
@@ -67,6 +69,7 @@ export default function Programacion() {
   const [modalLote, setModalLote] = useState<string | null>(null)   // fecha base del wizard por partidas
   const [repVer, setRepVer] = useState<Reporte | null>(null)
   const [verAlmacen, setVerAlmacen] = useState(false)
+  const [verCalendario, setVerCalendario] = useState(false)
 
   const sem = useQuery<Semana>({
     queryKey: ['programacion', lunes],
@@ -100,6 +103,10 @@ export default function Programacion() {
             className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg bg-k-amber text-black font-bold">
             <Plus size={14} /> Programar por partidas
           </button>
+          <button onClick={() => setVerCalendario(v => !v)}
+            className={`flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border ${verCalendario ? 'border-k-amber text-k-amber' : 'border-k-border bg-k-raised text-k-text2 hover:bg-k-border'}`}>
+            <CalendarDays size={14} /> Calendario laboral
+          </button>
           <button onClick={() => setVerAlmacen(v => !v)}
             className={`flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border ${verAlmacen ? 'border-k-amber text-k-amber' : 'border-k-border bg-k-raised text-k-text2 hover:bg-k-border'}`}>
             <HardDrive size={14} /> Almacenamiento
@@ -111,6 +118,7 @@ export default function Programacion() {
         </div>
       </div>
 
+      {verCalendario && <CalendarioLaboral />}
       {verAlmacen && <PanelAlmacenamiento onCambio={invalidar} />}
 
       {/* Vistas Last Planner: plan semanal / lookahead / aprendizaje */}
@@ -303,6 +311,7 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
     fecha_fin: act?.fecha_fin ?? '',
     metrado_prog: act?.metrado_prog != null ? String(act.metrado_prog) : '',
     und: act?.und ?? '',
+    dias_salto: act?.dias_salto ?? [],
   })
   const [error, setError] = useState('')
   const [showNC, setShowNC] = useState(false)
@@ -346,7 +355,7 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
         return api('/ev/programacion/actividades', {
           method: 'POST',
           body: JSON.stringify({ ...base, proyecto_id: PROYECTO_ID, fecha: form.fecha,
-            fecha_fin: form.fecha_fin || null, metrado_prog: metrado }),
+            fecha_fin: form.fecha_fin || null, metrado_prog: metrado, dias_salto: form.dias_salto }),
         })
       }
       // Al editar, fecha/fecha_fin/metrado solo viajan si CAMBIARON: el API
@@ -356,6 +365,7 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
       if (form.fecha !== act!.fecha) body.fecha = form.fecha
       if ((form.fecha_fin || null) !== (act!.fecha_fin ?? null)) body.fecha_fin = form.fecha_fin || null
       if ((metrado ?? null) !== (act!.metrado_prog ?? null)) body.metrado_prog = metrado
+      if (form.dias_salto.join(',') !== (act!.dias_salto ?? []).join(',')) body.dias_salto = form.dias_salto
       return api(`/ev/programacion/actividades/${act!.id}`, { method: 'PUT', body: JSON.stringify(body) })
     },
     onSuccess: onChange, onError: (e: Error) => setError(e.message),
@@ -406,6 +416,35 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
               </div>
             </div>
           </div>
+          {/* Saltos intencionales: qué días del rango NO se trabaja esta actividad */}
+          {form.fecha && form.fecha_fin && form.fecha_fin > form.fecha && (() => {
+            const dias: string[] = []
+            const d = new Date(form.fecha + 'T12:00:00')
+            const fin = new Date(form.fecha_fin + 'T12:00:00')
+            while (d <= fin && dias.length < 42) { dias.push(d.toISOString().slice(0, 10)); d.setDate(d.getDate() + 1) }
+            const DIA_L = ['D', 'L', 'M', 'M', 'J', 'V', 'S']
+            return (
+              <div>
+                <label className="text-[9px] uppercase font-bold text-k-text3">
+                  Saltos intencionales <span className="normal-case font-normal">(clic en el día para que la actividad NO se trabaje ese día; el metrado se re-prorratea)</span>
+                </label>
+                <div className="flex gap-1 flex-wrap mt-1">
+                  {dias.map(f => {
+                    const salto = form.dias_salto.includes(f)
+                    return (
+                      <button key={f} type="button"
+                        onClick={() => setForm({ ...form, dias_salto: salto ? form.dias_salto.filter(x => x !== f) : [...form.dias_salto, f].sort() })}
+                        className={`text-[10px] px-1.5 py-1 rounded border font-mono ${
+                          salto ? 'border-red-500/40 bg-red-500/15 text-k-red line-through' : 'border-k-border bg-k-raised text-k-text2'}`}
+                        title={salto ? 'Salto: no se trabaja (clic para reactivar)' : 'Se trabaja (clic para saltar)'}>
+                        {DIA_L[new Date(f + 'T12:00:00').getDay()]} {f.slice(8, 10)}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })()}
           <div className="grid grid-cols-2 gap-2">
             <select value={form.otm_id ?? ''} onChange={e => setForm({ ...form, otm_id: e.target.value })}
               className={inputCls} title={(otms.data ?? []).find(o => o.otm_id === form.otm_id)?.descripcion || 'OTM'}>

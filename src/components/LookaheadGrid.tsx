@@ -28,13 +28,30 @@ export interface ActGrid {
   rest_pend?: number; rest_total?: number
   und?: string | null; metrado_prog?: number | null
   metrado_base?: number | null; acum_real?: number | null; saldo?: number | null
+  dias_salto?: string[]
   prog: Record<string, number>; real: Record<string, number>
 }
 export interface GridResp {
   desde: string; hasta: string
   semanas: { lunes: string; domingo: string; fechas: string[] }[]
   fechas: string[]
+  dias_semana?: number[]; feriados?: string[]
   grupos: { otm_id: string | null; otm_desc: string | null; actividades: ActGrid[] }[]
+}
+
+// ISO weekday del string YYYY-MM-DD sin depender de la zona horaria local
+const isoDow = (f: string) => {
+  const d = new Date(f + 'T12:00:00Z').getUTCDay()
+  return d === 0 ? 7 : d
+}
+// Color del avance real vs el programado congelado del día (línea base):
+// más = verde · igual = ámbar · menos = rojo
+const clrReal = (real: number | undefined, prog: number | undefined) => {
+  if (real == null) return ''
+  const p = prog ?? 0
+  if (real > p + 0.0005) return 'bg-green-500/25 text-green-300 font-bold'
+  if (real >= p - 0.0005) return 'bg-amber-500/25 text-amber-300 font-bold'
+  return 'bg-red-500/25 text-red-300 font-bold'
 }
 
 const ESTADO_DOT: Record<string, string> = {
@@ -46,14 +63,11 @@ const PROYECTO_ID = 1
 const thBase = 'border border-k-border px-1 py-1 text-[10px] font-bold text-k-text2 bg-k-raised'
 const tdFijo = 'border border-k-border px-2 py-1 text-[11px] bg-k-surface'
 
-function CeldaMetrado({ valor, editable, tipo, onGuardar }: {
+function CeldaMetrado({ valor, editable, clr, onGuardar }: {
   valor: number | undefined; editable: boolean
-  tipo: 'prog' | 'real'; onGuardar: (v: number | null) => void
+  clr: string; onGuardar: (v: number | null) => void
 }) {
   const lleno = valor != null && valor > 0
-  const clr = tipo === 'prog'
-    ? (lleno ? 'bg-green-500/20 text-green-300 font-medium' : '')
-    : (lleno ? 'bg-blue-500/20 text-blue-300 font-medium' : '')
   if (!editable) {
     return <td className={`border border-k-border/60 px-0.5 py-0.5 text-center text-[10px] ${clr}`}>
       {lleno ? num(valor!) : ''}</td>
@@ -100,10 +114,12 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
       }),
     onSuccess: invalidar, onError: (e: Error) => { alert(e.message); invalidar() },
   })
+  // El real va por actividad: el API escribe en el avance diario del EV y
+  // RE-PRORRATEA el saldo entre los días hábiles restantes de la actividad.
   const guardarReal = useMutation({
-    mutationFn: ({ partidaId, fecha, v }: { partidaId: number; fecha: string; v: number | null }) =>
-      api('/ev/programacion/avance-dia', {
-        method: 'POST', body: JSON.stringify({ partida_id: partidaId, fecha, cantidad: v }),
+    mutationFn: ({ actId, fecha, v }: { actId: number; fecha: string; v: number | null }) =>
+      api(`/ev/programacion/actividades/${actId}/avance-dia`, {
+        method: 'POST', body: JSON.stringify({ fecha, cantidad: v }),
       }),
     onSuccess: invalidar, onError: (e: Error) => { alert(e.message); invalidar() },
   })
@@ -113,6 +129,9 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
   const hoy = iso(new Date())
   const d = grid.data
   const nCols = 6 + (d ? d.fechas.length : nSemanas * 7)
+  const diasSemana = new Set(d?.dias_semana ?? [1, 2, 3, 4, 5, 6, 7])
+  const feriados = new Set(d?.feriados ?? [])
+  const laborable = (f: string) => diasSemana.has(isoDow(f)) && !feriados.has(f)
 
   return (
     <div className="space-y-3">
@@ -151,8 +170,11 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
             </tr>
             <tr>
               {(d?.fechas ?? []).map((f, i) => (
-                <th key={f} className={`border border-k-border/60 px-0.5 py-0.5 text-[9px] font-bold min-w-[44px] ${
-                  f === hoy ? 'bg-green-500/20 text-k-green' : 'bg-k-raised text-k-text3'}`}>
+                <th key={f} title={feriados.has(f) ? 'Feriado / día no laborable' : !laborable(f) ? 'Día no laborable (calendario)' : ''}
+                  className={`border border-k-border/60 px-0.5 py-0.5 text-[9px] font-bold min-w-[44px] ${
+                  f === hoy ? 'bg-green-500/20 text-k-green'
+                    : !laborable(f) ? 'bg-zinc-700/50 text-k-text3 line-through'
+                    : 'bg-k-raised text-k-text3'}`}>
                   {DIAS_1[i % 7]}<br />{fmtCorta(f)}
                 </th>
               ))}
@@ -161,9 +183,9 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
           <tbody>
             {(d?.grupos ?? []).map(g => (
               <GrupoOTM key={g.otm_id ?? '-'} grupo={g} fechas={d!.fechas} hoy={hoy}
-                onEditar={onEditar}
+                laborable={laborable} onEditar={onEditar}
                 onProg={(actId, fecha, v) => guardarProg.mutate({ actId, fecha, v })}
-                onReal={(partidaId, fecha, v) => guardarReal.mutate({ partidaId, fecha, v })} />
+                onReal={(actId, fecha, v) => guardarReal.mutate({ actId, fecha, v })} />
             ))}
             {(d?.grupos ?? []).length === 0 && !grid.isLoading && (
               <tr><td colSpan={nCols} className="px-4 py-8 text-center text-k-text3 text-sm">
@@ -175,21 +197,24 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
         </table>
       </div>
       <p className="text-[11px] text-k-text3">
-        Celdas <span className="text-green-300 font-bold">verdes</span> = metrado PROGRAMADO por día
-        (se distribuye solo entre F.Inic y F.Fin; edítalo celda a celda como en el Excel) ·
-        celdas <span className="text-blue-300 font-bold">azules</span> = metrado REAL ejecutado —
-        se guarda en el avance diario del módulo <b>Valor Ganado</b> (puedes ingresarlo aquí o allá:
-        es el mismo dato). La fila Real requiere partida de control.
+        Fila 1 = <span className="text-sky-300 font-bold">PROGRAMADO</span> (línea base: el metrado meta
+        prorrateado entre los días laborables del rango, saltando feriados y saltos ∅ de la actividad) ·
+        fila 2 = REAL del día: <span className="text-green-300 font-bold">verde</span> avanzaste más,{' '}
+        <span className="text-amber-300 font-bold">ámbar</span> justo lo programado,{' '}
+        <span className="text-red-300 font-bold">rojo</span> menos — y el <b>saldo se re-prorratea solo</b>{' '}
+        entre los días restantes para terminar en F.Fin. El real se guarda en el avance diario del módulo{' '}
+        <b>Valor Ganado</b> (mismo dato por las 2 vías) y requiere partida de control.
       </p>
     </div>
   )
 }
 
-function GrupoOTM({ grupo, fechas, hoy, onEditar, onProg, onReal }: {
+function GrupoOTM({ grupo, fechas, hoy, laborable, onEditar, onProg, onReal }: {
   grupo: GridResp['grupos'][number]; fechas: string[]; hoy: string
+  laborable: (f: string) => boolean
   onEditar: (a: ActGrid) => void
   onProg: (actId: number, fecha: string, v: number | null) => void
-  onReal: (partidaId: number, fecha: string, v: number | null) => void
+  onReal: (actId: number, fecha: string, v: number | null) => void
 }) {
   return (
     <>
@@ -203,19 +228,21 @@ function GrupoOTM({ grupo, fechas, hoy, onEditar, onProg, onReal }: {
         const editable = a.estado !== 'CANCELADO'
         return (
           <FilasActividad key={a.id} a={a} fechas={fechas} hoy={hoy} editable={editable}
-            onEditar={onEditar} onProg={onProg} onReal={onReal} />
+            laborable={laborable} onEditar={onEditar} onProg={onProg} onReal={onReal} />
         )
       })}
     </>
   )
 }
 
-function FilasActividad({ a, fechas, hoy, editable, onEditar, onProg, onReal }: {
+function FilasActividad({ a, fechas, hoy, editable, laborable, onEditar, onProg, onReal }: {
   a: ActGrid; fechas: string[]; hoy: string; editable: boolean
+  laborable: (f: string) => boolean
   onEditar: (a: ActGrid) => void
   onProg: (actId: number, fecha: string, v: number | null) => void
-  onReal: (partidaId: number, fecha: string, v: number | null) => void
+  onReal: (actId: number, fecha: string, v: number | null) => void
 }) {
+  const saltos = new Set(a.dias_salto ?? [])
   return (
     <>
       <tr className={a.estado === 'CANCELADO' ? 'opacity-50' : ''}>
@@ -252,16 +279,27 @@ function FilasActividad({ a, fechas, hoy, editable, onEditar, onProg, onReal }: 
         <td rowSpan={2} className={`${tdFijo} text-center text-k-text2`}>{a.und ?? '—'}</td>
         <td rowSpan={2} className={`${tdFijo} text-center font-mono text-[10px] text-k-text2`}>{fmtCorta(a.fecha)}</td>
         <td rowSpan={2} className={`${tdFijo} text-center font-mono text-[10px] text-k-text2`}>{fmtCorta(a.fecha_fin)}</td>
-        {fechas.map(f => (
-          <CeldaMetrado key={f} valor={a.prog[f]} tipo="prog" editable={editable}
-            onGuardar={v => onProg(a.id, f, v)} />
-        ))}
+        {fechas.map(f => {
+          const dentro = f >= a.fecha && f <= a.fecha_fin
+          if (saltos.has(f)) {
+            return <td key={f} title="Salto intencional de la actividad (edítalo en el modal)"
+              className="border border-k-border/60 px-0.5 py-0.5 text-center text-[10px] bg-zinc-600/30 text-k-text3">∅</td>
+          }
+          const lleno = (a.prog[f] ?? 0) > 0
+          const clr = lleno ? 'bg-sky-500/20 text-sky-300 font-medium'
+            : !laborable(f) ? 'bg-zinc-700/30' : ''
+          return (
+            <CeldaMetrado key={f} valor={a.prog[f]} clr={clr}
+              editable={editable && (laborable(f) || (dentro && lleno))}
+              onGuardar={v => onProg(a.id, f, v)} />
+          )
+        })}
       </tr>
       <tr className={a.estado === 'CANCELADO' ? 'opacity-50' : ''}>
         {fechas.map(f => (
-          <CeldaMetrado key={f} valor={a.real[f]} tipo="real"
-            editable={!!a.partida_id && f <= hoy}
-            onGuardar={v => onReal(a.partida_id!, f, v)} />
+          <CeldaMetrado key={f} valor={a.real[f]} clr={clrReal(a.real[f], a.prog[f]) || (!laborable(f) ? 'bg-zinc-700/30' : '')}
+            editable={!!a.partida_id && f <= hoy && editable}
+            onGuardar={v => onReal(a.id, f, v)} />
         ))}
       </tr>
     </>
@@ -324,7 +362,8 @@ export function EvaluacionSemanal() {
         </table>
       </div>
       <p className="px-4 py-2 text-[10px] text-k-text3 border-t border-k-border">
-        Por día: <span className="text-green-300">programado</span> / <span className="text-blue-300">real</span>.
+        Por día: <span className="text-sky-300">programado</span> / real (<span className="text-green-300">verde</span> más,{' '}
+        <span className="text-amber-300">ámbar</span> igual, <span className="text-red-300">rojo</span> menos que lo programado).
         COMPROM. = metrado comprometido de la semana · ALCANZ. = metrado real registrado (avance diario del EV).
       </p>
     </div>
@@ -359,12 +398,14 @@ function EvalGrupo({ grupo, fechas, cumplimiento }: {
             <td className={`${tdFijo} text-center text-k-text2`}>{a.supervisor_nombre?.split(' ')[0] || a.responsable || '—'}</td>
             {fechas.map(f => (
               <td key={f} className="border border-k-border/60 px-0.5 py-0.5 text-center text-[10px]">
-                {(a.prog[f] ?? 0) > 0 && <div className="text-green-300">{num(a.prog[f])}</div>}
-                {(a.real[f] ?? 0) > 0 && <div className="text-blue-300">{num(a.real[f])}</div>}
+                {(a.prog[f] ?? 0) > 0 && <div className="text-sky-300">{num(a.prog[f])}</div>}
+                {a.real[f] != null && <div className={clrReal(a.real[f], a.prog[f]).replace(/bg-\S+/g, '')}>{num(a.real[f])}</div>}
               </td>
             ))}
-            <td className={`${tdFijo} text-center font-mono font-bold text-green-300`}>{comprom > 0 ? num(comprom) : '—'}</td>
-            <td className={`${tdFijo} text-center font-mono font-bold text-blue-300`}>{alcanz > 0 ? num(alcanz) : '—'}</td>
+            <td className={`${tdFijo} text-center font-mono font-bold text-sky-300`}>{comprom > 0 ? num(comprom) : '—'}</td>
+            <td className={`${tdFijo} text-center font-mono font-bold ${
+              alcanz <= 0 ? 'text-k-text3' : alcanz > comprom + 0.0005 ? 'text-green-300' : alcanz >= comprom - 0.0005 ? 'text-amber-300' : 'text-red-300'}`}>
+              {alcanz > 0 ? num(alcanz) : '—'}</td>
             <td className={`${tdFijo} text-center font-bold ${clr}`}>{cumpl}</td>
             <td className={`${tdFijo} text-k-red/90`}>
               {a.estado === 'NO_CUMPLIDA'
