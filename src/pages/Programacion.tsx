@@ -10,6 +10,7 @@ import { lunesDe, iso } from '@/lib/semana'
 import { LookaheadGrid, EvaluacionSemanal, type ActGrid } from '@/components/LookaheadGrid'
 import { ProgramarLote } from '@/components/ProgramarLote'
 import { CalendarioLaboral } from '@/components/CalendarioLaboral'
+import { CalendarioMes } from '@/components/CalendarioMes'
 
 const PROYECTO_ID = 1
 const DIAS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
@@ -64,6 +65,7 @@ export default function Programacion() {
   const qc = useQueryClient()
   const [vista, setVista] = useState<'semana' | 'lookahead' | 'ppc'>('semana')
   const [laModo, setLaModo] = useState<'tabla' | 'tarjetas'>('tabla')
+  const [planModo, setPlanModo] = useState<'semana' | 'mes'>('semana')
   const [lunes, setLunes] = useState(() => iso(lunesDe(new Date())))
   const [modalAct, setModalAct] = useState<{ modo: 'crear'; fecha: string } | { modo: 'editar'; act: Actividad } | null>(null)
   const [modalLote, setModalLote] = useState<string | null>(null)   // fecha base del wizard por partidas
@@ -78,6 +80,7 @@ export default function Programacion() {
   const invalidar = () => {
     qc.invalidateQueries({ queryKey: ['programacion'] })
     qc.invalidateQueries({ queryKey: ['lookahead'] })
+    qc.invalidateQueries({ queryKey: ['lookahead-grid'] })   // la tabla Excel también, al instante
     qc.invalidateQueries({ queryKey: ['ppc'] })
   }
 
@@ -151,7 +154,23 @@ export default function Programacion() {
       )}
       {vista === 'ppc' && <PanelPPC />}
 
-      {vista === 'semana' && <>
+      {vista === 'semana' && (
+        <div className="flex gap-1.5">
+          {([['semana', 'Semana'], ['mes', 'Mes (calendario)']] as const).map(([k, l]) => (
+            <button key={k} onClick={() => setPlanModo(k)}
+              className={`text-[11px] px-2.5 py-1.5 rounded-lg border ${
+                planModo === k ? 'border-k-amber text-k-amber bg-amber-500/10' : 'border-k-border text-k-text3 hover:bg-k-raised'}`}>
+              {l}
+            </button>
+          ))}
+        </div>
+      )}
+      {vista === 'semana' && planModo === 'mes' && (
+        <CalendarioMes onEditar={a => setModalAct({ modo: 'editar', act: desdeGrid(a) })}
+          onCrearDia={f => setModalLote(f)} />
+      )}
+
+      {vista === 'semana' && planModo === 'semana' && <>
       {/* Navegación de semana */}
       <div className="flex items-center gap-2">
         <button onClick={() => mover(-7)} className="p-1.5 rounded-lg border border-k-border text-k-text2 hover:bg-k-raised"><ChevronLeft size={15} /></button>

@@ -63,27 +63,44 @@ const PROYECTO_ID = 1
 const thBase = 'border border-k-border px-1 py-1 text-[10px] font-bold text-k-text2 bg-k-raised'
 const tdFijo = 'border border-k-border px-2 py-1 text-[11px] bg-k-surface'
 
-function CeldaMetrado({ valor, editable, clr, onGuardar }: {
-  valor: number | undefined; editable: boolean
-  clr: string; onGuardar: (v: number | null) => void
+// Una celda = un día de la actividad. Muestra el PROGRAMADO (celeste, línea
+// base) hasta que se registra el avance: al escribir encima se guarda el REAL
+// del día (el meta NO cambia; el saldo se re-prorratea en los días siguientes)
+// y la celda toma el semáforo verde/ámbar/rojo con un ✓ de "registrada".
+function CeldaDia({ prog, real, editable, esSalto, laborable, onRegistrar }: {
+  prog: number | undefined; real: number | undefined
+  editable: boolean; esSalto: boolean; laborable: boolean
+  onRegistrar: (v: number | null) => void
 }) {
-  const lleno = valor != null && valor > 0
+  if (esSalto) {
+    return <td title="Salto intencional de la actividad (edítalo en el modal)"
+      className="border border-k-border/60 px-0.5 py-0.5 text-center text-[10px] bg-zinc-600/30 text-k-text3">∅</td>
+  }
+  const registrada = real != null
+  const clr = registrada ? clrReal(real, prog)
+    : (prog ?? 0) > 0 ? 'bg-sky-500/20 text-sky-300 font-medium'
+    : !laborable ? 'bg-zinc-700/30' : ''
+  const titulo = registrada
+    ? `Programado: ${prog != null ? num(prog) : '—'} · Real registrado: ${num(real!)}`
+    : (prog ?? 0) > 0 ? `Programado: ${num(prog!)} — escribe el avance real del día` : ''
+  const valor = registrada ? real : prog
   if (!editable) {
-    return <td className={`border border-k-border/60 px-0.5 py-0.5 text-center text-[10px] ${clr}`}>
-      {lleno ? num(valor!) : ''}</td>
+    return <td title={titulo} className={`border border-k-border/60 px-0.5 py-0.5 text-center text-[10px] ${clr}`}>
+      {valor != null && valor > 0 ? num(valor) : ''}</td>
   }
   const commit = (el: HTMLInputElement) => {
     const limpio = el.value.trim()
+    // vaciar una celda registrada borra el avance del día (vuelve a celeste)
     const v = limpio === '' ? null : Number(limpio)
     if (limpio !== '' && (Number.isNaN(v) || v! < 0)) { el.value = valor != null ? num(valor) : ''; return }
-    const antes = valor ?? null
-    if (v === antes || (v === 0 && antes === null)) return
-    onGuardar(v === 0 ? null : v)
+    if (registrada ? v === real : v === null) { el.value = valor != null ? num(valor) : ''; return }
+    onRegistrar(v)
   }
   return (
-    <td className={`border border-k-border/60 p-0 text-center ${clr}`}>
+    <td title={titulo} className={`relative border border-k-border/60 p-0 text-center ${clr}`}>
+      {registrada && <span className="absolute top-0 right-0.5 text-[7px] leading-none text-current opacity-90" title="Avance registrado">✓</span>}
       {/* No controlado + key: al llegar el valor del servidor la celda se re-monta */}
-      <input key={valor ?? 'vacio'} defaultValue={valor != null ? num(valor) : ''}
+      <input key={`${prog ?? '-'}|${real ?? '-'}`} defaultValue={valor != null ? num(valor) : ''}
         onBlur={e => commit(e.target)}
         onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
         className="w-11 bg-transparent text-center text-[10px] py-1 outline-none focus:bg-k-raised"
@@ -107,15 +124,8 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
     qc.invalidateQueries({ queryKey: ['lookahead'] })
     qc.invalidateQueries({ queryKey: ['ppc'] })
   }
-  const guardarProg = useMutation({
-    mutationFn: ({ actId, fecha, v }: { actId: number; fecha: string; v: number | null }) =>
-      api(`/ev/programacion/actividades/${actId}/metrado-dias`, {
-        method: 'PUT', body: JSON.stringify({ dias: { [fecha]: v } }),
-      }),
-    onSuccess: invalidar, onError: (e: Error) => { alert(e.message); invalidar() },
-  })
   // El real va por actividad: el API escribe en el avance diario del EV y
-  // RE-PRORRATEA el saldo entre los días hábiles restantes de la actividad.
+  // RE-PRORRATEA el saldo entre los días hábiles SIGUIENTES de la actividad.
   const guardarReal = useMutation({
     mutationFn: ({ actId, fecha, v }: { actId: number; fecha: string; v: number | null }) =>
       api(`/ev/programacion/actividades/${actId}/avance-dia`, {
@@ -184,7 +194,6 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
             {(d?.grupos ?? []).map(g => (
               <GrupoOTM key={g.otm_id ?? '-'} grupo={g} fechas={d!.fechas} hoy={hoy}
                 laborable={laborable} onEditar={onEditar}
-                onProg={(actId, fecha, v) => guardarProg.mutate({ actId, fecha, v })}
                 onReal={(actId, fecha, v) => guardarReal.mutate({ actId, fecha, v })} />
             ))}
             {(d?.grupos ?? []).length === 0 && !grid.isLoading && (
@@ -197,23 +206,23 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
         </table>
       </div>
       <p className="text-[11px] text-k-text3">
-        Fila 1 = <span className="text-sky-300 font-bold">PROGRAMADO</span> (línea base: el metrado meta
-        prorrateado entre los días laborables del rango, saltando feriados y saltos ∅ de la actividad) ·
-        fila 2 = REAL del día: <span className="text-green-300 font-bold">verde</span> avanzaste más,{' '}
+        Celda <span className="text-sky-300 font-bold">celeste</span> = PROGRAMADO (línea base: el metrado
+        meta prorrateado entre los días laborables, saltando feriados y saltos ∅). Escribe encima el{' '}
+        <b>avance real del día</b> (hasta hoy): la celda queda ✓ registrada en{' '}
+        <span className="text-green-300 font-bold">verde</span> si avanzaste más,{' '}
         <span className="text-amber-300 font-bold">ámbar</span> justo lo programado,{' '}
-        <span className="text-red-300 font-bold">rojo</span> menos — y el <b>saldo se re-prorratea solo</b>{' '}
-        entre los días restantes para terminar en F.Fin. El real se guarda en el avance diario del módulo{' '}
-        <b>Valor Ganado</b> (mismo dato por las 2 vías) y requiere partida de control.
+        <span className="text-red-300 font-bold">rojo</span> menos — los días anteriores no se tocan y el{' '}
+        <b>saldo se re-prorratea en los días siguientes</b> para cumplir el meta en F.Fin. El meta solo se
+        cambia abriendo la actividad. El real alimenta el avance diario de <b>Valor Ganado</b> (un solo dato).
       </p>
     </div>
   )
 }
 
-function GrupoOTM({ grupo, fechas, hoy, laborable, onEditar, onProg, onReal }: {
+function GrupoOTM({ grupo, fechas, hoy, laborable, onEditar, onReal }: {
   grupo: GridResp['grupos'][number]; fechas: string[]; hoy: string
   laborable: (f: string) => boolean
   onEditar: (a: ActGrid) => void
-  onProg: (actId: number, fecha: string, v: number | null) => void
   onReal: (actId: number, fecha: string, v: number | null) => void
 }) {
   return (
@@ -226,82 +235,52 @@ function GrupoOTM({ grupo, fechas, hoy, laborable, onEditar, onProg, onReal }: {
       </tr>
       {grupo.actividades.map(a => {
         const editable = a.estado !== 'CANCELADO'
+        const saltos = new Set(a.dias_salto ?? [])
         return (
-          <FilasActividad key={a.id} a={a} fechas={fechas} hoy={hoy} editable={editable}
-            laborable={laborable} onEditar={onEditar} onProg={onProg} onReal={onReal} />
+          <tr key={a.id} className={a.estado === 'CANCELADO' ? 'opacity-50' : ''}>
+            <td onClick={() => onEditar(a)}
+              className={`${tdFijo} sticky left-0 z-10 cursor-pointer hover:bg-k-raised align-top`}
+              title={`${a.titulo}${a.partida_desc ? `\n📌 ${a.partida_codigo} — ${a.partida_desc}` : ''}\n(clic para editar: meta, fechas, saltos, restricciones)`}>
+              <div className="flex items-center gap-1.5">
+                <span className={`w-2 h-2 rounded-full flex-shrink-0 ${ESTADO_DOT[a.estado] ?? 'bg-zinc-500'}`} />
+                <span className="text-k-text leading-tight">{a.titulo}</span>
+                {(a.rest_pend ?? 0) > 0 && <span className="text-[9px] font-bold text-k-red flex-shrink-0">⛔{a.rest_pend}</span>}
+              </div>
+              {a.partida_codigo && (
+                <div className="text-[9px] text-k-text3 font-mono pl-3.5 truncate max-w-[240px]">
+                  📌 {a.partida_codigo}{a.partida_desc ? ` · ${a.partida_desc.slice(0, 34)}` : ''}
+                </div>
+              )}
+              {a.estado === 'NO_CUMPLIDA' && (a.causa_nc_cat || a.causa_nc) && (
+                <div className="text-[9px] text-k-red/90 pl-3.5">
+                  {CNC[a.causa_nc_cat ?? ''] ?? ''}{a.causa_nc ? ` — ${a.causa_nc.slice(0, 40)}` : ''}
+                </div>
+              )}
+            </td>
+            <td className={`${tdFijo} text-center text-k-text2`}>
+              {a.supervisor_nombre?.split(' ')[0] || a.responsable || '—'}
+            </td>
+            <td className={`${tdFijo} text-center align-middle`}
+              title="Metrado META — solo se cambia abriendo la actividad">
+              <div className="font-mono font-bold text-k-text">{a.metrado_prog != null ? num(a.metrado_prog) : '—'}</div>
+              {a.metrado_base != null && (
+                <div className="text-[9px] text-k-text3" title="Metrado presupuestado de la partida · saldo por ejecutar">
+                  base {num(a.metrado_base)}{a.saldo != null ? ` · saldo ${num(a.saldo)}` : ''}
+                </div>
+              )}
+            </td>
+            <td className={`${tdFijo} text-center text-k-text2`}>{a.und ?? '—'}</td>
+            <td className={`${tdFijo} text-center font-mono text-[10px] text-k-text2`}>{fmtCorta(a.fecha)}</td>
+            <td className={`${tdFijo} text-center font-mono text-[10px] text-k-text2`}>{fmtCorta(a.fecha_fin)}</td>
+            {fechas.map(f => (
+              <CeldaDia key={f} prog={a.prog[f]} real={a.real[f]}
+                esSalto={saltos.has(f)} laborable={laborable(f)}
+                editable={editable && !!a.partida_id && f <= hoy}
+                onRegistrar={v => onReal(a.id, f, v)} />
+            ))}
+          </tr>
         )
       })}
-    </>
-  )
-}
-
-function FilasActividad({ a, fechas, hoy, editable, laborable, onEditar, onProg, onReal }: {
-  a: ActGrid; fechas: string[]; hoy: string; editable: boolean
-  laborable: (f: string) => boolean
-  onEditar: (a: ActGrid) => void
-  onProg: (actId: number, fecha: string, v: number | null) => void
-  onReal: (actId: number, fecha: string, v: number | null) => void
-}) {
-  const saltos = new Set(a.dias_salto ?? [])
-  return (
-    <>
-      <tr className={a.estado === 'CANCELADO' ? 'opacity-50' : ''}>
-        <td rowSpan={2} onClick={() => onEditar(a)}
-          className={`${tdFijo} sticky left-0 z-10 cursor-pointer hover:bg-k-raised align-top`}
-          title={`${a.titulo}${a.partida_desc ? `\n📌 ${a.partida_codigo} — ${a.partida_desc}` : ''}\n(clic para editar / restricciones)`}>
-          <div className="flex items-center gap-1.5">
-            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${ESTADO_DOT[a.estado] ?? 'bg-zinc-500'}`} />
-            <span className="text-k-text leading-tight">{a.titulo}</span>
-            {(a.rest_pend ?? 0) > 0 && <span className="text-[9px] font-bold text-k-red flex-shrink-0">⛔{a.rest_pend}</span>}
-          </div>
-          {a.partida_codigo && (
-            <div className="text-[9px] text-k-text3 font-mono pl-3.5 truncate max-w-[240px]">
-              📌 {a.partida_codigo}{a.partida_desc ? ` · ${a.partida_desc.slice(0, 34)}` : ''}
-            </div>
-          )}
-          {a.estado === 'NO_CUMPLIDA' && (a.causa_nc_cat || a.causa_nc) && (
-            <div className="text-[9px] text-k-red/90 pl-3.5">
-              {CNC[a.causa_nc_cat ?? ''] ?? ''}{a.causa_nc ? ` — ${a.causa_nc.slice(0, 40)}` : ''}
-            </div>
-          )}
-        </td>
-        <td rowSpan={2} className={`${tdFijo} text-center text-k-text2`}>
-          {a.supervisor_nombre?.split(' ')[0] || a.responsable || '—'}
-        </td>
-        <td rowSpan={2} className={`${tdFijo} text-center align-middle`}>
-          <div className="font-mono font-bold text-k-text">{a.metrado_prog != null ? num(a.metrado_prog) : '—'}</div>
-          {a.metrado_base != null && (
-            <div className="text-[9px] text-k-text3" title="Metrado presupuestado de la partida · saldo por ejecutar">
-              base {num(a.metrado_base)}{a.saldo != null ? ` · saldo ${num(a.saldo)}` : ''}
-            </div>
-          )}
-        </td>
-        <td rowSpan={2} className={`${tdFijo} text-center text-k-text2`}>{a.und ?? '—'}</td>
-        <td rowSpan={2} className={`${tdFijo} text-center font-mono text-[10px] text-k-text2`}>{fmtCorta(a.fecha)}</td>
-        <td rowSpan={2} className={`${tdFijo} text-center font-mono text-[10px] text-k-text2`}>{fmtCorta(a.fecha_fin)}</td>
-        {fechas.map(f => {
-          const dentro = f >= a.fecha && f <= a.fecha_fin
-          if (saltos.has(f)) {
-            return <td key={f} title="Salto intencional de la actividad (edítalo en el modal)"
-              className="border border-k-border/60 px-0.5 py-0.5 text-center text-[10px] bg-zinc-600/30 text-k-text3">∅</td>
-          }
-          const lleno = (a.prog[f] ?? 0) > 0
-          const clr = lleno ? 'bg-sky-500/20 text-sky-300 font-medium'
-            : !laborable(f) ? 'bg-zinc-700/30' : ''
-          return (
-            <CeldaMetrado key={f} valor={a.prog[f]} clr={clr}
-              editable={editable && (laborable(f) || (dentro && lleno))}
-              onGuardar={v => onProg(a.id, f, v)} />
-          )
-        })}
-      </tr>
-      <tr className={a.estado === 'CANCELADO' ? 'opacity-50' : ''}>
-        {fechas.map(f => (
-          <CeldaMetrado key={f} valor={a.real[f]} clr={clrReal(a.real[f], a.prog[f]) || (!laborable(f) ? 'bg-zinc-700/30' : '')}
-            editable={!!a.partida_id && f <= hoy && editable}
-            onGuardar={v => onReal(a.id, f, v)} />
-        ))}
-      </tr>
     </>
   )
 }
