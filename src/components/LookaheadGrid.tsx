@@ -25,10 +25,13 @@ export interface ActGrid {
   partida_codigo?: string | null; partida_desc?: string | null
   responsable?: string | null; supervisor_id?: string | null; supervisor_nombre?: string | null
   causa_nc?: string | null; causa_nc_cat?: string | null
+  causa_nc_planner?: string | null; causa_nc_planner_cat?: string | null
   rest_pend?: number; rest_total?: number
   und?: string | null; metrado_prog?: number | null
   metrado_base?: number | null; acum_real?: number | null; saldo?: number | null
-  dias_salto?: string[]
+  dias_salto?: string[]; dias_medio?: string[]
+  predecesoras?: { id: number; titulo: string; fecha_fin: string; lag_dias: number }[]
+  sucesoras?: number[]; dep_total?: number
   prog: Record<string, number>; real: Record<string, number>
 }
 export interface GridResp {
@@ -63,13 +66,33 @@ const PROYECTO_ID = 1
 const thBase = 'border border-k-border px-1 py-1 text-[10px] font-bold text-k-text2 bg-k-raised'
 const tdFijo = 'border border-k-border px-2 py-1 text-[11px] bg-k-surface'
 
+// Colores base de la celda (bg tailwind ↔ rgba para el gradiente de medio día)
+const NIVEL_TXT: Record<string, string> = {
+  verde: 'text-green-300 font-bold', ambar: 'text-amber-300 font-bold',
+  rojo: 'text-red-300 font-bold', celeste: 'text-sky-300 font-medium', gris: '',
+}
+const NIVEL_BG: Record<string, string> = {
+  verde: 'bg-green-500/25', ambar: 'bg-amber-500/25', rojo: 'bg-red-500/25',
+  celeste: 'bg-sky-500/20', gris: 'bg-zinc-700/30',
+}
+const NIVEL_RGBA: Record<string, string> = {
+  verde: 'rgba(34,197,94,0.25)', ambar: 'rgba(245,158,11,0.25)',
+  rojo: 'rgba(239,68,68,0.25)', celeste: 'rgba(14,165,233,0.20)',
+  gris: 'rgba(63,63,70,0.30)',
+}
+const nivelDe = (real: number | undefined, prog: number | undefined, laborable: boolean) =>
+  real != null
+    ? (real > (prog ?? 0) + 0.0005 ? 'verde' : real >= (prog ?? 0) - 0.0005 ? 'ambar' : 'rojo')
+    : (prog ?? 0) > 0 ? 'celeste' : !laborable ? 'gris' : ''
+
 // Una celda = un día de la actividad. Muestra el PROGRAMADO (celeste, línea
 // base) hasta que se registra el avance: al escribir encima se guarda el REAL
 // del día (el meta NO cambia; el saldo se re-prorratea en los días siguientes)
 // y la celda toma el semáforo verde/ámbar/rojo con un ✓ de "registrada".
-function CeldaDia({ prog, real, editable, esSalto, laborable, onRegistrar }: {
+// Un día ◐ (medio día, pesa 0.5) se pinta con relleno SOLO hasta la mitad.
+function CeldaDia({ prog, real, editable, esSalto, esMedio, laborable, onRegistrar }: {
   prog: number | undefined; real: number | undefined
-  editable: boolean; esSalto: boolean; laborable: boolean
+  editable: boolean; esSalto: boolean; esMedio: boolean; laborable: boolean
   onRegistrar: (v: number | null) => void
 }) {
   if (esSalto) {
@@ -77,15 +100,20 @@ function CeldaDia({ prog, real, editable, esSalto, laborable, onRegistrar }: {
       className="border border-k-border/60 px-0.5 py-0.5 text-center text-[10px] bg-zinc-600/30 text-k-text3">∅</td>
   }
   const registrada = real != null
-  const clr = registrada ? clrReal(real, prog)
-    : (prog ?? 0) > 0 ? 'bg-sky-500/20 text-sky-300 font-medium'
-    : !laborable ? 'bg-zinc-700/30' : ''
-  const titulo = registrada
+  const nivel = nivelDe(real, prog, laborable)
+  const clr = nivel ? `${NIVEL_TXT[nivel]}${esMedio ? '' : ` ${NIVEL_BG[nivel]}`}` : ''
+  // Medio día: el fondo llena solo la MITAD inferior de la celda (notorio)
+  const estilo = esMedio && nivel
+    ? { background: `linear-gradient(to top, ${NIVEL_RGBA[nivel]} 50%, transparent 50%)` }
+    : undefined
+  const titulo = (esMedio ? 'Medio día (pesa 0.5). ' : '') + (registrada
     ? `Programado: ${prog != null ? num(prog) : '—'} · Real registrado: ${num(real!)}`
-    : (prog ?? 0) > 0 ? `Programado: ${num(prog!)} — escribe el avance real del día` : ''
+    : (prog ?? 0) > 0 ? `Programado: ${num(prog!)} — escribe el avance real del día` : '')
   const valor = registrada ? real : prog
   if (!editable) {
-    return <td title={titulo} className={`border border-k-border/60 px-0.5 py-0.5 text-center text-[10px] ${clr}`}>
+    return <td title={titulo} style={estilo}
+      className={`relative border border-k-border/60 px-0.5 py-0.5 text-center text-[10px] ${clr}`}>
+      {esMedio && <span className="absolute top-0 left-0.5 text-[7px] leading-none text-k-text3">◐</span>}
       {valor != null && valor > 0 ? num(valor) : ''}</td>
   }
   const commit = (el: HTMLInputElement) => {
@@ -97,7 +125,8 @@ function CeldaDia({ prog, real, editable, esSalto, laborable, onRegistrar }: {
     onRegistrar(v)
   }
   return (
-    <td title={titulo} className={`relative border border-k-border/60 p-0 text-center ${clr}`}>
+    <td title={titulo} style={estilo} className={`relative border border-k-border/60 p-0 text-center ${clr}`}>
+      {esMedio && <span className="absolute top-0 left-0.5 text-[7px] leading-none text-k-text3" title="Medio día (pesa 0.5)">◐</span>}
       {registrada && <span className="absolute top-0 right-0.5 text-[7px] leading-none text-current opacity-90" title="Avance registrado">✓</span>}
       {/* No controlado + key: al llegar el valor del servidor la celda se re-monta */}
       <input key={`${prog ?? '-'}|${real ?? '-'}`} defaultValue={valor != null ? num(valor) : ''}
@@ -113,6 +142,8 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
   const qc = useQueryClient()
   const [nSemanas, setNSemanas] = useState(4)
   const [desde, setDesde] = useState(() => iso(lunesDe(new Date())))
+  // Cadena resaltada (clic en 🔗): antecesoras en azul, sucesoras en violeta.
+  const [cadenaDe, setCadenaDe] = useState<number | null>(null)
 
   const grid = useQuery<GridResp>({
     queryKey: ['lookahead-grid', desde, nSemanas],
@@ -138,10 +169,29 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
   }
   const hoy = iso(new Date())
   const d = grid.data
-  const nCols = 6 + (d ? d.fechas.length : nSemanas * 7)
+  const nCols = 7 + (d ? d.fechas.length : nSemanas * 7)
   const diasSemana = new Set(d?.dias_semana ?? [1, 2, 3, 4, 5, 6, 7])
   const feriados = new Set(d?.feriados ?? [])
   const laborable = (f: string) => diasSemana.has(isoDow(f)) && !feriados.has(f)
+
+  // BFS transitivo sobre las actividades visibles para pintar la cadena.
+  const cadena = (() => {
+    if (cadenaDe == null || !d) return null
+    const acts = d.grupos.flatMap(g => g.actividades)
+    const porId = new Map(acts.map(a => [a.id, a]))
+    const azules = new Set<number>(); const violetas = new Set<number>()
+    const subir = [cadenaDe]
+    while (subir.length) {
+      const a = porId.get(subir.pop()!)
+      for (const p of a?.predecesoras ?? []) if (!azules.has(p.id)) { azules.add(p.id); subir.push(p.id) }
+    }
+    const bajar = [cadenaDe]
+    while (bajar.length) {
+      const a = porId.get(bajar.pop()!)
+      for (const s of a?.sucesoras ?? []) if (!violetas.has(s)) { violetas.add(s); bajar.push(s) }
+    }
+    return { focal: cadenaDe, azules, violetas }
+  })()
 
   return (
     <div className="space-y-3">
@@ -154,11 +204,19 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
           className="bg-k-raised border border-k-border rounded-lg px-2.5 py-2 text-sm text-k-text outline-none">
           {[3, 4, 5, 6].map(n => <option key={n} value={n}>{n} semanas</option>)}
         </select>
+        <input type="date" value={desde} title="Saltar a la semana de una fecha"
+          onChange={e => { if (e.target.value) setDesde(iso(lunesDe(new Date(e.target.value + 'T12:00:00')))) }}
+          className="bg-k-raised border border-k-border rounded-lg px-2 py-1.5 text-xs text-k-text2 outline-none" />
         <button onClick={() => window.open(`/programacion/lookahead-imprimir?desde=${desde}&semanas=${nSemanas}`, '_blank')}
           className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-k-border bg-k-raised text-k-text2 hover:bg-k-border">
           <Printer size={14} /> Exportar PDF
         </button>
         {grid.isFetching && <Loader2 size={14} className="animate-spin text-k-text3" />}
+        {desde < iso(lunesDe(new Date())) && (
+          <span className="text-[11px] font-bold text-k-amber bg-amber-500/10 border border-amber-500/30 rounded-lg px-2.5 py-1.5">
+            ⏪ Semana pasada — puedes registrar avances y programar retroactivamente
+          </span>
+        )}
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-k-border">
@@ -171,6 +229,8 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
               <th className={thBase} rowSpan={2}>UND</th>
               <th className={thBase} rowSpan={2}>F. Inic</th>
               <th className={thBase} rowSpan={2}>F. Fin</th>
+              <th className={`${thBase} min-w-[60px]`} rowSpan={2}
+                title="Antecesoras (estilo MS Project): #id de la actividad que debe terminar antes, FS = Fin→Inicio, +d = lag">PRED.</th>
               {(d?.semanas ?? []).map((s, i) => (
                 <th key={s.lunes} colSpan={7}
                   className="border border-k-border px-1 py-1 text-[10px] font-bold uppercase bg-red-900/30 text-red-200">
@@ -193,7 +253,8 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
           <tbody>
             {(d?.grupos ?? []).map(g => (
               <GrupoOTM key={g.otm_id ?? '-'} grupo={g} fechas={d!.fechas} hoy={hoy}
-                laborable={laborable} onEditar={onEditar}
+                laborable={laborable} onEditar={onEditar} cadena={cadena}
+                onCadena={id => setCadenaDe(v => (v === id ? null : id))}
                 onReal={(actId, fecha, v) => guardarReal.mutate({ actId, fecha, v })} />
             ))}
             {(d?.grupos ?? []).length === 0 && !grid.isLoading && (
@@ -219,16 +280,18 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
   )
 }
 
-function GrupoOTM({ grupo, fechas, hoy, laborable, onEditar, onReal }: {
+function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, onReal }: {
   grupo: GridResp['grupos'][number]; fechas: string[]; hoy: string
   laborable: (f: string) => boolean
+  cadena: { focal: number; azules: Set<number>; violetas: Set<number> } | null
+  onCadena: (id: number) => void
   onEditar: (a: ActGrid) => void
   onReal: (actId: number, fecha: string, v: number | null) => void
 }) {
   return (
     <>
       <tr>
-        <td colSpan={6 + fechas.length}
+        <td colSpan={7 + fechas.length}
           className="border border-k-border px-2 py-1 text-[11px] font-bold bg-blue-500/15 text-k-blue sticky left-0">
           {grupo.otm_id ?? 'Sin OTM'}{grupo.otm_desc ? ` — ${grupo.otm_desc}` : ''}
         </td>
@@ -236,15 +299,31 @@ function GrupoOTM({ grupo, fechas, hoy, laborable, onEditar, onReal }: {
       {grupo.actividades.map(a => {
         const editable = a.estado !== 'CANCELADO'
         const saltos = new Set(a.dias_salto ?? [])
+        const medios = new Set(a.dias_medio ?? [])
+        // Resaltado de cadena: focal normal, antecesoras azul, sucesoras violeta, resto atenuado
+        const claseCadena = !cadena ? ''
+          : cadena.focal === a.id ? 'ring-1 ring-inset ring-amber-500/50'
+          : cadena.azules.has(a.id) ? 'bg-blue-500/10'
+          : cadena.violetas.has(a.id) ? 'bg-violet-500/10'
+          : 'opacity-30'
         return (
-          <tr key={a.id} className={a.estado === 'CANCELADO' ? 'opacity-50' : ''}>
+          <tr key={a.id} className={`${a.estado === 'CANCELADO' ? 'opacity-50' : ''} ${claseCadena}`}>
             <td onClick={() => onEditar(a)}
               className={`${tdFijo} sticky left-0 z-10 cursor-pointer hover:bg-k-raised align-top`}
-              title={`${a.titulo}${a.partida_desc ? `\n📌 ${a.partida_codigo} — ${a.partida_desc}` : ''}\n(clic para editar: meta, fechas, saltos, restricciones)`}>
+              title={`${a.titulo}${a.partida_desc ? `\n📌 ${a.partida_codigo} — ${a.partida_desc}` : ''}\n(clic para editar: meta, fechas, saltos, antecesoras, restricciones)`}>
               <div className="flex items-center gap-1.5">
                 <span className={`w-2 h-2 rounded-full flex-shrink-0 ${ESTADO_DOT[a.estado] ?? 'bg-zinc-500'}`} />
+                <span className="text-[8px] font-mono text-k-text3 flex-shrink-0">#{a.id}</span>
                 <span className="text-k-text leading-tight">{a.titulo}</span>
                 {(a.rest_pend ?? 0) > 0 && <span className="text-[9px] font-bold text-k-red flex-shrink-0">⛔{a.rest_pend}</span>}
+                {(a.dep_total ?? 0) > 0 && (
+                  <button onClick={e => { e.stopPropagation(); onCadena(a.id) }}
+                    title={`${a.dep_total} vínculo(s) — clic para resaltar la cadena (azul = antecesoras, violeta = sucesoras)`}
+                    className={`text-[9px] font-bold flex-shrink-0 px-1 rounded ${
+                      cadena?.focal === a.id ? 'bg-amber-500/20 text-k-amber' : 'text-k-blue hover:bg-k-raised'}`}>
+                    🔗{a.dep_total}
+                  </button>
+                )}
               </div>
               {a.partida_codigo && (
                 <div className="text-[9px] text-k-text3 font-mono pl-3.5 truncate max-w-[240px]">
@@ -272,9 +351,13 @@ function GrupoOTM({ grupo, fechas, hoy, laborable, onEditar, onReal }: {
             <td className={`${tdFijo} text-center text-k-text2`}>{a.und ?? '—'}</td>
             <td className={`${tdFijo} text-center font-mono text-[10px] text-k-text2`}>{fmtCorta(a.fecha)}</td>
             <td className={`${tdFijo} text-center font-mono text-[10px] text-k-text2`}>{fmtCorta(a.fecha_fin)}</td>
+            <td className={`${tdFijo} text-center font-mono text-[9px] text-k-text2`}
+              title={(a.predecesoras ?? []).map(p => `#${p.id} ${p.titulo} (termina ${fmtCorta(p.fecha_fin)}${p.lag_dias ? `, lag ${p.lag_dias}d` : ''})`).join('\n') || 'Sin antecesoras'}>
+              {(a.predecesoras ?? []).map(p => `${p.id}FS${p.lag_dias ? `+${p.lag_dias}d` : ''}`).join(', ') || '—'}
+            </td>
             {fechas.map(f => (
               <CeldaDia key={f} prog={a.prog[f]} real={a.real[f]}
-                esSalto={saltos.has(f)} laborable={laborable(f)}
+                esSalto={saltos.has(f)} esMedio={medios.has(f)} laborable={laborable(f)}
                 editable={editable && !!a.partida_id && f <= hoy}
                 onRegistrar={v => onReal(a.id, f, v)} />
             ))}
@@ -287,10 +370,21 @@ function GrupoOTM({ grupo, fechas, hoy, laborable, onEditar, onReal }: {
 
 // ── F030b: evaluación de la semana (comprometido vs alcanzado) ──
 export function EvaluacionSemanal() {
+  const qc = useQueryClient()
   const [lunes, setLunes] = useState(() => iso(lunesDe(new Date())))
   const grid = useQuery<GridResp>({
     queryKey: ['lookahead-grid', lunes, 1],
     queryFn: () => api(`/ev/programacion/lookahead-grid?proyecto_id=${PROYECTO_ID}&desde=${lunes}&semanas=1`),
+  })
+  // Causa de no cumplimiento según el PLANNER (separada de la de campo).
+  const causaPlanner = useMutation({
+    mutationFn: ({ actId, cat, detalle }: { actId: number; cat: string | null; detalle: string | null }) =>
+      api(`/ev/programacion/actividades/${actId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ causa_nc_planner_cat: cat, causa_nc_planner: detalle }),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['lookahead-grid'] }),
+    onError: (e: Error) => alert(e.message),
   })
   const mover = (dias: number) => {
     const d = new Date(lunes + 'T12:00:00'); d.setDate(d.getDate() + dias); setLunes(iso(lunesDe(d)))
@@ -327,15 +421,17 @@ export function EvaluacionSemanal() {
               <th className={thBase}>COMPROM.</th>
               <th className={thBase}>ALCANZ.</th>
               <th className={thBase}>CUMPL.</th>
-              <th className={`${thBase} text-left min-w-[180px]`}>CAUSA DE NO CUMPLIMIENTO</th>
+              <th className={`${thBase} text-left min-w-[160px]`}>CAUSA (CAMPO)</th>
+              <th className={`${thBase} text-left min-w-[200px]`}>CAUSA (PLANNER)</th>
             </tr>
           </thead>
           <tbody>
             {(d?.grupos ?? []).map(g => (
-              <EvalGrupo key={g.otm_id ?? '-'} grupo={g} fechas={fechas} cumplimiento={cumplimiento} />
+              <EvalGrupo key={g.otm_id ?? '-'} grupo={g} fechas={fechas} cumplimiento={cumplimiento}
+                onCausaPlanner={(actId, cat, detalle) => causaPlanner.mutate({ actId, cat, detalle })} />
             ))}
             {(d?.grupos ?? []).length === 0 && !grid.isLoading && (
-              <tr><td colSpan={7 + fechas.length} className="px-4 py-6 text-center text-k-text3">Semana sin actividades programadas.</td></tr>
+              <tr><td colSpan={8 + fechas.length} className="px-4 py-6 text-center text-k-text3">Semana sin actividades programadas.</td></tr>
             )}
           </tbody>
         </table>
@@ -344,19 +440,22 @@ export function EvaluacionSemanal() {
         Por día: <span className="text-sky-300">programado</span> / real (<span className="text-green-300">verde</span> más,{' '}
         <span className="text-amber-300">ámbar</span> igual, <span className="text-red-300">rojo</span> menos que lo programado).
         COMPROM. = metrado comprometido de la semana · ALCANZ. = metrado real registrado (avance diario del EV).
+        CAUSA (CAMPO) la reporta el supervisor; CAUSA (PLANNER) la depura oficina — en el Pareto de
+        PPC·Causas manda la del planner y, si no existe, cuenta la de campo.
       </p>
     </div>
   )
 }
 
-function EvalGrupo({ grupo, fechas, cumplimiento }: {
+function EvalGrupo({ grupo, fechas, cumplimiento, onCausaPlanner }: {
   grupo: GridResp['grupos'][number]; fechas: string[]
   cumplimiento: (a: ActGrid) => string[]
+  onCausaPlanner: (actId: number, cat: string | null, detalle: string | null) => void
 }) {
   return (
     <>
       <tr>
-        <td colSpan={7 + fechas.length} className="border border-k-border px-2 py-1 font-bold bg-blue-500/15 text-k-blue">
+        <td colSpan={8 + fechas.length} className="border border-k-border px-2 py-1 font-bold bg-blue-500/15 text-k-blue">
           {grupo.otm_id ?? 'Sin OTM'}{grupo.otm_desc ? ` — ${grupo.otm_desc}` : ''}
         </td>
       </tr>
@@ -390,6 +489,21 @@ function EvalGrupo({ grupo, fechas, cumplimiento }: {
               {a.estado === 'NO_CUMPLIDA'
                 ? `${CNC[a.causa_nc_cat ?? ''] ?? ''}${a.causa_nc ? ` — ${a.causa_nc}` : ''}`
                 : ''}
+            </td>
+            <td className="border border-k-border px-1 py-0.5">
+              <div className="flex gap-1 items-center">
+                <select value={a.causa_nc_planner_cat ?? ''}
+                  onChange={e => onCausaPlanner(a.id, e.target.value || null, a.causa_nc_planner ?? null)}
+                  className="bg-k-raised border border-k-border rounded px-1 py-0.5 text-[10px] text-k-text2 outline-none max-w-[110px]">
+                  <option value="">—</option>
+                  {Object.entries(CNC).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
+                <input key={a.causa_nc_planner ?? ''} defaultValue={a.causa_nc_planner ?? ''}
+                  placeholder="detalle…"
+                  onBlur={e => { const v = e.target.value.trim() || null; if (v !== (a.causa_nc_planner ?? null)) onCausaPlanner(a.id, a.causa_nc_planner_cat ?? null, v) }}
+                  onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+                  className="bg-transparent border-b border-k-border/60 text-[10px] text-k-text2 outline-none w-24 focus:border-k-amber" />
+              </div>
             </td>
           </tr>
         )
