@@ -135,7 +135,13 @@ export default function TabDiario({ semana, lunes, onSemana, selectedOtm }: Prop
       })
       if (!r.ok) throw new Error('Error guardando')
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['semana-grid'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['semana-grid'] })
+      // F1 LookAhead v2: es el MISMO dato — el API re-prorratea la actividad
+      // vinculada, así que el grid de Programación debe refrescarse también.
+      qc.invalidateQueries({ queryKey: ['lookahead-grid'] })
+      qc.invalidateQueries({ queryKey: ['programacion'] })
+    },
   })
 
   const handleBlur = useCallback(async (partida_id: number, fecha: string, ck: string) => {
@@ -181,6 +187,8 @@ export default function TabDiario({ semana, lunes, onSemana, selectedOtm }: Prop
       })
       await Promise.all(promises)
       qc.invalidateQueries({ queryKey: ['semana-grid'] })
+      qc.invalidateQueries({ queryKey: ['lookahead-grid'] })
+      qc.invalidateQueries({ queryKey: ['programacion'] })
       setBulkOpen(false)
       showToast(`✓ ${Object.keys(bulkVals).length} cantidades guardadas`)
     } catch {
@@ -627,6 +635,12 @@ export default function TabDiario({ semana, lunes, onSemana, selectedOtm }: Prop
           </div>
         </div>
       )}
+
+      <p style={{ fontSize: 11, color: '#8b8fa3', marginTop: 10 }}>
+        La fila <b>Cant. Ejecutada</b> es el <b>mismo avance diario del LookAhead</b> (Programación):
+        registrarlo aquí re-prorratea la actividad vinculada y su semáforo — y viceversa. Un solo dato,
+        dos vías.
+      </p>
 
       {/* Toast */}
       {toast && (
