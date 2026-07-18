@@ -51,7 +51,7 @@ export default function MonitorTareo() {
       <div className="flex gap-2">
         <button onClick={() => setTab('hh')}
           className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold border transition-colors ${tab === 'hh' ? 'bg-k-amber text-k-void border-k-amber' : 'bg-k-surface text-k-text2 border-k-border hover:border-k-amber/40'}`}>
-          <Clock size={15} /> HH diario por OTM
+          <Clock size={15} /> HH diario por proyecto
         </button>
         <button onClick={() => setTab('anom')}
           className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold border transition-colors ${tab === 'anom' ? 'bg-k-amber text-k-void border-k-amber' : 'bg-k-surface text-k-text2 border-k-border hover:border-k-amber/40'}`}>
@@ -68,7 +68,7 @@ export default function MonitorTareo() {
   )
 }
 
-// ════════════════════════ HH diario por OTM ════════════════════════
+// ════════════════════════ HH diario por proyecto ════════════════════════
 function TabHHDiario() {
   const [fecha, setFecha] = useState(hoyISO())
   const { data, isLoading, refetch, isFetching } = useQuery<RespHH>({
@@ -109,7 +109,7 @@ function TabHHDiario() {
                 <th className="text-right py-2.5 px-3">Jornada</th>
                 <th className="text-right py-2.5 px-3">Dif.</th>
                 <th className="text-left py-2.5 px-3">Estado</th>
-                <th className="text-left py-2.5 px-3">OTMs (HH)</th>
+                <th className="text-left py-2.5 px-3">Proyectos (HH)</th>
               </tr>
             </thead>
             <tbody>

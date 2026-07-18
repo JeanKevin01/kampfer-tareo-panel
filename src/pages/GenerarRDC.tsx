@@ -187,7 +187,7 @@ export default function GenerarRDC() {
               )}
               {!loading && !otmId && (
                 <tr><td colSpan={3} className="px-4 py-8 text-center text-k-text3 text-sm">
-                  Selecciona una OTM para ver el personal del día
+                  Selecciona un proyecto para ver el personal del día
                 </td></tr>
               )}
               {!loading && otmId && porCargo.length === 0 && (

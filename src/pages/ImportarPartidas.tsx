@@ -1,12 +1,17 @@
 // ============================================================
 // src/pages/ImportarPartidas.tsx
 // Importador masivo de partidas EV (UNA sola hoja PARTIDAS).
-// Columnas: OTM, CODIGO, FASE, SUB_FASE, AREA, DESCRIPCION, UNIDAD,
-//   METRADO_PRESUP, METRADO_PROYEC, HH_PRESUP, HH_ACTUALIZADO (opc), TIPO_COSTO, NATURALEZA,
+// Rediseño 2026-07-18 (Jean): PRIMERO se elige el PROYECTO (la plantilla ya no
+// pide OTM/PROYECTO por fila) y se quitaron SUB_FASE, AREA y TIPO_COSTO:
+//   · el área/sistema se HEREDA del proyecto elegido (matriz Área×Disciplina);
+//   · toda partida nace DIRECTO (las indirectas se marcan editando la partida).
+// Columnas: CODIGO, FASE, DESCRIPCION, UNIDAD, METRADO_PRESUP, METRADO_PROYEC,
+//   HH_PRESUP, HH_ACTUALIZADO (opc), NATURALEZA,
 //   HH_GASTADAS_INICIAL, HH_GANADAS_INICIAL (opcionales para migrar histórico),
 //   y los hitos EN LÍNEA: HITO1_DESC, HITO1_PESO ... HITO5_DESC, HITO5_PESO.
 //   Los pesos son decimales que SUMAN 1.00. El hito PRINCIPAL = el de mayor peso.
 //   Si una partida hoja no trae hitos, se le asigna uno solo (100%).
+//   (Archivos viejos con OTM/SUB_FASE/AREA/TIPO_COSTO siguen siendo aceptados.)
 // ============================================================
 import { useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -91,18 +96,18 @@ function descargarPlantilla() {
   // Una sola hoja. Nodos PADRE: FASE vacía (solo agrupan). Nodos HOJA: FASE llena.
   // Los hitos van en línea: por cada hito su descripción y su peso (decimales que suman 1.00).
   const partidas = [
-    { OTM:'OTM-0005', CODIGO:'02',             FASE:'',    SUB_FASE:'',        AREA:'',          DESCRIPCION:'TRABAJOS EN INSTALACIONES DE SMCV', UNIDAD:'',   METRADO_PRESUP:'', METRADO_PROYEC:'', HH_PRESUP:'',    TIPO_COSTO:'',          NATURALEZA:'',            HH_GASTADAS_INICIAL:'', HH_GANADAS_INICIAL:'', HITO1_DESC:'',            HITO1_PESO:'',  HITO2_DESC:'',         HITO2_PESO:'',  HITO3_DESC:'', HITO3_PESO:'', HITO4_DESC:'', HITO4_PESO:'', HITO5_DESC:'', HITO5_PESO:'' },
-    { OTM:'OTM-0005', CODIGO:'02.01',          FASE:'',    SUB_FASE:'',        AREA:'',          DESCRIPCION:'DIVERTER DV-041',                   UNIDAD:'',   METRADO_PRESUP:'', METRADO_PROYEC:'', HH_PRESUP:'',    TIPO_COSTO:'',          NATURALEZA:'',            HH_GASTADAS_INICIAL:'', HH_GANADAS_INICIAL:'', HITO1_DESC:'',            HITO1_PESO:'',  HITO2_DESC:'',         HITO2_PESO:'',  HITO3_DESC:'', HITO3_PESO:'', HITO4_DESC:'', HITO4_PESO:'', HITO5_DESC:'', HITO5_PESO:'' },
-    { OTM:'OTM-0005', CODIGO:'02.01.01.01.01', FASE:'AND', SUB_FASE:'AND.INS', AREA:'Sistema 1', DESCRIPCION:'TRANSPORTE INTERNO CAMIÓN GRÚA',    UNIDAD:'hm', METRADO_PRESUP:16, METRADO_PROYEC:'', HH_PRESUP:17.57, HH_ACTUALIZADO:18, TIPO_COSTO:'DIRECTO',   NATURALEZA:'CONTRACTUAL', HH_GASTADAS_INICIAL:'', HH_GANADAS_INICIAL:'', HITO1_DESC:'Preparación', HITO1_PESO:0.10, HITO2_DESC:'Ejecución', HITO2_PESO:0.90, HITO3_DESC:'', HITO3_PESO:'', HITO4_DESC:'', HITO4_PESO:'', HITO5_DESC:'', HITO5_PESO:'' },
-    { OTM:'OTM-0005', CODIGO:'02.01.01.01.02', FASE:'EST', SUB_FASE:'EST.LIG', AREA:'Sistema 1', DESCRIPCION:'PERSONAL DE APOYO CARGUÍO',         UNIDAD:'hh', METRADO_PRESUP:32, METRADO_PROYEC:'', HH_PRESUP:160,   HH_ACTUALIZADO:'', TIPO_COSTO:'INDIRECTO', NATURALEZA:'ADICIONAL',   HH_GASTADAS_INICIAL:'', HH_GANADAS_INICIAL:'', HITO1_DESC:'Ejecución',   HITO1_PESO:1.00, HITO2_DESC:'',         HITO2_PESO:'',  HITO3_DESC:'', HITO3_PESO:'', HITO4_DESC:'', HITO4_PESO:'', HITO5_DESC:'', HITO5_PESO:'' },
+    { CODIGO:'02',             FASE:'',    DESCRIPCION:'TRABAJOS GENERALES',             UNIDAD:'',   METRADO_PRESUP:'', METRADO_PROYEC:'', HH_PRESUP:'',    NATURALEZA:'',            HH_GASTADAS_INICIAL:'', HH_GANADAS_INICIAL:'', HITO1_DESC:'',            HITO1_PESO:'',  HITO2_DESC:'',         HITO2_PESO:'',  HITO3_DESC:'', HITO3_PESO:'', HITO4_DESC:'', HITO4_PESO:'', HITO5_DESC:'', HITO5_PESO:'' },
+    { CODIGO:'02.01',          FASE:'',    DESCRIPCION:'DIVERTER DV-041',                UNIDAD:'',   METRADO_PRESUP:'', METRADO_PROYEC:'', HH_PRESUP:'',    NATURALEZA:'',            HH_GASTADAS_INICIAL:'', HH_GANADAS_INICIAL:'', HITO1_DESC:'',            HITO1_PESO:'',  HITO2_DESC:'',         HITO2_PESO:'',  HITO3_DESC:'', HITO3_PESO:'', HITO4_DESC:'', HITO4_PESO:'', HITO5_DESC:'', HITO5_PESO:'' },
+    { CODIGO:'02.01.01.01.01', FASE:'AND', DESCRIPCION:'TRANSPORTE INTERNO CAMIÓN GRÚA', UNIDAD:'hm', METRADO_PRESUP:16, METRADO_PROYEC:'', HH_PRESUP:17.57, HH_ACTUALIZADO:18, NATURALEZA:'CONTRACTUAL', HH_GASTADAS_INICIAL:'', HH_GANADAS_INICIAL:'', HITO1_DESC:'Preparación', HITO1_PESO:0.10, HITO2_DESC:'Ejecución', HITO2_PESO:0.90, HITO3_DESC:'', HITO3_PESO:'', HITO4_DESC:'', HITO4_PESO:'', HITO5_DESC:'', HITO5_PESO:'' },
+    { CODIGO:'02.01.01.01.02', FASE:'EST', DESCRIPCION:'PERSONAL DE APOYO CARGUÍO',      UNIDAD:'hh', METRADO_PRESUP:32, METRADO_PROYEC:'', HH_PRESUP:160,   HH_ACTUALIZADO:'', NATURALEZA:'ADICIONAL',   HH_GASTADAS_INICIAL:'', HH_GANADAS_INICIAL:'', HITO1_DESC:'Ejecución',   HITO1_PESO:1.00, HITO2_DESC:'',         HITO2_PESO:'',  HITO3_DESC:'', HITO3_PESO:'', HITO4_DESC:'', HITO4_PESO:'', HITO5_DESC:'', HITO5_PESO:'' },
   ]
   const wb = XLSX.utils.book_new()
-  const header = ['OTM','CODIGO','FASE','SUB_FASE','AREA','DESCRIPCION','UNIDAD','METRADO_PRESUP','METRADO_PROYEC',
-                  'HH_PRESUP','HH_ACTUALIZADO','TIPO_COSTO','NATURALEZA','HH_GASTADAS_INICIAL','HH_GANADAS_INICIAL',
+  const header = ['CODIGO','FASE','DESCRIPCION','UNIDAD','METRADO_PRESUP','METRADO_PROYEC',
+                  'HH_PRESUP','HH_ACTUALIZADO','NATURALEZA','HH_GASTADAS_INICIAL','HH_GANADAS_INICIAL',
                   'HITO1_DESC','HITO1_PESO','HITO2_DESC','HITO2_PESO','HITO3_DESC','HITO3_PESO',
                   'HITO4_DESC','HITO4_PESO','HITO5_DESC','HITO5_PESO']
   const ws1 = XLSX.utils.json_to_sheet(partidas, { header })
-  ws1['!cols'] = [{wch:12},{wch:14},{wch:8},{wch:10},{wch:14},{wch:34},{wch:8},{wch:14},{wch:14},{wch:12},{wch:14},{wch:12},{wch:13},{wch:18},{wch:18},
+  ws1['!cols'] = [{wch:14},{wch:8},{wch:34},{wch:8},{wch:14},{wch:14},{wch:12},{wch:14},{wch:13},{wch:18},{wch:18},
                   {wch:16},{wch:10},{wch:16},{wch:10},{wch:16},{wch:10},{wch:16},{wch:10},{wch:16},{wch:10}]
   XLSX.utils.book_append_sheet(wb, ws1, 'PARTIDAS')
   XLSX.writeFile(wb, 'plantilla_partidas_valor_ganado.xlsx')
@@ -114,6 +119,8 @@ export default function ImportarPartidas() {
   const [partidas, setPartidas] = useState<FilaPartida[]>([])
   const [resultado, setResultado] = useState<{ ok: boolean; msg: string; detalle?: string[] } | null>(null)
   const [dragging, setDragging] = useState(false)
+  // PASO 1 (rediseño 2026-07-18): elegir el PROYECTO destino de todas las filas
+  const [proyecto, setProyecto] = useState('')
 
   const { data: otms = [] } = useQuery<OTMItem[]>({
     queryKey: ['ev-otms'],
@@ -134,7 +141,9 @@ export default function ImportarPartidas() {
     const fp: FilaPartida[] = rowsP.map((row, i) => {
       const n = norm(row)
       const codigo = n['CODIGO'] || ''
-      const otm_id = n['OTM'] || n['OTM_ID'] || null
+      // El proyecto viene del selector (paso 1); una columna OTM/PROYECTO en
+      // un archivo viejo solo se usa si coincide — si difiere, se avisa.
+      const otm_id = proyecto || n['OTM'] || n['OTM_ID'] || n['PROYECTO'] || null
       const fase   = n['FASE'] || null
       const unidad = n['UNIDAD'] || null
 
@@ -144,12 +153,16 @@ export default function ImportarPartidas() {
       if (!codigo) _error = 'CODIGO vacío'
       else if (codigos.has(codigo)) _error = 'CODIGO duplicado en el archivo'
       else if (!n['DESCRIPCION']) _error = 'DESCRIPCION vacía'
-      else if (!otm_id) _error = 'OTM vacío'
+      else if (!otm_id) _error = 'Elige el proyecto antes de subir el archivo'
       else if (fase && !unidad) _error = 'UNIDAD vacía (requerida para nodos con fase)'
       codigos.add(codigo)
 
+      const otmArchivo = n['OTM'] || n['OTM_ID'] || n['PROYECTO'] || ''
+      if (!_error && proyecto && otmArchivo && otmArchivo !== proyecto) {
+        _warn = `El archivo trae ${otmArchivo} pero elegiste ${proyecto} — se importará en ${proyecto}`
+      }
       if (!_error && otm_id && !otmIds.has(otm_id)) {
-        _warn = `OTM ${otm_id} no existe aún en el sistema — créala primero en la página OTMs`
+        _warn = `Proyecto ${otm_id} no existe aún — créalo primero en la página Proyectos`
       }
 
       const sep = codigo.includes('.') ? '.' : ','
@@ -283,15 +296,14 @@ export default function ImportarPartidas() {
       <div className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-xs text-k-text3 max-w-2xl">
-            Carga masiva de partidas desde Excel (una sola hoja <span className="text-k-text2 font-bold">PARTIDAS</span>).
-            <span className="text-k-text2 font-bold"> AREA</span>: agrupa por zona/sistema.{' '}
-            <span className="text-k-text2 font-bold">TIPO_COSTO</span>: DIRECTO (def) / INDIRECTO.{' '}
-            <span className="text-k-text2 font-bold">NATURALEZA</span>: CONTRACTUAL (def) / ADICIONAL (órdenes de cambio).{' '}
-            <span className="text-k-text2 font-bold">HH_ACTUALIZADO</span>: presupuesto actualizado (opcional, por defecto = HH_PRESUP) — denominador del % avance del proyecto.{' '}
-            Los <span className="text-k-text2 font-bold">hitos van en línea</span> (HITO1_DESC/HITO1_PESO … HITO5): pesos decimales que
-            suman <span className="text-k-text2 font-bold">1.00</span>, el principal es el de mayor peso. Si una partida no trae hitos,
-            se le asigna uno al 100%. <span className="text-k-text2 font-bold">HH_GASTADAS_INICIAL</span> y{' '}
-            <span className="text-k-text2 font-bold">HH_GANADAS_INICIAL</span> son opcionales (migrar histórico).
+            <span className="text-k-text2 font-bold">Paso 1:</span> elige el PROYECTO destino ·{' '}
+            <span className="text-k-text2 font-bold">Paso 2:</span> sube el Excel (una sola hoja{' '}
+            <span className="text-k-text2 font-bold">PARTIDAS</span>, ya sin columnas de proyecto,
+            sub-fase, área ni tipo de costo: el área se hereda del proyecto y toda partida nace DIRECTO).{' '}
+            <span className="text-k-text2 font-bold">NATURALEZA</span>: CONTRACTUAL (def) / ADICIONAL.{' '}
+            <span className="text-k-text2 font-bold">HH_ACTUALIZADO</span>: presupuesto actualizado (opcional) — denominador del % avance.{' '}
+            Los <span className="text-k-text2 font-bold">hitos van en línea</span> (HITO1_DESC/HITO1_PESO … HITO5): pesos que
+            suman <span className="text-k-text2 font-bold">1.00</span>; sin hitos se asigna uno al 100%.
           </p>
           <button onClick={descargarPlantilla}
             className="bg-k-raised border border-k-border text-k-text2 font-bold text-sm px-4 py-2.5 rounded-lg hover:bg-k-border transition-colors flex items-center gap-2 flex-shrink-0">
@@ -299,24 +311,42 @@ export default function ImportarPartidas() {
           </button>
         </div>
 
+        <div>
+          <label className="text-[11px] font-bold text-k-text3 uppercase tracking-wider block mb-1.5">Proyecto destino *</label>
+          <select value={proyecto} onChange={e => setProyecto(e.target.value)}
+            className="w-full bg-k-raised border border-k-border rounded-lg px-4 py-2.5 text-sm text-k-text outline-none focus:border-k-amber transition-colors">
+            <option value="">Elige el proyecto…</option>
+            {otms.map(o => (
+              <option key={o.otm_id} value={o.otm_id}>
+                {o.otm_id}{o.descripcion ? ` — ${o.descripcion.slice(0, 60)}` : ''} ({o.partidas} partidas)
+              </option>
+            ))}
+          </select>
+        </div>
+
         <div
-          onDragOver={e => { e.preventDefault(); setDragging(true) }}
+          onDragOver={e => { if (proyecto) { e.preventDefault(); setDragging(true) } }}
           onDragLeave={() => setDragging(false)}
           onDrop={e => {
             e.preventDefault(); setDragging(false)
+            if (!proyecto) return
             const f = e.dataTransfer.files?.[0]
             if (f) handleFile(f)
           }}
           className={`border-2 border-dashed rounded-2xl p-12 text-center transition-colors ${
-            dragging ? 'border-k-amber bg-amber-500/5' : 'border-k-border bg-k-surface'
+            !proyecto ? 'border-k-border bg-k-surface opacity-50'
+            : dragging ? 'border-k-amber bg-amber-500/5' : 'border-k-border bg-k-surface'
           }`}
         >
           <Upload size={32} className="mx-auto text-k-text3 mb-3" />
-          <p className="text-sm text-k-text2 font-bold mb-1">Arrastra tu Excel aquí</p>
+          <p className="text-sm text-k-text2 font-bold mb-1">
+            {proyecto ? 'Arrastra tu Excel aquí' : 'Primero elige el proyecto destino'}
+          </p>
           <p className="text-xs text-k-text3 mb-4">o</p>
-          <label className="inline-flex items-center gap-2 bg-k-amber hover:bg-k-amber2 text-black font-bold text-sm px-4 py-2.5 rounded-lg cursor-pointer transition-colors">
+          <label className={`inline-flex items-center gap-2 font-bold text-sm px-4 py-2.5 rounded-lg transition-colors ${
+            proyecto ? 'bg-k-amber hover:bg-k-amber2 text-black cursor-pointer' : 'bg-k-raised text-k-text3 cursor-not-allowed'}`}>
             <FileSpreadsheet size={14} /> Seleccionar archivo
-            <input type="file" accept=".xlsx,.xls" className="hidden"
+            <input type="file" accept=".xlsx,.xls" className="hidden" disabled={!proyecto}
               onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f) }} />
           </label>
         </div>
@@ -324,7 +354,7 @@ export default function ImportarPartidas() {
         {otms.length === 0 && (
           <div className="flex items-center gap-2 px-4 py-3 rounded-xl border border-amber-500/30 bg-amber-500/10 text-xs text-k-amber">
             <AlertTriangle size={14} className="flex-shrink-0" />
-            No hay ninguna OTM creada todavía. Crea las OTMs primero en la página <strong>OTMs</strong> para poder vincular las partidas.
+            No hay ningún proyecto creado todavía. Créalo primero en la página <strong>Proyectos</strong> para poder vincular las partidas.
           </div>
         )}
       </div>
@@ -372,7 +402,7 @@ export default function ImportarPartidas() {
             <table className="w-full whitespace-nowrap">
               <thead>
                 <tr className="border-b border-k-border">
-                  {['Fila','OTM','Código','Fase','Tipo','Nat.','Área','Sub-Fase','Descripción','Und','Met. Presup','HH Ppto','HH Gast. ini','HH Gan. ini','Hitos','Estado'].map(h => (
+                  {['Fila','Proyecto','Código','Fase','Nat.','Descripción','Und','Met. Presup','HH Ppto','HH Gast. ini','HH Gan. ini','Hitos','Estado'].map(h => (
                     <th key={h} className="py-2 px-3 text-[10px] font-bold text-k-text3 uppercase tracking-wider text-left">{h}</th>
                   ))}
                 </tr>
@@ -386,18 +416,10 @@ export default function ImportarPartidas() {
                     <td className="py-1.5 px-3 text-[11px] font-bold" style={{color: f.fase ? '#3B82F6' : '#888'}}>{f.fase ?? <span style={{color:'#888',fontStyle:'italic'}}>padre WBS</span>}</td>
                     <td className="py-1.5 px-3 text-[10px] font-bold">
                       {f.fase
-                        ? <span title={f.tipo_costo === 'INDIRECTO' ? 'Costo indirecto' : 'Costo directo'}
-                            style={{color: f.tipo_costo === 'INDIRECTO' ? '#F59E0B' : '#10B981'}}>{f.tipo_costo === 'INDIRECTO' ? 'IND' : 'DIR'}</span>
-                        : <span className="text-k-text3">—</span>}
-                    </td>
-                    <td className="py-1.5 px-3 text-[10px] font-bold">
-                      {f.fase
                         ? <span title={f.naturaleza === 'ADICIONAL' ? 'Partida adicional' : 'Partida contractual'}
                             style={{color: f.naturaleza === 'ADICIONAL' ? '#C084FC' : '#60A5FA'}}>{f.naturaleza === 'ADICIONAL' ? 'ADIC' : 'CONTR'}</span>
                         : <span className="text-k-text3">—</span>}
                     </td>
-                    <td className="py-1.5 px-3 text-[11px] text-k-text2">{f.sistema ?? '—'}</td>
-                    <td className="py-1.5 px-3 text-[11px] text-k-text3 font-mono">{f.sub_fase ?? '—'}</td>
                     <td className="py-1.5 px-3 text-sm text-k-text2 max-w-[180px] truncate">{f.descripcion}</td>
                     <td className="py-1.5 px-3 text-sm text-k-text2">{f.unidad}</td>
                     <td className="py-1.5 px-3 text-sm font-mono text-k-text2 text-right">{f.metrado_presup}</td>

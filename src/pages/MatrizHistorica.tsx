@@ -128,7 +128,7 @@ export default function MatrizHistorica() {
           </select>
         )}
         <select value={otm} onChange={e => setOtm(e.target.value)} className={inputCls}>
-          <option value="">Todas las OTM</option>
+          <option value="">Todos los proyectos</option>
           {(otms.data ?? []).map(o => <option key={o.otm_id} value={o.otm_id} title={o.descripcion}>{o.otm_id}</option>)}
         </select>
         {mz.isFetching && <Loader2 size={14} className="animate-spin text-k-text3" />}

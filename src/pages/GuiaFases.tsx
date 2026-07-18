@@ -32,10 +32,10 @@ const FASES: Record<string, { nombre: string; color: string; light: string; desc
     desc: 'Excavación, relleno, concreto, anclajes y demoliciones.',
     cuando: 'EXCAVACION · RELLENO · CONCRETO · PERNOS DE EXPANSION · DEMOLICION · GROUTEO CIVIL' },
   AND: { nombre: 'Andamios y Accesos',     color: '#0F8C6A', light: '#DDF4EE',
-    desc: 'Instalación, modificación y desinstalación de andamios. Presente en casi todas las OTMs.',
+    desc: 'Instalación, modificación y desinstalación de andamios. Presente en casi todos los proyectos.',
     cuando: 'ANDAMIOS · PLATAFORMA DE TRABAJO · ANDAMIOS COLGANTES · TRANSPORTE INTERNO DE ANDAMIOS' },
   APY: { nombre: 'Apoyo Constructivo',     color: '#639922', light: '#EAF3DE',
-    desc: 'Soporte directo: recepción de materiales, carguío, transporte interno, ploteo. Presente en todas las OTMs.',
+    desc: 'Soporte directo: recepción de materiales, carguío, transporte interno, ploteo. Presente en todos los proyectos.',
     cuando: 'RECEPCION DE MATERIALES · CARGUIO · TRANSPORTE INTERNO · PLOTEO · APOYO PARA IZAJES' },
   ING: { nombre: 'Ingeniería de Campo',    color: '#D97706', light: '#FEF3C7',
     desc: 'Desarrollo de ingenierías menores, planos y topografía. OTM-0031 es exclusivamente ingeniería.',
@@ -116,7 +116,7 @@ function BarDisciplina({ fase, hh, total, partidas, otms, active, onClick }: {
             <p className="text-[11px] text-k-text3 font-mono">{f.cuando}</p>
             {otms.length > 0 && (
               <>
-                <p className="text-[10px] font-bold text-k-text3 uppercase tracking-wider mb-2 mt-3">OTMs</p>
+                <p className="text-[10px] font-bold text-k-text3 uppercase tracking-wider mb-2 mt-3">Proyectos</p>
                 <div className="flex flex-wrap gap-1">
                   {otms.map(o => (
                     <span key={o} className="font-mono text-[10px] px-2 py-0.5 rounded border border-k-border text-k-text3 bg-k-raised">{o}</span>
@@ -290,7 +290,7 @@ export default function GuiaFases() {
         {[
           { label: 'HH presupuestadas', value: isLoading ? '…' : totalHH.toLocaleString('es-PE', {maximumFractionDigits:0}), suffix: 'HH' },
           { label: 'Partidas importadas', value: isLoading ? '…' : String(totalPart), suffix: '' },
-          { label: 'OTMs cargadas',       value: isLoading ? '…' : String(otmsUnicos.length), suffix: '' },
+          { label: 'Proyectos cargados',       value: isLoading ? '…' : String(otmsUnicos.length), suffix: '' },
         ].map(k => (
           <div key={k.label} className="bg-k-surface border border-k-border rounded-xl p-4">
             <div className="font-mono text-2xl font-medium text-k-amber mb-1">
@@ -319,7 +319,7 @@ export default function GuiaFases() {
           <div className="px-5 py-4 border-b border-k-border bg-k-raised">
             <h2 className="text-sm font-bold text-k-text">Peso por disciplina</h2>
             <p className="text-[11px] text-k-text3 mt-0.5">
-              Se actualiza automáticamente al importar nuevas OTMs · {totalHH > 0 ? `${totalHH.toLocaleString('es-PE',{maximumFractionDigits:0})} HH totales` : 'Sin datos aún'}
+              Se actualiza automáticamente al importar nuevos proyectos · {totalHH > 0 ? `${totalHH.toLocaleString('es-PE',{maximumFractionDigits:0})} HH totales` : 'Sin datos aún'}
             </p>
           </div>
           <div className="p-4 space-y-2">

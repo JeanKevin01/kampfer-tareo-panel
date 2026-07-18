@@ -30,7 +30,7 @@ export default function CargaHistorica({ semana, selectedOtm }: Props) {
   const [filas, setFilas] = useState<Record<number, { hh: string; cant: string }>>({})
   const [saved, setSaved] = useState(false)
 
-  /* ── Partidas de la OTM ──────────────────────────────────── */
+  /* ── Partidas de el proyecto ──────────────────────────────────── */
   const { data: partidas, isLoading } = useQuery<PartidaHoja[]>({
     queryKey: ['partidas-otm-hist', selectedOtm],
     queryFn:  async () => {
@@ -119,7 +119,7 @@ export default function CargaHistorica({ semana, selectedOtm }: Props) {
   if (!selectedOtm) return (
     <div className="flex flex-col items-center gap-3 p-10 text-k-text3">
       <AlertTriangle size={28} className="opacity-40" />
-      <p className="text-sm">Selecciona una OTM para cargar datos históricos.</p>
+      <p className="text-sm">Selecciona un proyecto para cargar datos históricos.</p>
     </div>
   )
 

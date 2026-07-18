@@ -245,7 +245,7 @@ function ISPRow({ node, semanas, semanaActual, collapsed, openDetail, onToggle, 
   )
 }
 
-// ── #5: captura de HH improductivas (oficina, semanal por OTM, con motivo) ──
+// ── #5: captura de HH improductivas (oficina, semanal por proyecto, con motivo) ──
 const MOTIVOS = ['Espera', 'Clima', 'Retrabajo', 'Falta de material', 'Falta de equipo', 'Otros']
 interface ImprodRow { id:number; otm_id:string|null; semana:number; hh:number; motivo:string|null; nota:string|null; partida_id:number|null }
 
@@ -308,13 +308,13 @@ function ImproductivasCard({ semana, otm, partidas }: { semana:number; otm?:stri
     <div className="bg-k-surface border border-k-border rounded-xl overflow-hidden">
       <div className="px-4 py-3 bg-k-raised border-b border-k-border flex items-center justify-between">
         <h3 className="text-[11px] font-bold text-k-text3 uppercase tracking-wider">
-          HH Improductivas — Sem {semana}{otm ? ` · ${otm}` : ' · (todas las OTMs)'}
+          HH Improductivas — Sem {semana}{otm ? ` · ${otm}` : ' · (todos los proyectos)'}
         </h3>
         <span className="text-[11px] font-mono text-k-amber">{totalSem.toLocaleString('es-PE',{maximumFractionDigits:1})} HH</span>
       </div>
       <div className="p-4 space-y-3">
         {!otm && (
-          <p className="text-[11px] text-k-amber">Selecciona una OTM arriba para registrar las improductivas de esa OTM.</p>
+          <p className="text-[11px] text-k-amber">Selecciona un proyecto arriba para registrar las improductivas de ese proyecto.</p>
         )}
         <div className="flex flex-wrap items-end gap-2">
           <div>
@@ -333,7 +333,7 @@ function ImproductivasCard({ semana, otm, partidas }: { semana:number; otm?:stri
             <label className="text-[10px] font-bold text-k-text3 uppercase tracking-wider block mb-1">Partida (opcional)</label>
             <select value={partidaId} onChange={e=>setPartidaId(e.target.value)}
               className="max-w-[220px] bg-k-raised border border-k-border rounded-lg px-3 py-2 text-sm text-k-text outline-none focus:border-k-amber">
-              <option value="">— Toda la OTM —</option>
+              <option value="">— Toda el proyecto —</option>
               {hojasPart.map(p => <option key={p.partida_id} value={p.partida_id}>{p.codigo} · {p.descripcion.slice(0,28)}</option>)}
             </select>
           </div>
@@ -481,7 +481,7 @@ export default function TabISP({ semana, otm }: { semana: number; otm?: string }
         ))}
       </div>
 
-      {/* #5: captura de HH improductivas (oficina, semanal por OTM) */}
+      {/* #5: captura de HH improductivas (oficina, semanal por proyecto) */}
       <ImproductivasCard semana={semana} otm={otm} partidas={todas} />
 
       {/* Resumen por Fase */}

@@ -195,7 +195,7 @@ export default function WBSArbol({ otm, semana }: { otm: string; semana: number 
   if (isLoading) return <div style={{display:'flex',alignItems:'center',gap:8,padding:'40px 0',color:'#8a96ad',fontSize:14}}><Loader2 size={16} className="animate-spin"/>Cargando árbol WBS...</div>
   if (isError || !data?.filas?.length) return (
     <div style={{textAlign:'center',padding:'48px 0',color:'#8a96ad',fontSize:14}}>
-      {otm ? `Sin partidas para ${otm} — verifica que esté importada` : 'Selecciona una OTM en el selector de arriba o importa partidas desde la pestaña Importar'}
+      {otm ? `Sin partidas para ${otm} — verifica que esté importada` : 'Selecciona un proyecto en el selector de arriba o importa partidas desde la pestaña Importar'}
     </div>
   )
 

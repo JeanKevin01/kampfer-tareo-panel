@@ -99,7 +99,7 @@ export default function Monitor() {
 
   const stats = [
     { label: 'Trabajadores activos', value: activos,               icon: Users,        color: 'text-k-blue'  },
-    { label: 'OTMs activas',         value: otms.length,           icon: ClipboardList, color: 'text-k-amber' },
+    { label: 'Proyectos activos',         value: otms.length,           icon: ClipboardList, color: 'text-k-amber' },
     { label: 'Registros hoy',        value: registrosHoy.length,   icon: FileText,     color: 'text-k-green' },
     { label: 'HH registradas hoy',   value: totalHH + ' HH',      icon: Clock,        color: 'text-purple-400' },
     { label: 'Supervisores',         value: supervisores.length,   icon: Users,        color: 'text-k-text2' },

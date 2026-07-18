@@ -87,7 +87,7 @@ export default function RegistrosHH() {
           { label: 'Registros del día',    value: filtered.length,          color: 'text-k-text'  },
           { label: 'Trabajadores únicos',  value: trabUnicos,               color: 'text-k-blue'  },
           { label: 'HH totales',           value: (isLoading ? '…' : totalHH + ' HH'), color: 'text-k-green' },
-          { label: 'OTMs del día',         value: otmsDelDia.length - 1,   color: 'text-k-amber' },
+          { label: 'Proyectos del día',         value: otmsDelDia.length - 1,   color: 'text-k-amber' },
         ].map(s => (
           <div key={s.label} className="bg-k-surface border border-k-border rounded-xl p-4">
             <div className={`font-mono text-2xl font-medium ${s.color} mb-1`}>{isLoading ? '…' : s.value}</div>
@@ -100,7 +100,7 @@ export default function RegistrosHH() {
       <div className="flex gap-3 flex-wrap">
         <select value={otmFilter} onChange={e => setOtmFilter(e.target.value)}
           className="bg-k-raised border border-k-border rounded-lg px-4 py-2.5 text-sm text-k-text2 outline-none focus:border-k-amber transition-colors">
-          {otmsDelDia.map(o => <option key={o} value={o} className="bg-k-raised">{o === 'TODOS' ? 'Todas las OTMs' : o}</option>)}
+          {otmsDelDia.map(o => <option key={o} value={o} className="bg-k-raised">{o === 'TODOS' ? 'Todos los proyectos' : o}</option>)}
         </select>
         <select value={supFilter} onChange={e => setSupFilter(e.target.value)}
           className="bg-k-raised border border-k-border rounded-lg px-4 py-2.5 text-sm text-k-text2 outline-none focus:border-k-amber transition-colors">

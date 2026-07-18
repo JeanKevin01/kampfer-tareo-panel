@@ -1,5 +1,5 @@
 // Tab «Avance diario» del Valor Ganado — la MISMA vista Excel del LookAhead
-// pero con el HISTORIAL COMPLETO de las partidas de la OTM: arranca en el
+// pero con el HISTORIAL COMPLETO de las partidas de el proyecto: arranca en el
 // primer registro (avance o HH de tareo) y llega hasta hoy / fin programado.
 // Todo el historial es editable: cada celda escribe en la fuente única
 // (ev_avances_diarios) y el rollup alimenta el % EV — un solo dato, dos vías.
@@ -71,7 +71,7 @@ export default function TabAvanceDiario({ otm }: { otm?: string }) {
     onSuccess: invalidar, onError: (e: Error) => alert(e.message),
   })
 
-  if (!otm) return <div className="text-k-text3 text-sm p-6">Elige una OTM arriba para ver su historial de avance.</div>
+  if (!otm) return <div className="text-k-text3 text-sm p-6">Elige un proyecto arriba para ver su historial de avance.</div>
   if (hist.isLoading) return <div className="flex items-center gap-2 text-k-text3 p-6"><Loader2 size={16} className="animate-spin" /> Cargando historial…</div>
   if (hist.error) return <div className="text-k-red text-sm p-6">{(hist.error as Error).message}</div>
   const d = hist.data

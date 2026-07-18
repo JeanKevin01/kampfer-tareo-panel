@@ -1,5 +1,5 @@
 // Programar por partidas (flujo LookAhead pedido por Jean 2026-07-11):
-// 1) eliges la OTM → 2) ves el árbol del presupuesto (como Valor Ganado ·
+// 1) eliges el proyecto → 2) ves el árbol del presupuesto (como Valor Ganado ·
 // Partidas) y marcas una o VARIAS partidas → 3) a cada una le pones F.Inic,
 // F.Fin (opcional) y el metrado meta (prellenado con el del presupuesto).
 // El API crea una actividad por partida y prorratea el metrado entre los días.
@@ -143,7 +143,7 @@ export function ProgramarLote({ fechaBase, onClose, onCreado, onLibre }: {
           <div className="flex gap-2 mb-2">
             <select value={otm} onChange={e => { setOtm(e.target.value); setSel(new Map()) }} className={inputCls}
               title={(otms.data ?? []).find(o => o.otm_id === otm)?.descripcion || 'OTM'}>
-              <option value="">Elige la OTM…</option>
+              <option value="">Elige el proyecto…</option>
               {(otms.data ?? []).map(o => (
                 <option key={o.otm_id} value={o.otm_id}>
                   {o.otm_id}{o.descripcion ? ` — ${o.descripcion.slice(0, 52)}${o.descripcion.length > 52 ? '…' : ''}` : ''}
