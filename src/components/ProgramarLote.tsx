@@ -16,7 +16,10 @@ interface PartidaEV {
   nivel?: number | null; fase?: string | null
   unidad?: string | null; metrado_presup?: number | string | null; hh_presup?: number | string | null
 }
-interface ItemSel { fecha: string; fecha_fin: string; metrado: string }
+interface ItemHito { hito_id: number; desc: string; peso: number; fecha: string; fecha_fin: string; metrado: string }
+// hitos presente = la partida se programa DESPLEGADA: una actividad por etapa
+// (cada etapa registra el metrado que pasa por ella; su diario alimenta ese hito)
+interface ItemSel { fecha: string; fecha_fin: string; metrado: string; hitos?: ItemHito[] }
 
 const numV = (v: number | string | null | undefined) => {
   const n = Number(v); return Number.isFinite(n) && n !== 0 ? n : null
@@ -65,7 +68,31 @@ export function ProgramarLote({ fechaBase, onClose, onCreado, onLibre }: {
     const m = new Map(sel); m.set(id, { ...m.get(id)!, ...patch }); setSel(m)
   }
   const porId = new Map((partidas.data ?? []).map(p => [p.id, p]))
+  const [encadenar, setEncadenar] = useState(true)
 
+  // Desplegar la partida en sus HITOS (una actividad por etapa, diseño C):
+  // cada etapa hereda fechas/metrado de la fila y se ajusta individualmente.
+  const desplegar = async (id: number) => {
+    const it = sel.get(id)!
+    if (it.hitos) { setItem(id, { hitos: undefined }); return }
+    try {
+      const r = await api<{ hitos: { id: number | null; descripcion: string; peso: number }[] }>(
+        `/ev/programacion/partidas/${id}/hitos`)
+      const reales = (r.hitos ?? []).filter(h => h.id != null)
+      if (reales.length < 2) {
+        alert('Esta partida no tiene hitos definidos (o solo uno): defínelos en Valor Ganado → Configuración para desplegarla por etapas.')
+        return
+      }
+      setItem(id, {
+        hitos: reales.map(h => ({
+          hito_id: h.id!, desc: h.descripcion || 'Etapa', peso: h.peso,
+          fecha: it.fecha, fecha_fin: it.fecha_fin, metrado: it.metrado,
+        })),
+      })
+    } catch (e) { alert((e as Error).message) }
+  }
+
+  const nItems = [...sel.values()].reduce((s, it) => s + (it.hitos?.length || 1), 0)
   const crear = useMutation({
     mutationFn: () => api('/ev/programacion/actividades-lote', {
       method: 'POST',
@@ -74,10 +101,18 @@ export function ProgramarLote({ fechaBase, onClose, onCreado, onLibre }: {
         supervisor_id: comun.supervisor_id || null,
         responsable: comun.responsable || null,
         descripcion: comun.descripcion || null,
-        items: [...sel.entries()].map(([partida_id, it]) => ({
-          partida_id, fecha: it.fecha, fecha_fin: it.fecha_fin || null,
-          metrado_prog: it.metrado.trim() === '' ? null : Number(it.metrado),
-        })),
+        encadenar_hitos: encadenar,
+        items: [...sel.entries()].flatMap(([partida_id, it]) =>
+          it.hitos
+            ? it.hitos.map(h => ({
+                partida_id, hito_id: h.hito_id, fecha: h.fecha,
+                fecha_fin: h.fecha_fin || null,
+                metrado_prog: h.metrado.trim() === '' ? null : Number(h.metrado),
+              }))
+            : [{
+                partida_id, fecha: it.fecha, fecha_fin: it.fecha_fin || null,
+                metrado_prog: it.metrado.trim() === '' ? null : Number(it.metrado),
+              }]),
       }),
     }),
     onSuccess: () => {
@@ -189,34 +224,71 @@ export function ProgramarLote({ fechaBase, onClose, onCreado, onLibre }: {
                 </tr>
               </thead>
               <tbody>
-                {[...sel.entries()].map(([id, it]) => {
+                {[...sel.entries()].flatMap(([id, it]) => {
                   const p = porId.get(id)
-                  return (
+                  const setHito = (i: number, patch: Partial<ItemHito>) => {
+                    const hs = it.hitos!.map((h, j) => (j === i ? { ...h, ...patch } : h))
+                    setItem(id, { hitos: hs })
+                  }
+                  const cabecera = (
                     <tr key={id} className="border-t border-k-border/40">
                       <td className="px-2 py-1.5">
                         <div className="font-mono text-k-text2">{p?.codigo}</div>
                         <div className="text-k-text leading-tight">{p?.descripcion}</div>
+                        <button onClick={() => desplegar(id)}
+                          title="Programar una actividad por ETAPA (hito) con fechas propias; el diario de cada etapa alimenta su hito en el % EV"
+                          className={`mt-0.5 text-[10px] underline ${it.hitos ? 'text-violet-300' : 'text-k-blue'}`}>
+                          {it.hitos ? '◆ Desplegada por hitos (quitar)' : '◆ Desplegar por hitos…'}
+                        </button>
                       </td>
-                      <td className="px-2 py-1.5">
-                        <input type="date" value={it.fecha} onChange={e => setItem(id, { fecha: e.target.value })} className={inputCls} />
-                      </td>
-                      <td className="px-2 py-1.5">
-                        <input type="date" value={it.fecha_fin} min={it.fecha}
-                          onChange={e => setItem(id, { fecha_fin: e.target.value })} className={inputCls} />
-                      </td>
-                      <td className="px-2 py-1.5">
-                        <div className="flex items-center gap-1.5">
-                          <input value={it.metrado} inputMode="decimal" placeholder={numV(p?.metrado_presup) != null ? String(numV(p?.metrado_presup)) : '—'}
-                            onChange={e => setItem(id, { metrado: e.target.value })} className={inputCls} style={{ width: 90 }} />
-                          <span className="text-k-text3">{p?.unidad ?? ''}</span>
-                        </div>
-                      </td>
+                      {it.hitos ? <td colSpan={3} className="px-2 py-1.5 text-[10px] text-k-text3">
+                        Cada etapa abajo registra el metrado que pasa por ella (fechas y metrado propios).
+                      </td> : <>
+                        <td className="px-2 py-1.5">
+                          <input type="date" value={it.fecha} onChange={e => setItem(id, { fecha: e.target.value })} className={inputCls} />
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <input type="date" value={it.fecha_fin} min={it.fecha}
+                            onChange={e => setItem(id, { fecha_fin: e.target.value })} className={inputCls} />
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <div className="flex items-center gap-1.5">
+                            <input value={it.metrado} inputMode="decimal" placeholder={numV(p?.metrado_presup) != null ? String(numV(p?.metrado_presup)) : '—'}
+                              onChange={e => setItem(id, { metrado: e.target.value })} className={inputCls} style={{ width: 90 }} />
+                            <span className="text-k-text3">{p?.unidad ?? ''}</span>
+                          </div>
+                        </td>
+                      </>}
                       <td className="text-center">
                         <button onClick={() => { const m = new Map(sel); m.delete(id); setSel(m); if (m.size === 0) setPaso(1) }}
                           className="text-k-text3 hover:text-k-red"><X size={13} /></button>
                       </td>
                     </tr>
                   )
+                  const filasHitos = (it.hitos ?? []).map((h, i) => (
+                    <tr key={`${id}-h${h.hito_id}`} className="border-t border-k-border/20 bg-violet-500/5">
+                      <td className="px-2 py-1 pl-6 text-violet-300 text-[10px]">
+                        ◆ {h.desc} <span className="text-k-text3">({Math.round(h.peso * 100)}%)</span>
+                      </td>
+                      <td className="px-2 py-1">
+                        <input type="date" value={h.fecha} onChange={e => setHito(i, { fecha: e.target.value })} className={inputCls} />
+                      </td>
+                      <td className="px-2 py-1">
+                        <input type="date" value={h.fecha_fin} min={h.fecha}
+                          onChange={e => setHito(i, { fecha_fin: e.target.value })} className={inputCls} />
+                      </td>
+                      <td className="px-2 py-1">
+                        <div className="flex items-center gap-1.5">
+                          <input value={h.metrado} inputMode="decimal"
+                            title="Metrado que pasa por esta etapa (normalmente el metrado completo de la partida)"
+                            onChange={e => setHito(i, { metrado: e.target.value })} className={inputCls} style={{ width: 90 }} />
+                          <span className="text-k-text3">{p?.unidad ?? ''}</span>
+                        </div>
+                      </td>
+                      <td />
+                    </tr>
+                  ))
+                  return [cabecera, ...filasHitos]
                 })}
               </tbody>
             </table>
@@ -233,12 +305,21 @@ export function ProgramarLote({ fechaBase, onClose, onCreado, onLibre }: {
           </div>
           <textarea placeholder="Descripción común (opcional)" value={comun.descripcion} rows={2}
             onChange={e => setComun({ ...comun, descripcion: e.target.value })} className={`${inputCls} mb-2`} />
+          {[...sel.values()].some(it => it.hitos) && (
+            <label className="flex items-center gap-2 text-[11px] text-k-text2 mb-2 cursor-pointer">
+              <input type="checkbox" checked={encadenar} onChange={e => setEncadenar(e.target.checked)}
+                className="accent-violet-400" />
+              Encadenar etapas en secuencia (FS): si una etapa se atrasa, la cascada empuja a las siguientes.
+              <span className="text-k-text3">Desmárcalo si las etapas se traslapan.</span>
+            </label>
+          )}
           {error && <p className="text-k-red text-xs mb-2">{error}</p>}
           <div className="flex gap-2">
             <button onClick={() => setPaso(1)} className="text-sm px-4 py-2.5 rounded-lg border border-k-border text-k-text2 hover:bg-k-raised">← Partidas</button>
-            <button onClick={() => crear.mutate()} disabled={crear.isPending || [...sel.values()].some(it => !it.fecha)}
+            <button onClick={() => crear.mutate()}
+              disabled={crear.isPending || [...sel.values()].some(it => it.hitos ? it.hitos.some(h => !h.fecha) : !it.fecha)}
               className="flex-1 bg-k-amber text-black font-bold text-sm py-2.5 rounded-lg disabled:opacity-40">
-              {crear.isPending ? 'Programando…' : `Programar ${sel.size} actividad${sel.size !== 1 ? 'es' : ''}`}
+              {crear.isPending ? 'Programando…' : `Programar ${nItems} actividad${nItems !== 1 ? 'es' : ''}`}
             </button>
           </div>
         </>}

@@ -1,5 +1,6 @@
 import TabISP from './TabISP'
-import TabDiario from './TabDiario'
+import TabAvanceDiario from './TabAvanceDiario'
+import TabPerformance from './TabPerformance'
 import TabRendimientos from './TabRendimientos'
 import TabProductividad from './TabProductividad'
 import TabSeguimiento from './TabSeguimiento'
@@ -181,7 +182,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 // ============================================================
 // Componente principal
 // ============================================================
-type Tab = 'resumen' | 'ejecutivo' | 'partidas' | 'isp' | 'diario' | 'rendimientos' | 'productividad' | 'seguimiento' | 'valorizacion' | 'registro' | 'config' | 'importar' | 'historico'
+type Tab = 'resumen' | 'ejecutivo' | 'partidas' | 'isp' | 'diario' | 'performance' | 'rendimientos' | 'productividad' | 'seguimiento' | 'valorizacion' | 'registro' | 'config' | 'importar' | 'historico'
 
 export default function ValorGanado() {
   const [tab, setTab] = useState<Tab>('resumen')
@@ -232,8 +233,9 @@ export default function ValorGanado() {
     { id: 'ejecutivo',     label: 'Resumen Ejecutivo',icon: LayoutGrid },
     { id: 'partidas',      label: 'Partidas',         icon: ClipboardList },
     { id: 'isp',           label: 'ISP',              icon: Activity },
-    { id: 'diario',        label: 'Control Diario',   icon: CalendarDays },
+    { id: 'diario',        label: 'Avance diario',    icon: CalendarDays },
     { id: 'registro',      label: 'Avances',          icon: PenLine },
+    { id: 'performance',   label: 'Performance',      icon: TrendingUp },
     { id: 'rendimientos',  label: 'Rendimientos',     icon: Users },
     { id: 'productividad', label: 'Productividad',    icon: Gauge },
     { id: 'seguimiento',   label: 'Seguimiento',      icon: TrendingUp },
@@ -328,13 +330,8 @@ export default function ValorGanado() {
       {tab === 'partidas' && <WBSArbol otm={selectedOtm} semana={semana} />}
       {tab === 'isp'      && <TabISP semana={semana} otm={selectedOtm} />}
       {tab === 'registro' && <TabRegistro semana={semana} otm={selectedOtm} />}
-      {tab === 'diario'        && (
-        <TabDiario
-          semana={semana}
-          onSemana={setSemana}
-          selectedOtm={selectedOtm}
-        />
-      )}
+      {tab === 'diario'        && <TabAvanceDiario otm={selectedOtm} />}
+      {tab === 'performance'   && <TabPerformance semana={semana} otm={selectedOtm} />}
       {tab === 'rendimientos'  && (
         <TabRendimientos
           semana={semana}
@@ -733,12 +730,17 @@ function TabRegistro({ semana, otm }: { semana: number; otm?: string }) {
   // eslint-disable-next-line
   }, [captura.map(p=>p.partida_id).join(',')])
 
+  // Los hitos PRINCIPALES no viajan: los gobierna el rollup del avance diario
+  // (fuente única 0025) y guardarlos aquí pisaría el dato derivado.
+  const principales = new Set(captura.flatMap(p => p.hitos.filter(x => x.es_principal).map(x => x.hito_id)))
   const guardar = useMutation({
     mutationFn: () => req('/ev/captura', {
       method: 'POST',
       body: JSON.stringify({
         semana,
-        avances: Object.entries(avances).map(([id, v]) => ({ hito_id: Number(id), cantidad_acum: Number(v) || 0 })),
+        avances: Object.entries(avances)
+          .filter(([id]) => !principales.has(Number(id)))
+          .map(([id, v]) => ({ hito_id: Number(id), cantidad_acum: Number(v) || 0 })),
         hh_gastadas: Object.entries(hh).map(([id, v]) => ({ partida_id: Number(id), hh: Number(v) || 0 })),
       }),
     }),
@@ -899,9 +901,17 @@ function TabRegistro({ semana, otm }: { semana: number; otm?: string }) {
                         <td className="py-1 px-2 text-right font-mono text-k-text3" style={{ fontSize: 11 }}>{fmt(mp)}</td>
                         <td className="py-1 px-2 text-right font-mono text-k-text3" style={{ fontSize: 11 }}>{fmt(x.cant_anterior)}</td>
                         <td className="py-1 px-1" style={{ minWidth: 90 }}>
-                          <input type="number" step="0.01" min="0"
-                            value={avances[x.hito_id] ?? ''} onChange={e => setAvances({ ...avances, [x.hito_id]: e.target.value })}
-                            className="w-full bg-k-void border border-k-amber/40 focus:border-k-amber rounded px-2 py-1 text-k-text font-mono outline-none text-right transition-colors" style={{ fontSize: 12 }} />
+                          {x.es_principal ? (
+                            <div className="flex items-center justify-end gap-1.5"
+                              title="El hito principal se alimenta SOLO del avance diario (LookAhead / Avance diario) — corrígelo allá, celda por celda">
+                              <span className="font-mono text-right text-k-text2" style={{ fontSize: 12 }}>{fmt(Number(x.cant_actual ?? 0))}</span>
+                              <span className="text-[8px] font-bold text-sky-300 bg-sky-500/10 border border-sky-500/30 rounded px-1 py-0.5">AUTO</span>
+                            </div>
+                          ) : (
+                            <input type="number" step="0.01" min="0"
+                              value={avances[x.hito_id] ?? ''} onChange={e => setAvances({ ...avances, [x.hito_id]: e.target.value })}
+                              className="w-full bg-k-void border border-k-amber/40 focus:border-k-amber rounded px-2 py-1 text-k-text font-mono outline-none text-right transition-colors" style={{ fontSize: 12 }} />
+                          )}
                         </td>
                         <td className={`py-1 px-2 text-right font-mono font-bold ${sp > 0 ? 'text-k-green' : sp < 0 ? 'text-k-red' : 'text-k-text3'}`} style={{ fontSize: 10 }}>{sp > 0 ? '+' : ''}{fmt(sp)}</td>
                         <td colSpan={2} />
