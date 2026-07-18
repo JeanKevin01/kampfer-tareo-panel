@@ -391,7 +391,12 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
       if (form.dias_medio.join(',') !== (act!.dias_medio ?? []).join(',')) body.dias_medio = form.dias_medio
       return api(`/ev/programacion/actividades/${act!.id}`, { method: 'PUT', body: JSON.stringify(body) })
     },
-    onSuccess: onChange, onError: (e: Error) => setError(e.message),
+    onSuccess: (j: unknown) => {
+      const m = (j as { movidas?: number[] })?.movidas
+      if (m?.length) alert(`Cascada: se recorrieron ${m.length} actividad(es) vinculada(s) hacia adelante.`)
+      onChange()
+    },
+    onError: (e: Error) => setError(e.message),
   })
   const estado = useMutation({
     mutationFn: (cambio: { estado: string; causa_nc?: string }) =>
@@ -531,6 +536,8 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
           </div>
         )}
 
+        {editar && <Antecesoras act={act!} onCambio={onChange} />}
+
         {editar && <Restricciones actId={act!.id} onCambio={onChange} />}
 
         {editar && (
@@ -599,6 +606,84 @@ function ModalNC({ onClose, onConfirmar }: { onClose: () => void; onConfirmar: (
           className="w-full bg-k-red/90 hover:bg-k-red text-white font-bold text-sm py-2.5 rounded-lg">
           Registrar no cumplimiento
         </button>
+      </div>
+    </div>
+  )
+}
+
+// Antecesoras FS (F5 v2): esta actividad solo puede empezar cuando terminen.
+// Al mover una antecesora, el API recorre a las sucesoras (auto-cascada).
+function Antecesoras({ act, onCambio }: { act: Actividad; onCambio: () => void }) {
+  const qc = useQueryClient()
+  const [busq, setBusq] = useState('')
+  const [predId, setPredId] = useState(0)
+  const [lag, setLag] = useState('0')
+  interface Dep { id: number; predecesora_id: number; lag_dias: number; pred_titulo: string; pred_fecha_fin: string; pred_estado: string }
+  const deps = useQuery<Dep[]>({
+    queryKey: ['dependencias', act.id],
+    queryFn: () => api(`/ev/programacion/actividades/${act.id}/dependencias`),
+  })
+  const candidatas = useQuery<{ id: number; titulo: string; otm_id?: string | null; fecha: string; fecha_fin: string }[]>({
+    queryKey: ['actividades-lista', busq],
+    queryFn: () => api(`/ev/programacion/actividades?proyecto_id=${PROYECTO_ID}&q=${encodeURIComponent(busq)}`),
+  })
+  const invalidar = () => { qc.invalidateQueries({ queryKey: ['dependencias', act.id] }); onCambio() }
+  const crear = useMutation({
+    mutationFn: () => api(`/ev/programacion/actividades/${act.id}/dependencias`, {
+      method: 'POST', body: JSON.stringify({ predecesora_id: predId, lag_dias: Number(lag) || 0 }),
+    }),
+    onSuccess: (j: unknown) => {
+      const m = (j as { movidas?: number[] })?.movidas
+      if (m?.length) alert(`Cascada: se recorrieron ${m.length} actividad(es) hacia adelante.`)
+      setPredId(0); setLag('0'); invalidar()
+    },
+    onError: (e: Error) => alert(e.message),
+  })
+  const borrar = useMutation({
+    mutationFn: (id: number) => api(`/ev/programacion/dependencias/${id}`, { method: 'DELETE' }),
+    onSuccess: invalidar, onError: (e: Error) => alert(e.message),
+  })
+
+  return (
+    <div className="mt-4 border-t border-k-border pt-3">
+      <p className="text-[10px] uppercase font-bold text-k-text3 mb-2">
+        Antecesoras (Fin→Inicio) {(deps.data ?? []).length > 0 && <span className="text-k-blue">· 🔗 {(deps.data ?? []).length}</span>}
+      </p>
+      <div className="space-y-1.5 mb-2">
+        {(deps.data ?? []).map(dp => {
+          const sinTerminar = dp.pred_estado !== 'EJECUTADO' && dp.pred_fecha_fin >= act.fecha
+          return (
+            <div key={dp.id} className="flex items-center gap-2 rounded-lg border border-k-border bg-k-raised/40 px-2.5 py-1.5">
+              <span className="text-[10px] font-mono text-k-text3">#{dp.predecesora_id}FS{dp.lag_dias ? `+${dp.lag_dias}d` : ''}</span>
+              <span className="text-[11px] text-k-text2 flex-1 truncate">{dp.pred_titulo}
+                <span className="text-k-text3"> · termina {dp.pred_fecha_fin}</span>
+              </span>
+              {sinTerminar && (
+                <span className="text-[9px] font-bold text-k-amber bg-amber-500/10 border border-amber-500/30 rounded px-1.5 py-0.5"
+                  title="La antecesora termina en o después del inicio de esta actividad">⚠ sin terminar</span>
+              )}
+              <button onClick={() => borrar.mutate(dp.id)} className="text-k-text3 hover:text-k-red"><Trash2 size={11} /></button>
+            </div>
+          )
+        })}
+        {(deps.data ?? []).length === 0 && !deps.isLoading && (
+          <p className="text-[11px] text-k-text3">Sin antecesoras: puede arrancar cuando se quiera.</p>
+        )}
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        <input placeholder="Buscar actividad…" value={busq} onChange={e => setBusq(e.target.value)}
+          className={inputCls} style={{ width: 130 }} />
+        <select value={predId || ''} onChange={e => setPredId(Number(e.target.value) || 0)}
+          className={`${inputCls} flex-1 min-w-[180px]`} style={{ width: 'auto' }}>
+          <option value="">Elegir antecesora…</option>
+          {(candidatas.data ?? []).filter(c => c.id !== act.id).map(c => (
+            <option key={c.id} value={c.id}>#{c.id} {c.otm_id ? `[${c.otm_id}] ` : ''}{c.titulo.slice(0, 40)} ({c.fecha}→{c.fecha_fin})</option>
+          ))}
+        </select>
+        <input value={lag} onChange={e => setLag(e.target.value)} inputMode="numeric"
+          title="Lag: días de espera tras el fin de la antecesora" className={inputCls} style={{ width: 52 }} />
+        <button onClick={() => crear.mutate()} disabled={crear.isPending || !predId}
+          className="text-xs px-3 py-2 rounded-lg bg-k-amber text-black font-bold disabled:opacity-40">+ Vincular</button>
       </div>
     </div>
   )

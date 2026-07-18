@@ -30,6 +30,8 @@ export interface ActGrid {
   und?: string | null; metrado_prog?: number | null
   metrado_base?: number | null; acum_real?: number | null; saldo?: number | null
   dias_salto?: string[]; dias_medio?: string[]
+  predecesoras?: { id: number; titulo: string; fecha_fin: string; lag_dias: number }[]
+  sucesoras?: number[]; dep_total?: number
   prog: Record<string, number>; real: Record<string, number>
 }
 export interface GridResp {
@@ -140,6 +142,8 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
   const qc = useQueryClient()
   const [nSemanas, setNSemanas] = useState(4)
   const [desde, setDesde] = useState(() => iso(lunesDe(new Date())))
+  // Cadena resaltada (clic en 🔗): antecesoras en azul, sucesoras en violeta.
+  const [cadenaDe, setCadenaDe] = useState<number | null>(null)
 
   const grid = useQuery<GridResp>({
     queryKey: ['lookahead-grid', desde, nSemanas],
@@ -165,10 +169,29 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
   }
   const hoy = iso(new Date())
   const d = grid.data
-  const nCols = 6 + (d ? d.fechas.length : nSemanas * 7)
+  const nCols = 7 + (d ? d.fechas.length : nSemanas * 7)
   const diasSemana = new Set(d?.dias_semana ?? [1, 2, 3, 4, 5, 6, 7])
   const feriados = new Set(d?.feriados ?? [])
   const laborable = (f: string) => diasSemana.has(isoDow(f)) && !feriados.has(f)
+
+  // BFS transitivo sobre las actividades visibles para pintar la cadena.
+  const cadena = (() => {
+    if (cadenaDe == null || !d) return null
+    const acts = d.grupos.flatMap(g => g.actividades)
+    const porId = new Map(acts.map(a => [a.id, a]))
+    const azules = new Set<number>(); const violetas = new Set<number>()
+    const subir = [cadenaDe]
+    while (subir.length) {
+      const a = porId.get(subir.pop()!)
+      for (const p of a?.predecesoras ?? []) if (!azules.has(p.id)) { azules.add(p.id); subir.push(p.id) }
+    }
+    const bajar = [cadenaDe]
+    while (bajar.length) {
+      const a = porId.get(bajar.pop()!)
+      for (const s of a?.sucesoras ?? []) if (!violetas.has(s)) { violetas.add(s); bajar.push(s) }
+    }
+    return { focal: cadenaDe, azules, violetas }
+  })()
 
   return (
     <div className="space-y-3">
@@ -206,6 +229,8 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
               <th className={thBase} rowSpan={2}>UND</th>
               <th className={thBase} rowSpan={2}>F. Inic</th>
               <th className={thBase} rowSpan={2}>F. Fin</th>
+              <th className={`${thBase} min-w-[60px]`} rowSpan={2}
+                title="Antecesoras (estilo MS Project): #id de la actividad que debe terminar antes, FS = Fin→Inicio, +d = lag">PRED.</th>
               {(d?.semanas ?? []).map((s, i) => (
                 <th key={s.lunes} colSpan={7}
                   className="border border-k-border px-1 py-1 text-[10px] font-bold uppercase bg-red-900/30 text-red-200">
@@ -228,7 +253,8 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
           <tbody>
             {(d?.grupos ?? []).map(g => (
               <GrupoOTM key={g.otm_id ?? '-'} grupo={g} fechas={d!.fechas} hoy={hoy}
-                laborable={laborable} onEditar={onEditar}
+                laborable={laborable} onEditar={onEditar} cadena={cadena}
+                onCadena={id => setCadenaDe(v => (v === id ? null : id))}
                 onReal={(actId, fecha, v) => guardarReal.mutate({ actId, fecha, v })} />
             ))}
             {(d?.grupos ?? []).length === 0 && !grid.isLoading && (
@@ -254,16 +280,18 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
   )
 }
 
-function GrupoOTM({ grupo, fechas, hoy, laborable, onEditar, onReal }: {
+function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, onReal }: {
   grupo: GridResp['grupos'][number]; fechas: string[]; hoy: string
   laborable: (f: string) => boolean
+  cadena: { focal: number; azules: Set<number>; violetas: Set<number> } | null
+  onCadena: (id: number) => void
   onEditar: (a: ActGrid) => void
   onReal: (actId: number, fecha: string, v: number | null) => void
 }) {
   return (
     <>
       <tr>
-        <td colSpan={6 + fechas.length}
+        <td colSpan={7 + fechas.length}
           className="border border-k-border px-2 py-1 text-[11px] font-bold bg-blue-500/15 text-k-blue sticky left-0">
           {grupo.otm_id ?? 'Sin OTM'}{grupo.otm_desc ? ` — ${grupo.otm_desc}` : ''}
         </td>
@@ -272,15 +300,30 @@ function GrupoOTM({ grupo, fechas, hoy, laborable, onEditar, onReal }: {
         const editable = a.estado !== 'CANCELADO'
         const saltos = new Set(a.dias_salto ?? [])
         const medios = new Set(a.dias_medio ?? [])
+        // Resaltado de cadena: focal normal, antecesoras azul, sucesoras violeta, resto atenuado
+        const claseCadena = !cadena ? ''
+          : cadena.focal === a.id ? 'ring-1 ring-inset ring-amber-500/50'
+          : cadena.azules.has(a.id) ? 'bg-blue-500/10'
+          : cadena.violetas.has(a.id) ? 'bg-violet-500/10'
+          : 'opacity-30'
         return (
-          <tr key={a.id} className={a.estado === 'CANCELADO' ? 'opacity-50' : ''}>
+          <tr key={a.id} className={`${a.estado === 'CANCELADO' ? 'opacity-50' : ''} ${claseCadena}`}>
             <td onClick={() => onEditar(a)}
               className={`${tdFijo} sticky left-0 z-10 cursor-pointer hover:bg-k-raised align-top`}
-              title={`${a.titulo}${a.partida_desc ? `\n📌 ${a.partida_codigo} — ${a.partida_desc}` : ''}\n(clic para editar: meta, fechas, saltos, restricciones)`}>
+              title={`${a.titulo}${a.partida_desc ? `\n📌 ${a.partida_codigo} — ${a.partida_desc}` : ''}\n(clic para editar: meta, fechas, saltos, antecesoras, restricciones)`}>
               <div className="flex items-center gap-1.5">
                 <span className={`w-2 h-2 rounded-full flex-shrink-0 ${ESTADO_DOT[a.estado] ?? 'bg-zinc-500'}`} />
+                <span className="text-[8px] font-mono text-k-text3 flex-shrink-0">#{a.id}</span>
                 <span className="text-k-text leading-tight">{a.titulo}</span>
                 {(a.rest_pend ?? 0) > 0 && <span className="text-[9px] font-bold text-k-red flex-shrink-0">⛔{a.rest_pend}</span>}
+                {(a.dep_total ?? 0) > 0 && (
+                  <button onClick={e => { e.stopPropagation(); onCadena(a.id) }}
+                    title={`${a.dep_total} vínculo(s) — clic para resaltar la cadena (azul = antecesoras, violeta = sucesoras)`}
+                    className={`text-[9px] font-bold flex-shrink-0 px-1 rounded ${
+                      cadena?.focal === a.id ? 'bg-amber-500/20 text-k-amber' : 'text-k-blue hover:bg-k-raised'}`}>
+                    🔗{a.dep_total}
+                  </button>
+                )}
               </div>
               {a.partida_codigo && (
                 <div className="text-[9px] text-k-text3 font-mono pl-3.5 truncate max-w-[240px]">
@@ -308,6 +351,10 @@ function GrupoOTM({ grupo, fechas, hoy, laborable, onEditar, onReal }: {
             <td className={`${tdFijo} text-center text-k-text2`}>{a.und ?? '—'}</td>
             <td className={`${tdFijo} text-center font-mono text-[10px] text-k-text2`}>{fmtCorta(a.fecha)}</td>
             <td className={`${tdFijo} text-center font-mono text-[10px] text-k-text2`}>{fmtCorta(a.fecha_fin)}</td>
+            <td className={`${tdFijo} text-center font-mono text-[9px] text-k-text2`}
+              title={(a.predecesoras ?? []).map(p => `#${p.id} ${p.titulo} (termina ${fmtCorta(p.fecha_fin)}${p.lag_dias ? `, lag ${p.lag_dias}d` : ''})`).join('\n') || 'Sin antecesoras'}>
+              {(a.predecesoras ?? []).map(p => `${p.id}FS${p.lag_dias ? `+${p.lag_dias}d` : ''}`).join(', ') || '—'}
+            </td>
             {fechas.map(f => (
               <CeldaDia key={f} prog={a.prog[f]} real={a.real[f]}
                 esSalto={saltos.has(f)} esMedio={medios.has(f)} laborable={laborable(f)}
