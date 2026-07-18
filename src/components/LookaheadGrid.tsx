@@ -11,12 +11,8 @@ import { ChevronLeft, ChevronRight, Loader2, Printer } from 'lucide-react'
 import { api } from '@/lib/api'
 import { CNC } from '@/lib/catalogos'
 import { lunesDe, iso } from '@/lib/semana'
-
-const MESES = ['', 'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
-const DIAS_1 = ['L', 'M', 'M', 'J', 'V', 'S', 'D']
-const fmtDia = (f: string) => `${Number(f.slice(8, 10))} ${MESES[Number(f.slice(5, 7))]}`
-const fmtCorta = (f: string) => `${f.slice(8, 10)}/${f.slice(5, 7)}`
-const num = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(2).replace(/\.?0+$/, ''))
+import { DIAS_1, fmtDia, fmtCorta, num, isoDow, clrReal } from '@/lib/lookahead'
+import CeldaDia from '@/components/CeldaDia'
 
 export interface ActGrid {
   id: number; titulo: string; estado: string; descripcion?: string | null
@@ -29,6 +25,7 @@ export interface ActGrid {
   rest_pend?: number; rest_total?: number
   und?: string | null; metrado_prog?: number | null
   metrado_base?: number | null; acum_real?: number | null; saldo?: number | null
+  hito_id?: number | null; hito_desc?: string | null; hito_peso?: number | null
   dias_salto?: string[]; dias_medio?: string[]
   predecesoras?: { id: number; titulo: string; fecha_fin: string; lag_dias: number }[]
   sucesoras?: number[]; dep_total?: number
@@ -42,21 +39,6 @@ export interface GridResp {
   grupos: { otm_id: string | null; otm_desc: string | null; actividades: ActGrid[] }[]
 }
 
-// ISO weekday del string YYYY-MM-DD sin depender de la zona horaria local
-const isoDow = (f: string) => {
-  const d = new Date(f + 'T12:00:00Z').getUTCDay()
-  return d === 0 ? 7 : d
-}
-// Color del avance real vs el programado congelado del día (línea base):
-// más = verde · igual = ámbar · menos = rojo
-const clrReal = (real: number | undefined, prog: number | undefined) => {
-  if (real == null) return ''
-  const p = prog ?? 0
-  if (real > p + 0.0005) return 'bg-green-500/25 text-green-300 font-bold'
-  if (real >= p - 0.0005) return 'bg-amber-500/25 text-amber-300 font-bold'
-  return 'bg-red-500/25 text-red-300 font-bold'
-}
-
 const ESTADO_DOT: Record<string, string> = {
   PROGRAMADO: 'bg-amber-400', EJECUTADO: 'bg-green-500',
   CANCELADO: 'bg-zinc-500', NO_CUMPLIDA: 'bg-red-500',
@@ -65,78 +47,6 @@ const ESTADO_DOT: Record<string, string> = {
 const PROYECTO_ID = 1
 const thBase = 'border border-k-border px-1 py-1 text-[10px] font-bold text-k-text2 bg-k-raised'
 const tdFijo = 'border border-k-border px-2 py-1 text-[11px] bg-k-surface'
-
-// Colores base de la celda (bg tailwind ↔ rgba para el gradiente de medio día)
-const NIVEL_TXT: Record<string, string> = {
-  verde: 'text-green-300 font-bold', ambar: 'text-amber-300 font-bold',
-  rojo: 'text-red-300 font-bold', celeste: 'text-sky-300 font-medium', gris: '',
-}
-const NIVEL_BG: Record<string, string> = {
-  verde: 'bg-green-500/25', ambar: 'bg-amber-500/25', rojo: 'bg-red-500/25',
-  celeste: 'bg-sky-500/20', gris: 'bg-zinc-700/30',
-}
-const NIVEL_RGBA: Record<string, string> = {
-  verde: 'rgba(34,197,94,0.25)', ambar: 'rgba(245,158,11,0.25)',
-  rojo: 'rgba(239,68,68,0.25)', celeste: 'rgba(14,165,233,0.20)',
-  gris: 'rgba(63,63,70,0.30)',
-}
-const nivelDe = (real: number | undefined, prog: number | undefined, laborable: boolean) =>
-  real != null
-    ? (real > (prog ?? 0) + 0.0005 ? 'verde' : real >= (prog ?? 0) - 0.0005 ? 'ambar' : 'rojo')
-    : (prog ?? 0) > 0 ? 'celeste' : !laborable ? 'gris' : ''
-
-// Una celda = un día de la actividad. Muestra el PROGRAMADO (celeste, línea
-// base) hasta que se registra el avance: al escribir encima se guarda el REAL
-// del día (el meta NO cambia; el saldo se re-prorratea en los días siguientes)
-// y la celda toma el semáforo verde/ámbar/rojo con un ✓ de "registrada".
-// Un día ◐ (medio día, pesa 0.5) se pinta con relleno SOLO hasta la mitad.
-function CeldaDia({ prog, real, editable, esSalto, esMedio, laborable, onRegistrar }: {
-  prog: number | undefined; real: number | undefined
-  editable: boolean; esSalto: boolean; esMedio: boolean; laborable: boolean
-  onRegistrar: (v: number | null) => void
-}) {
-  if (esSalto) {
-    return <td title="Salto intencional de la actividad (edítalo en el modal)"
-      className="border border-k-border/60 px-0.5 py-0.5 text-center text-[10px] bg-zinc-600/30 text-k-text3">∅</td>
-  }
-  const registrada = real != null
-  const nivel = nivelDe(real, prog, laborable)
-  const clr = nivel ? `${NIVEL_TXT[nivel]}${esMedio ? '' : ` ${NIVEL_BG[nivel]}`}` : ''
-  // Medio día: el fondo llena solo la MITAD inferior de la celda (notorio)
-  const estilo = esMedio && nivel
-    ? { background: `linear-gradient(to top, ${NIVEL_RGBA[nivel]} 50%, transparent 50%)` }
-    : undefined
-  const titulo = (esMedio ? 'Medio día (pesa 0.5). ' : '') + (registrada
-    ? `Programado: ${prog != null ? num(prog) : '—'} · Real registrado: ${num(real!)}`
-    : (prog ?? 0) > 0 ? `Programado: ${num(prog!)} — escribe el avance real del día` : '')
-  const valor = registrada ? real : prog
-  if (!editable) {
-    return <td title={titulo} style={estilo}
-      className={`relative border border-k-border/60 px-0.5 py-0.5 text-center text-[10px] ${clr}`}>
-      {esMedio && <span className="absolute top-0 left-0.5 text-[7px] leading-none text-k-text3">◐</span>}
-      {valor != null && valor > 0 ? num(valor) : ''}</td>
-  }
-  const commit = (el: HTMLInputElement) => {
-    const limpio = el.value.trim()
-    // vaciar una celda registrada borra el avance del día (vuelve a celeste)
-    const v = limpio === '' ? null : Number(limpio)
-    if (limpio !== '' && (Number.isNaN(v) || v! < 0)) { el.value = valor != null ? num(valor) : ''; return }
-    if (registrada ? v === real : v === null) { el.value = valor != null ? num(valor) : ''; return }
-    onRegistrar(v)
-  }
-  return (
-    <td title={titulo} style={estilo} className={`relative border border-k-border/60 p-0 text-center ${clr}`}>
-      {esMedio && <span className="absolute top-0 left-0.5 text-[7px] leading-none text-k-text3" title="Medio día (pesa 0.5)">◐</span>}
-      {registrada && <span className="absolute top-0 right-0.5 text-[7px] leading-none text-current opacity-90" title="Avance registrado">✓</span>}
-      {/* No controlado + key: al llegar el valor del servidor la celda se re-monta */}
-      <input key={`${prog ?? '-'}|${real ?? '-'}`} defaultValue={valor != null ? num(valor) : ''}
-        onBlur={e => commit(e.target)}
-        onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
-        className="w-11 bg-transparent text-center text-[10px] py-1 outline-none focus:bg-k-raised"
-        inputMode="decimal" />
-    </td>
-  )
-}
 
 export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) {
   const qc = useQueryClient()
@@ -328,6 +238,12 @@ function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, o
               {a.partida_codigo && (
                 <div className="text-[9px] text-k-text3 font-mono pl-3.5 truncate max-w-[240px]">
                   📌 {a.partida_codigo}{a.partida_desc ? ` · ${a.partida_desc.slice(0, 34)}` : ''}
+                </div>
+              )}
+              {a.hito_desc && (
+                <div className="text-[9px] text-violet-300/90 pl-3.5 truncate max-w-[240px]"
+                  title="Etapa (hito) de la partida que programa esta actividad — su registro diario alimenta ese hito en el % EV">
+                  ◆ Etapa: {a.hito_desc}{a.hito_peso != null ? ` (${Math.round(a.hito_peso * 100)}%)` : ''}
                 </div>
               )}
               {a.estado === 'NO_CUMPLIDA' && (a.causa_nc_cat || a.causa_nc) && (

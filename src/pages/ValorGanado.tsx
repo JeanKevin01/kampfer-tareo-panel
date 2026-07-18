@@ -1,5 +1,6 @@
 import TabISP from './TabISP'
-import TabDiario from './TabDiario'
+import TabAvanceDiario from './TabAvanceDiario'
+import TabPerformance from './TabPerformance'
 import TabRendimientos from './TabRendimientos'
 import TabProductividad from './TabProductividad'
 import TabSeguimiento from './TabSeguimiento'
@@ -181,7 +182,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 // ============================================================
 // Componente principal
 // ============================================================
-type Tab = 'resumen' | 'ejecutivo' | 'partidas' | 'isp' | 'diario' | 'rendimientos' | 'productividad' | 'seguimiento' | 'valorizacion' | 'registro' | 'config' | 'importar' | 'historico'
+type Tab = 'resumen' | 'ejecutivo' | 'partidas' | 'isp' | 'diario' | 'performance' | 'rendimientos' | 'productividad' | 'seguimiento' | 'valorizacion' | 'registro' | 'config' | 'importar' | 'historico'
 
 export default function ValorGanado() {
   const [tab, setTab] = useState<Tab>('resumen')
@@ -232,8 +233,9 @@ export default function ValorGanado() {
     { id: 'ejecutivo',     label: 'Resumen Ejecutivo',icon: LayoutGrid },
     { id: 'partidas',      label: 'Partidas',         icon: ClipboardList },
     { id: 'isp',           label: 'ISP',              icon: Activity },
-    { id: 'diario',        label: 'Control Diario',   icon: CalendarDays },
+    { id: 'diario',        label: 'Avance diario',    icon: CalendarDays },
     { id: 'registro',      label: 'Avances',          icon: PenLine },
+    { id: 'performance',   label: 'Performance',      icon: TrendingUp },
     { id: 'rendimientos',  label: 'Rendimientos',     icon: Users },
     { id: 'productividad', label: 'Productividad',    icon: Gauge },
     { id: 'seguimiento',   label: 'Seguimiento',      icon: TrendingUp },
@@ -328,13 +330,8 @@ export default function ValorGanado() {
       {tab === 'partidas' && <WBSArbol otm={selectedOtm} semana={semana} />}
       {tab === 'isp'      && <TabISP semana={semana} otm={selectedOtm} />}
       {tab === 'registro' && <TabRegistro semana={semana} otm={selectedOtm} />}
-      {tab === 'diario'        && (
-        <TabDiario
-          semana={semana}
-          onSemana={setSemana}
-          selectedOtm={selectedOtm}
-        />
-      )}
+      {tab === 'diario'        && <TabAvanceDiario otm={selectedOtm} />}
+      {tab === 'performance'   && <TabPerformance semana={semana} otm={selectedOtm} />}
       {tab === 'rendimientos'  && (
         <TabRendimientos
           semana={semana}
