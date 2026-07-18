@@ -11,7 +11,7 @@ const TITLES: Record<string, string> = {
   '/registros':    'Registros y Horas Hombre',
   '/reportes':     'Reportes y Analytics',
   '/otms':         'Órdenes de Trabajo Misceláneas',
-  '/presupuesto':  'Presupuesto por OTM',
+  '/presupuesto':  'Presupuesto por proyecto',
   '/inventario':   'Inventario y Materiales',
   '/valorizacion': 'Valorización',
   '/rentabilidad': 'Rentabilidad',

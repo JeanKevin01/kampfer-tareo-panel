@@ -46,7 +46,7 @@ function imprimirSeleccion(lista: Trabajador[], cols: number) {
       }
     </style>
   </head><body>
-    <h1>KAMPFER · SMCV Misceláneos · ${lista.length} trabajadores</h1>
+    <h1>KAMPFER · ${lista.length} trabajadores</h1>
     <div class="grid">${cards}</div>
     <script>window.onload=()=>{ setTimeout(()=>window.print(), 300) }<\/script>
   </body></html>`)

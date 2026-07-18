@@ -203,7 +203,7 @@ export default function Bitacora() {
                   <div className="flex-1">
                     <p className="text-sm font-bold text-k-text capitalize">{formatFecha(dia.fecha)}</p>
                     <p className="text-[11px] text-k-text3 mt-0.5">
-                      {dia.regs.length} registros · {trabUnicos} trabajadores · {otmsUnicos} OTMs · {supsUnicos} supervisores
+                      {dia.regs.length} registros · {trabUnicos} trabajadores · {otmsUnicos} proyectos · {supsUnicos} supervisores
                     </p>
                   </div>
                   <div className="flex items-center gap-4 flex-shrink-0">

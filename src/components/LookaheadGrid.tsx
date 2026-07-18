@@ -1,5 +1,5 @@
 // Lookahead tipo Excel — réplica del "Anexo 01 - LookAhead" del ex-gerente:
-// filas = actividades agrupadas por OTM, columnas = días de N semanas.
+// filas = actividades agrupadas por proyecto, columnas = días de N semanas.
 // Cada actividad tiene 2 filas: PROG (metrado programado por día, celdas
 // verdes, editables) y REAL (metrado ejecutado, celdas azules — escribe en
 // ev_avances_diarios, la MISMA tabla del módulo de Valor Ganado).

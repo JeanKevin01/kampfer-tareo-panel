@@ -266,7 +266,7 @@ export default function ValorGanado() {
               onChange={e => setSelectedOtm(e.target.value)}
               className="bg-k-raised border border-k-border rounded-lg px-3 py-2 text-sm text-k-text outline-none focus:border-k-amber transition-colors"
             >
-              <option value="">Todas las OTMs</option>
+              <option value="">Todos los proyectos</option>
               {otmsEV.map(o => (
                 <option key={o.otm_id} value={o.otm_id}>
                   {o.otm_id} — {o.descripcion?.slice(0, 28) || '—'} {o.partidas > 0 ? `(${o.partidas} partidas)` : '(sin partidas — importar)'}
@@ -954,7 +954,7 @@ interface JornadaResp {
 }
 function JornadaConfig() {
   const qc = useQueryClient()
-  const [scope, setScope] = useState('')   // '' = todas las OTMs
+  const [scope, setScope] = useState('')   // '' = todos los proyectos
   const { data } = useQuery<JornadaResp>({ queryKey: ['jornada', scope], queryFn: () => req(`/api/jornada${scope ? `?otm=${encodeURIComponent(scope)}` : ''}`) })
   const { data: otms } = useQuery<{ id: string; nombre?: string }[]>({ queryKey: ['otms-jor'], queryFn: () => req('/api/otms?activas=true') })
   const [abierto, setAbierto] = useState(true)
@@ -962,7 +962,7 @@ function JornadaConfig() {
   const [hh, setHh] = useState<Record<number, string>>({})
   const [pFecha, setPFecha] = useState(''); const [pHh, setPHh] = useState(''); const [pNota, setPNota] = useState('')
   const [msg, setMsg] = useState('')
-  const scopeLbl = scope || 'todas las OTMs'
+  const scopeLbl = scope || 'todos los proyectos'
 
   useEffect(() => {
     if (data) { const m: Record<number, string> = {}; data.vigentes.forEach(v => m[v.dia_semana] = String(v.hh)); setHh(m) }
@@ -1002,11 +1002,11 @@ function JornadaConfig() {
           <label className="text-[11px] text-k-text3">Aplica a:</label>
           <select value={scope} onChange={e => setScope(e.target.value)}
             className="bg-k-void border border-k-border focus:border-k-amber rounded px-2 py-1.5 text-xs text-k-text outline-none">
-            <option value="">Todas las OTMs (global)</option>
+            <option value="">Todos los proyectos (global)</option>
             {otms?.map(o => <option key={o.id} value={o.id}>{o.id}{o.nombre ? ` — ${o.nombre}` : ''}</option>)}
           </select>
           <span className="text-[10px] text-k-text3">
-            {scope ? 'La regla de esta OTM tiene prioridad sobre la global.' : 'Regla base para todas las OTMs.'}
+            {scope ? 'La regla de esta OTM tiene prioridad sobre la global.' : 'Regla base para todos los proyectos.'}
           </span>
         </div>
         <div className="grid md:grid-cols-2 gap-5">

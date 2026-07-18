@@ -49,7 +49,7 @@ export default function Dashboard() {
     return { ...s, regs: regs.length, hh, trabs, otms: otmsS, reporto: regs.length > 0 }
   }).sort((a, b) => (b.reporto ? 1 : 0) - (a.reporto ? 1 : 0)), [supervisores, registros])
 
-  // Actividad por OTM
+  // Actividad por proyecto
   const otmActivity = useMemo(() => {
     const map: Record<string, { hh: number; trabs: Set<string>; sup: Set<string> }> = {}
     registros.forEach(r => {
@@ -68,7 +68,7 @@ export default function Dashboard() {
 
   const kpis = [
     { label: 'Trabajadores activos', value: isLoading ? '…' : String(trabActivos), color: 'text-k-blue', bg: 'bg-blue-500/10', border: 'border-blue-500/20', icon: Users },
-    { label: 'OTMs en ejecución',    value: isLoading ? '…' : String(otmsEjecucion), color: 'text-k-amber', bg: 'bg-amber-500/10', border: 'border-amber-500/20', icon: ClipboardList },
+    { label: 'Proyectos en ejecución',    value: isLoading ? '…' : String(otmsEjecucion), color: 'text-k-amber', bg: 'bg-amber-500/10', border: 'border-amber-500/20', icon: ClipboardList },
     { label: 'HH registradas hoy',   value: isLoading ? '…' : hhHoy.toFixed(1),    color: 'text-k-green', bg: 'bg-green-500/10', border: 'border-green-500/20', icon: TrendingUp },
     { label: 'Supervisores reportaron', value: isLoading ? '…' : `${supReportaron}/${supervisores.length}`,
       color: supReportaron === supervisores.length ? 'text-k-green' : 'text-k-red',
@@ -147,11 +147,11 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Actividad por OTM */}
+          {/* Actividad por proyecto */}
           <div className="bg-k-surface border border-k-border rounded-xl overflow-hidden">
             <div className="px-5 py-4 border-b border-k-border bg-k-raised">
               <h2 className="text-[11px] font-bold text-k-text3 uppercase tracking-widest">
-                Actividad por OTM hoy
+                Actividad por proyecto hoy
               </h2>
             </div>
             {otmActivity.length === 0 ? (

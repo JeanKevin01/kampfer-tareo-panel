@@ -326,7 +326,7 @@ export default function Supervisores() {
                       {[
                         { label: 'Registros',    value: s.regs,       color: 'text-k-blue'  },
                         { label: 'Trabajadores', value: s.trabUnicos, color: 'text-k-text'  },
-                        { label: 'OTMs',         value: s.otmsUnicos, color: 'text-k-amber' },
+                        { label: 'Proyectos',         value: s.otmsUnicos, color: 'text-k-amber' },
                         { label: 'HH', value: s.hhTotal > 0 ? s.hhTotal.toFixed(1) : '—', color: 'text-k-green' },
                       ].map(m => (
                         <div key={m.label} className="text-center">

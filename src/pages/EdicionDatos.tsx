@@ -91,7 +91,7 @@ export default function EdicionDatos() {
       <div className="flex gap-2 bg-k-raised border border-k-border rounded-xl p-1 w-fit">
         {([
           ['trabajadores', 'Trabajadores', Users],
-          ['otms',         'OTMs',         ClipboardList],
+          ['otms',         'Proyectos',         ClipboardList],
         ] as [Tab, string, React.ElementType][]).map(([id, label, Icon]) => (
           <button key={id} onClick={() => { setTab(id); setSearch('') }}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${
@@ -161,7 +161,7 @@ export default function EdicionDatos() {
         </div>
       )}
 
-      {/* Tabla OTMs */}
+      {/* Tabel proyectos */}
       {tab === 'otms' && (
         <div className="bg-k-surface border border-k-border rounded-xl overflow-hidden">
           <div className="overflow-x-auto">
@@ -201,7 +201,7 @@ export default function EdicionDatos() {
           </div>
           {!isLoading && (
             <div className="px-4 py-2 border-t border-k-border bg-k-raised">
-              <span className="text-[11px] text-k-text3">{filteredO.length} OTMs</span>
+              <span className="text-[11px] text-k-text3">{filteredO.length} proyectos</span>
             </div>
           )}
         </div>

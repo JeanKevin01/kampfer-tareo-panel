@@ -51,7 +51,7 @@ export default function Reportes() {
 
   const supMap = Object.fromEntries(supervisores.map(s => [s.id, s.nombre]))
 
-  // HH por OTM (del día seleccionado)
+  // HH por proyecto (del día seleccionado)
   const hhPorOTM = Object.entries(
     registrosHoy.reduce((acc, r) => {
       acc[r.otm_id] = (acc[r.otm_id] ?? 0) + (r.hh ?? 0)
@@ -69,7 +69,7 @@ export default function Reportes() {
     }, {} as Record<string, number>)
   ).map(([sup, registros]) => ({ sup: sup.split(' ')[0], registros }))
 
-  // HH por OTM para pie chart
+  // HH por proyecto para pie chart
   const pieData = hhPorOTM.slice(0, 6).map(d => ({ name: d.otm, value: d.hh }))
 
   // Stats rápidas
@@ -99,7 +99,7 @@ export default function Reportes() {
           { label: 'Registros del día',   value: registrosHoy.length, color: 'text-k-text'  },
           { label: 'Trabajadores activos', value: trabActivos,          color: 'text-k-blue'  },
           { label: 'HH totales',           value: totalHH + ' HH',     color: 'text-k-green' },
-          { label: 'OTMs con actividad',   value: otmsActivas,          color: 'text-k-amber' },
+          { label: 'Proyectos con actividad',   value: otmsActivas,          color: 'text-k-amber' },
           { label: 'Supervisores',         value: Object.keys(regPorSup.reduce((a,b) => ({...a,[b.sup]:1}),{})).length, color: 'text-purple-400' },
           { label: 'HH promedio/trab.',
             value: trabActivos > 0 ? (Number(totalHH)/trabActivos).toFixed(1) + ' HH' : '—',
@@ -117,10 +117,10 @@ export default function Reportes() {
       {/* Gráficos fila 1 */}
       <div className="grid grid-cols-2 gap-4">
 
-        {/* HH por OTM - barras */}
+        {/* HH por proyecto - barras */}
         <div className="bg-k-surface border border-k-border rounded-xl p-5">
           <h3 className="text-[11px] font-bold text-k-text3 uppercase tracking-widest mb-4">
-            HH por OTM — {fecha}
+            HH por proyecto — {fecha}
           </h3>
           {hhPorOTM.length === 0
             ? <div className="flex items-center justify-center h-40 text-k-text3 text-sm">Sin datos</div>
@@ -159,10 +159,10 @@ export default function Reportes() {
       {/* Gráficos fila 2 */}
       <div className="grid grid-cols-2 gap-4">
 
-        {/* Distribución HH por OTM - pie */}
+        {/* Distribución HH por proyecto - pie */}
         <div className="bg-k-surface border border-k-border rounded-xl p-5">
           <h3 className="text-[11px] font-bold text-k-text3 uppercase tracking-widest mb-4">
-            Distribución HH por OTM
+            Distribución HH por proyecto
           </h3>
           {pieData.length === 0
             ? <div className="flex items-center justify-center h-40 text-k-text3 text-sm">Sin datos</div>
@@ -184,7 +184,7 @@ export default function Reportes() {
         {/* Tabla resumen */}
         <div className="bg-k-surface border border-k-border rounded-xl p-5">
           <h3 className="text-[11px] font-bold text-k-text3 uppercase tracking-widest mb-4">
-            Resumen por OTM
+            Resumen por proyecto
           </h3>
           <div className="space-y-2 max-h-[200px] overflow-y-auto">
             {hhPorOTM.length === 0

@@ -346,7 +346,7 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
     queryKey: ['supervisores-lista'],
     queryFn: () => api('/api/supervisores'),
   })
-  // Partidas de control de la OTM elegida (LPS: 1 actividad = 1 partida)
+  // Partidas de control de el proyecto elegida (LPS: 1 actividad = 1 partida)
   const partidas = useQuery<{ id: number; codigo: string; descripcion?: string; unidad?: string | null; metrado_presup?: number | string | null }[]>({
     queryKey: ['partidas-otm', form.otm_id],
     queryFn: () => api(`/ev/partidas?otm=${encodeURIComponent(form.otm_id!)}`),
@@ -502,7 +502,7 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
           {form.otm_id && (
             <select value={form.partida_id || ''} onChange={e => elegirPartida(Number(e.target.value) || 0)}
               className={inputCls} title="Partida de control que se trabajará (1 actividad = 1 partida)">
-              <option value="">Sin partida específica (trabajo general de la OTM)</option>
+              <option value="">Sin partida específica (trabajo general de el proyecto)</option>
               {(partidas.data ?? []).map(p => (
                 <option key={p.id} value={p.id}>{p.codigo} — {(p.descripcion ?? '').slice(0, 48)}</option>
               ))}
@@ -537,6 +537,27 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
         )}
 
         {editar && act!.partida_id && <HitosPartida partidaId={act!.partida_id} onCambio={onChange} />}
+
+        {/* Actividad LIBRE (sin partida de control): hitos solo visuales — el
+            avance por etapas del % EV vive en la partida (decisión Jean 2026-07-18) */}
+        {editar && !act!.partida_id && (
+          <div className="mt-4 border-t border-k-border pt-3">
+            <p className="text-[10px] uppercase font-bold text-k-text3 mb-2">Hitos de la actividad</p>
+            <div className="flex items-center gap-2 rounded-lg border border-k-border bg-k-raised/40 px-2.5 py-1.5">
+              <span className={`text-[11px] ${act!.estado === 'EJECUTADO' ? 'text-k-green' : 'text-k-text3'}`}>
+                {act!.estado === 'EJECUTADO' ? '✓' : '○'}
+              </span>
+              <span className="text-[11px] text-k-text2 flex-1">Ejecución <span className="text-k-text3">· 100% ★</span></span>
+              <span className="text-[10px] font-mono font-bold text-k-text3">
+                {act!.estado === 'EJECUTADO' ? '100%' : '—'}
+              </span>
+            </div>
+            <p className="text-[10px] text-k-text3 mt-1.5">
+              Sin partida de control los hitos son referenciales (se completa con «Marcar ejecutada»).
+              Vincula una partida del presupuesto para que el avance alimente el % EV por etapas.
+            </p>
+          </div>
+        )}
 
         {editar && <Antecesoras act={act!} onCambio={onChange} />}
 
@@ -701,7 +722,7 @@ function HitosPartida({ partidaId, onCambio }: { partidaId: number; onCambio: ()
 
 function Antecesoras({ act, onCambio }: { act: Actividad; onCambio: () => void }) {
   const qc = useQueryClient()
-  // Selección en 2 pasos (pedido Jean 2026-07-18): primero la OTM (arranca en
+  // Selección en 2 pasos (pedido Jean 2026-07-18): primero el proyecto (arranca en
   // la de la actividad), luego una actividad de ESA OTM — se acabó la lista plana.
   const [otmSel, setOtmSel] = useState(act.otm_id ?? '')
   const [predId, setPredId] = useState(0)
@@ -764,15 +785,15 @@ function Antecesoras({ act, onCambio }: { act: Actividad; onCambio: () => void }
       </div>
       <div className="flex flex-wrap gap-1.5">
         <select value={otmSel} onChange={e => { setOtmSel(e.target.value); setPredId(0) }}
-          title="Paso 1: elige la OTM de la antecesora"
+          title="Paso 1: elige el proyecto de la antecesora"
           className={inputCls} style={{ width: 150 }}>
-          <option value="">Todas las OTM</option>
+          <option value="">Todos los proyectos</option>
           {(otms.data ?? []).map(o => (
             <option key={o.otm_id} value={o.otm_id}>{o.otm_id}</option>
           ))}
         </select>
         <select value={predId || ''} onChange={e => setPredId(Number(e.target.value) || 0)}
-          title="Paso 2: elige la actividad de esa OTM"
+          title="Paso 2: elige la actividad de ese proyecto"
           className={`${inputCls} flex-1 min-w-[180px]`} style={{ width: 'auto' }}>
           <option value="">Elegir antecesora…</option>
           {(candidatas.data ?? []).filter(c => c.id !== act.id).map(c => (

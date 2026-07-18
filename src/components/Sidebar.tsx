@@ -41,7 +41,7 @@ const NAV: NavGroup[] = [
   {
     label: 'Control',
     items: [
-      { path: '/otms',         label: 'OTMs',           icon: ClipboardList },
+      { path: '/otms',         label: 'Proyectos',           icon: ClipboardList },
       { path: '/rdc',          label: 'Generar RDC',    icon: FileText },
       { path: '/valor-ganado', label: 'Valor Ganado',   icon: Target },
       { path: '/presupuesto',  label: 'Presupuesto',    icon: FileSpreadsheet },
@@ -75,7 +75,7 @@ export default function Sidebar({ collapsed = false, onToggle }: { collapsed?: b
               KAMPFER
             </div>
             <div className="text-[9px] text-k-text3 tracking-widest uppercase mt-1">
-              Panel · SMCV Misc.
+              Panel de control
             </div>
           </div>
         )}
