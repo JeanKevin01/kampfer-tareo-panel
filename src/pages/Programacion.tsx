@@ -32,7 +32,8 @@ export interface Actividad {
   supervisor_id?: string | null; supervisor_nombre?: string | null
   rest_total?: number; rest_pend?: number
   fecha_fin?: string | null; metrado_prog?: number | null; und?: string | null
-  dias_salto?: string[]
+  dias_salto?: string[]; dias_medio?: string[]
+  causa_nc_planner?: string | null; causa_nc_planner_cat?: string | null
   creado_por?: string; reportes: number[]
 }
 export interface Restriccion {
@@ -331,6 +332,7 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
     metrado_prog: act?.metrado_prog != null ? String(act.metrado_prog) : '',
     und: act?.und ?? '',
     dias_salto: act?.dias_salto ?? [],
+    dias_medio: act?.dias_medio ?? [],
   })
   const [error, setError] = useState('')
   const [showNC, setShowNC] = useState(false)
@@ -374,7 +376,8 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
         return api('/ev/programacion/actividades', {
           method: 'POST',
           body: JSON.stringify({ ...base, proyecto_id: PROYECTO_ID, fecha: form.fecha,
-            fecha_fin: form.fecha_fin || null, metrado_prog: metrado, dias_salto: form.dias_salto }),
+            fecha_fin: form.fecha_fin || null, metrado_prog: metrado,
+            dias_salto: form.dias_salto, dias_medio: form.dias_medio }),
         })
       }
       // Al editar, fecha/fecha_fin/metrado solo viajan si CAMBIARON: el API
@@ -385,6 +388,7 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
       if ((form.fecha_fin || null) !== (act!.fecha_fin ?? null)) body.fecha_fin = form.fecha_fin || null
       if ((metrado ?? null) !== (act!.metrado_prog ?? null)) body.metrado_prog = metrado
       if (form.dias_salto.join(',') !== (act!.dias_salto ?? []).join(',')) body.dias_salto = form.dias_salto
+      if (form.dias_medio.join(',') !== (act!.dias_medio ?? []).join(',')) body.dias_medio = form.dias_medio
       return api(`/ev/programacion/actividades/${act!.id}`, { method: 'PUT', body: JSON.stringify(body) })
     },
     onSuccess: onChange, onError: (e: Error) => setError(e.message),
@@ -435,28 +439,43 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
               </div>
             </div>
           </div>
-          {/* Saltos intencionales: qué días del rango NO se trabaja esta actividad */}
+          {/* Días del rango: clic cicla normal → salto ∅ (peso 0) → medio ◐ (peso 0.5) */}
           {form.fecha && form.fecha_fin && form.fecha_fin > form.fecha && (() => {
             const dias: string[] = []
             const d = new Date(form.fecha + 'T12:00:00')
             const fin = new Date(form.fecha_fin + 'T12:00:00')
             while (d <= fin && dias.length < 42) { dias.push(d.toISOString().slice(0, 10)); d.setDate(d.getDate() + 1) }
             const DIA_L = ['D', 'L', 'M', 'M', 'J', 'V', 'S']
+            const ciclar = (f: string) => {
+              const esSalto = form.dias_salto.includes(f)
+              const esMedio = form.dias_medio.includes(f)
+              if (!esSalto && !esMedio) {          // normal → salto
+                setForm({ ...form, dias_salto: [...form.dias_salto, f].sort() })
+              } else if (esSalto) {                 // salto → medio
+                setForm({ ...form, dias_salto: form.dias_salto.filter(x => x !== f), dias_medio: [...form.dias_medio, f].sort() })
+              } else {                              // medio → normal
+                setForm({ ...form, dias_medio: form.dias_medio.filter(x => x !== f) })
+              }
+            }
             return (
               <div>
                 <label className="text-[9px] uppercase font-bold text-k-text3">
-                  Saltos intencionales <span className="normal-case font-normal">(clic en el día para que la actividad NO se trabaje ese día; el metrado se re-prorratea)</span>
+                  Días del rango <span className="normal-case font-normal">(clic: se trabaja → ∅ salto → ◐ medio día; el metrado se re-prorratea)</span>
                 </label>
                 <div className="flex gap-1 flex-wrap mt-1">
                   {dias.map(f => {
                     const salto = form.dias_salto.includes(f)
+                    const medio = form.dias_medio.includes(f)
                     return (
-                      <button key={f} type="button"
-                        onClick={() => setForm({ ...form, dias_salto: salto ? form.dias_salto.filter(x => x !== f) : [...form.dias_salto, f].sort() })}
+                      <button key={f} type="button" onClick={() => ciclar(f)}
                         className={`text-[10px] px-1.5 py-1 rounded border font-mono ${
-                          salto ? 'border-red-500/40 bg-red-500/15 text-k-red line-through' : 'border-k-border bg-k-raised text-k-text2'}`}
-                        title={salto ? 'Salto: no se trabaja (clic para reactivar)' : 'Se trabaja (clic para saltar)'}>
-                        {DIA_L[new Date(f + 'T12:00:00').getDay()]} {f.slice(8, 10)}
+                          salto ? 'border-red-500/40 bg-red-500/15 text-k-red line-through'
+                          : medio ? 'border-sky-500/40 bg-sky-500/15 text-sky-300'
+                          : 'border-k-border bg-k-raised text-k-text2'}`}
+                        title={salto ? 'Salto ∅: no se trabaja (clic → medio día)'
+                          : medio ? 'Medio día ◐: pesa 0.5 (clic → normal)'
+                          : 'Se trabaja completo (clic → salto)'}>
+                        {medio ? '◐ ' : ''}{DIA_L[new Date(f + 'T12:00:00').getDay()]} {f.slice(8, 10)}
                       </button>
                     )
                   })}

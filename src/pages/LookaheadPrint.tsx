@@ -126,11 +126,16 @@ function GrupoPrint({ grupo, fechas }: { grupo: GridResp['grupos'][number]; fech
           {fechas.map(f => {
             const p = a.prog[f]; const r = a.real[f]
             const esSalto = (a.dias_salto ?? []).includes(f)
+            const esMedio = (a.dias_medio ?? []).includes(f)
             const clrR = r == null ? undefined
               : r > (p ?? 0) + 0.0005 ? '#186a2b' : r >= (p ?? 0) - 0.0005 ? '#8a6d1a' : '#a11212'
+            const fondo = esSalto ? '#e8e8e8'
+              : esMedio && p ? 'linear-gradient(to top, #e2eefb 50%, transparent 50%)'
+              : p ? '#e2eefb' : undefined
             return (
-              <td key={f} style={{ ...tdC, padding: '1px 2px', background: esSalto ? '#e8e8e8' : p ? '#e2eefb' : undefined }}>
+              <td key={f} style={{ ...tdC, padding: '1px 2px', background: fondo }}>
                 {esSalto ? <span style={{ color: '#999' }}>∅</span> : null}
+                {esMedio ? <span style={{ color: '#999', fontSize: 7 }}>◐</span> : null}
                 {p ? <div style={{ color: '#1a4f9c', fontWeight: 700 }}>{num(p)}</div> : null}
                 {r != null ? <div style={{ color: clrR, fontWeight: 700 }}>{num(r)}</div> : null}
               </td>

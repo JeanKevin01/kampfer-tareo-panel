@@ -29,7 +29,7 @@ export interface ActGrid {
   rest_pend?: number; rest_total?: number
   und?: string | null; metrado_prog?: number | null
   metrado_base?: number | null; acum_real?: number | null; saldo?: number | null
-  dias_salto?: string[]
+  dias_salto?: string[]; dias_medio?: string[]
   prog: Record<string, number>; real: Record<string, number>
 }
 export interface GridResp {
@@ -64,13 +64,33 @@ const PROYECTO_ID = 1
 const thBase = 'border border-k-border px-1 py-1 text-[10px] font-bold text-k-text2 bg-k-raised'
 const tdFijo = 'border border-k-border px-2 py-1 text-[11px] bg-k-surface'
 
+// Colores base de la celda (bg tailwind ↔ rgba para el gradiente de medio día)
+const NIVEL_TXT: Record<string, string> = {
+  verde: 'text-green-300 font-bold', ambar: 'text-amber-300 font-bold',
+  rojo: 'text-red-300 font-bold', celeste: 'text-sky-300 font-medium', gris: '',
+}
+const NIVEL_BG: Record<string, string> = {
+  verde: 'bg-green-500/25', ambar: 'bg-amber-500/25', rojo: 'bg-red-500/25',
+  celeste: 'bg-sky-500/20', gris: 'bg-zinc-700/30',
+}
+const NIVEL_RGBA: Record<string, string> = {
+  verde: 'rgba(34,197,94,0.25)', ambar: 'rgba(245,158,11,0.25)',
+  rojo: 'rgba(239,68,68,0.25)', celeste: 'rgba(14,165,233,0.20)',
+  gris: 'rgba(63,63,70,0.30)',
+}
+const nivelDe = (real: number | undefined, prog: number | undefined, laborable: boolean) =>
+  real != null
+    ? (real > (prog ?? 0) + 0.0005 ? 'verde' : real >= (prog ?? 0) - 0.0005 ? 'ambar' : 'rojo')
+    : (prog ?? 0) > 0 ? 'celeste' : !laborable ? 'gris' : ''
+
 // Una celda = un día de la actividad. Muestra el PROGRAMADO (celeste, línea
 // base) hasta que se registra el avance: al escribir encima se guarda el REAL
 // del día (el meta NO cambia; el saldo se re-prorratea en los días siguientes)
 // y la celda toma el semáforo verde/ámbar/rojo con un ✓ de "registrada".
-function CeldaDia({ prog, real, editable, esSalto, laborable, onRegistrar }: {
+// Un día ◐ (medio día, pesa 0.5) se pinta con relleno SOLO hasta la mitad.
+function CeldaDia({ prog, real, editable, esSalto, esMedio, laborable, onRegistrar }: {
   prog: number | undefined; real: number | undefined
-  editable: boolean; esSalto: boolean; laborable: boolean
+  editable: boolean; esSalto: boolean; esMedio: boolean; laborable: boolean
   onRegistrar: (v: number | null) => void
 }) {
   if (esSalto) {
@@ -78,15 +98,20 @@ function CeldaDia({ prog, real, editable, esSalto, laborable, onRegistrar }: {
       className="border border-k-border/60 px-0.5 py-0.5 text-center text-[10px] bg-zinc-600/30 text-k-text3">∅</td>
   }
   const registrada = real != null
-  const clr = registrada ? clrReal(real, prog)
-    : (prog ?? 0) > 0 ? 'bg-sky-500/20 text-sky-300 font-medium'
-    : !laborable ? 'bg-zinc-700/30' : ''
-  const titulo = registrada
+  const nivel = nivelDe(real, prog, laborable)
+  const clr = nivel ? `${NIVEL_TXT[nivel]}${esMedio ? '' : ` ${NIVEL_BG[nivel]}`}` : ''
+  // Medio día: el fondo llena solo la MITAD inferior de la celda (notorio)
+  const estilo = esMedio && nivel
+    ? { background: `linear-gradient(to top, ${NIVEL_RGBA[nivel]} 50%, transparent 50%)` }
+    : undefined
+  const titulo = (esMedio ? 'Medio día (pesa 0.5). ' : '') + (registrada
     ? `Programado: ${prog != null ? num(prog) : '—'} · Real registrado: ${num(real!)}`
-    : (prog ?? 0) > 0 ? `Programado: ${num(prog!)} — escribe el avance real del día` : ''
+    : (prog ?? 0) > 0 ? `Programado: ${num(prog!)} — escribe el avance real del día` : '')
   const valor = registrada ? real : prog
   if (!editable) {
-    return <td title={titulo} className={`border border-k-border/60 px-0.5 py-0.5 text-center text-[10px] ${clr}`}>
+    return <td title={titulo} style={estilo}
+      className={`relative border border-k-border/60 px-0.5 py-0.5 text-center text-[10px] ${clr}`}>
+      {esMedio && <span className="absolute top-0 left-0.5 text-[7px] leading-none text-k-text3">◐</span>}
       {valor != null && valor > 0 ? num(valor) : ''}</td>
   }
   const commit = (el: HTMLInputElement) => {
@@ -98,7 +123,8 @@ function CeldaDia({ prog, real, editable, esSalto, laborable, onRegistrar }: {
     onRegistrar(v)
   }
   return (
-    <td title={titulo} className={`relative border border-k-border/60 p-0 text-center ${clr}`}>
+    <td title={titulo} style={estilo} className={`relative border border-k-border/60 p-0 text-center ${clr}`}>
+      {esMedio && <span className="absolute top-0 left-0.5 text-[7px] leading-none text-k-text3" title="Medio día (pesa 0.5)">◐</span>}
       {registrada && <span className="absolute top-0 right-0.5 text-[7px] leading-none text-current opacity-90" title="Avance registrado">✓</span>}
       {/* No controlado + key: al llegar el valor del servidor la celda se re-monta */}
       <input key={`${prog ?? '-'}|${real ?? '-'}`} defaultValue={valor != null ? num(valor) : ''}
@@ -245,6 +271,7 @@ function GrupoOTM({ grupo, fechas, hoy, laborable, onEditar, onReal }: {
       {grupo.actividades.map(a => {
         const editable = a.estado !== 'CANCELADO'
         const saltos = new Set(a.dias_salto ?? [])
+        const medios = new Set(a.dias_medio ?? [])
         return (
           <tr key={a.id} className={a.estado === 'CANCELADO' ? 'opacity-50' : ''}>
             <td onClick={() => onEditar(a)}
@@ -283,7 +310,7 @@ function GrupoOTM({ grupo, fechas, hoy, laborable, onEditar, onReal }: {
             <td className={`${tdFijo} text-center font-mono text-[10px] text-k-text2`}>{fmtCorta(a.fecha_fin)}</td>
             {fechas.map(f => (
               <CeldaDia key={f} prog={a.prog[f]} real={a.real[f]}
-                esSalto={saltos.has(f)} laborable={laborable(f)}
+                esSalto={saltos.has(f)} esMedio={medios.has(f)} laborable={laborable(f)}
                 editable={editable && !!a.partida_id && f <= hoy}
                 onRegistrar={v => onReal(a.id, f, v)} />
             ))}
