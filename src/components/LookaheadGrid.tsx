@@ -154,11 +154,19 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
           className="bg-k-raised border border-k-border rounded-lg px-2.5 py-2 text-sm text-k-text outline-none">
           {[3, 4, 5, 6].map(n => <option key={n} value={n}>{n} semanas</option>)}
         </select>
+        <input type="date" value={desde} title="Saltar a la semana de una fecha"
+          onChange={e => { if (e.target.value) setDesde(iso(lunesDe(new Date(e.target.value + 'T12:00:00')))) }}
+          className="bg-k-raised border border-k-border rounded-lg px-2 py-1.5 text-xs text-k-text2 outline-none" />
         <button onClick={() => window.open(`/programacion/lookahead-imprimir?desde=${desde}&semanas=${nSemanas}`, '_blank')}
           className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-k-border bg-k-raised text-k-text2 hover:bg-k-border">
           <Printer size={14} /> Exportar PDF
         </button>
         {grid.isFetching && <Loader2 size={14} className="animate-spin text-k-text3" />}
+        {desde < iso(lunesDe(new Date())) && (
+          <span className="text-[11px] font-bold text-k-amber bg-amber-500/10 border border-amber-500/30 rounded-lg px-2.5 py-1.5">
+            ⏪ Semana pasada — puedes registrar avances y programar retroactivamente
+          </span>
+        )}
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-k-border">
