@@ -536,6 +536,8 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
           </div>
         )}
 
+        {editar && act!.partida_id && <HitosPartida partidaId={act!.partida_id} onCambio={onChange} />}
+
         {editar && <Antecesoras act={act!} onCambio={onChange} />}
 
         {editar && <Restricciones actId={act!.id} onCambio={onChange} />}
@@ -613,9 +615,95 @@ function ModalNC({ onClose, onConfirmar }: { onClose: () => void; onConfirmar: (
 
 // Antecesoras FS (F5 v2): esta actividad solo puede empezar cuando terminen.
 // Al mover una antecesora, el API recorre a las sucesoras (auto-cascada).
+// Hitos (rules of credit) de la partida de control, vistos desde el modal:
+// el hito principal se alimenta SOLO de las celdas diarias (rollup); los
+// secundarios sin registro diario se marcan aquí con un checkpoint (✓ o %).
+function HitosPartida({ partidaId, onCambio }: { partidaId: number; onCambio: () => void }) {
+  const qc = useQueryClient()
+  interface Hito {
+    id: number | null; numero: number; descripcion: string; peso: number
+    es_principal: boolean; pct: number | null; auto: boolean
+    con_actividad: boolean; virtual?: boolean
+  }
+  const hitos = useQuery<{ metrado: number; unidad?: string | null; hitos: Hito[] }>({
+    queryKey: ['hitos-partida', partidaId],
+    queryFn: () => api(`/ev/programacion/partidas/${partidaId}/hitos`),
+  })
+  const checkpoint = useMutation({
+    mutationFn: ({ id, pct }: { id: number; pct: number }) =>
+      api(`/ev/programacion/hitos/${id}/checkpoint`, {
+        method: 'POST', body: JSON.stringify({ pct }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['hitos-partida', partidaId] })
+      for (const k of ['ev-captura', 'ev-reporte', 'ev-curva', 'ev-performance'])
+        qc.invalidateQueries({ queryKey: [k] })
+      onCambio()
+    },
+    onError: (e: Error) => alert(e.message),
+  })
+  const lista = hitos.data?.hitos ?? []
+  if (!lista.length) return null
+  return (
+    <div className="mt-4 border-t border-k-border pt-3">
+      <p className="text-[10px] uppercase font-bold text-k-text3 mb-2">
+        Hitos de la partida (% EV = Σ peso × avance de cada etapa)
+      </p>
+      <div className="space-y-1.5">
+        {lista.map(h => {
+          const pct = h.pct ?? 0
+          const done = pct >= 0.9995
+          return (
+            <div key={h.id ?? 'v'} className="flex items-center gap-2 rounded-lg border border-k-border bg-k-raised/40 px-2.5 py-1.5">
+              <span className={`text-[11px] ${done ? 'text-k-green' : pct > 0 ? 'text-k-blue' : 'text-k-text3'}`}>
+                {done ? '✓' : pct > 0 ? '●' : '○'}
+              </span>
+              <span className="text-[11px] text-k-text2 flex-1 truncate">
+                {h.descripcion || `Hito ${h.numero}`}
+                <span className="text-k-text3"> · {Math.round(h.peso * 100)}%{h.es_principal ? ' ★' : ''}</span>
+              </span>
+              <span className={`text-[10px] font-mono font-bold ${done ? 'text-k-green' : pct > 0 ? 'text-k-blue' : 'text-k-text3'}`}>
+                {h.pct != null ? `${(pct * 100).toFixed(0)}%` : '—'}
+              </span>
+              {h.auto ? (
+                <span className="text-[9px] font-bold text-sky-300 bg-sky-500/10 border border-sky-500/30 rounded px-1.5 py-0.5"
+                  title="Se alimenta del registro diario (celdas del LookAhead / Avance diario)">AUTO</span>
+              ) : h.id != null && (
+                <>
+                  {!done && (
+                    <button onClick={() => checkpoint.mutate({ id: h.id!, pct: 1 })}
+                      disabled={checkpoint.isPending}
+                      title="Marcar la etapa como completada hoy"
+                      className="text-[10px] px-2 py-0.5 rounded border border-green-500/30 text-k-green hover:bg-green-500/10">✓ Completar</button>
+                  )}
+                  <input placeholder="%" inputMode="numeric" title="O registra un % parcial de la etapa (Enter)"
+                    onKeyDown={e => {
+                      if (e.key !== 'Enter') return
+                      const v = Number((e.target as HTMLInputElement).value)
+                      if (Number.isFinite(v) && v >= 0 && v <= 100) checkpoint.mutate({ id: h.id!, pct: v / 100 })
+                    }}
+                    className="w-10 bg-k-void border border-k-border rounded px-1 py-0.5 text-[10px] text-k-text text-center outline-none focus:border-k-amber" />
+                </>
+              )}
+            </div>
+          )
+        })}
+      </div>
+      {lista.some(h => h.virtual) && (
+        <p className="text-[10px] text-k-text3 mt-1.5">
+          Sin hitos definidos: al primer registro diario se crea «Ejecución 100%» solo.
+          Puedes definir hitos en VG → Configuración para desagregar el % por etapas.
+        </p>
+      )}
+    </div>
+  )
+}
+
 function Antecesoras({ act, onCambio }: { act: Actividad; onCambio: () => void }) {
   const qc = useQueryClient()
-  const [busq, setBusq] = useState('')
+  // Selección en 2 pasos (pedido Jean 2026-07-18): primero la OTM (arranca en
+  // la de la actividad), luego una actividad de ESA OTM — se acabó la lista plana.
+  const [otmSel, setOtmSel] = useState(act.otm_id ?? '')
   const [predId, setPredId] = useState(0)
   const [lag, setLag] = useState('0')
   interface Dep { id: number; predecesora_id: number; lag_dias: number; pred_titulo: string; pred_fecha_fin: string; pred_estado: string }
@@ -623,9 +711,13 @@ function Antecesoras({ act, onCambio }: { act: Actividad; onCambio: () => void }
     queryKey: ['dependencias', act.id],
     queryFn: () => api(`/ev/programacion/actividades/${act.id}/dependencias`),
   })
+  const otms = useQuery<{ otm_id: string; descripcion: string }[]>({
+    queryKey: ['otms-lista'],
+    queryFn: () => api('/ev/otms'),
+  })
   const candidatas = useQuery<{ id: number; titulo: string; otm_id?: string | null; fecha: string; fecha_fin: string }[]>({
-    queryKey: ['actividades-lista', busq],
-    queryFn: () => api(`/ev/programacion/actividades?proyecto_id=${PROYECTO_ID}&q=${encodeURIComponent(busq)}`),
+    queryKey: ['actividades-lista', otmSel],
+    queryFn: () => api(`/ev/programacion/actividades?proyecto_id=${PROYECTO_ID}${otmSel ? `&otm=${encodeURIComponent(otmSel)}` : ''}`),
   })
   const invalidar = () => { qc.invalidateQueries({ queryKey: ['dependencias', act.id] }); onCambio() }
   const crear = useMutation({
@@ -671,13 +763,20 @@ function Antecesoras({ act, onCambio }: { act: Actividad; onCambio: () => void }
         )}
       </div>
       <div className="flex flex-wrap gap-1.5">
-        <input placeholder="Buscar actividad…" value={busq} onChange={e => setBusq(e.target.value)}
-          className={inputCls} style={{ width: 130 }} />
+        <select value={otmSel} onChange={e => { setOtmSel(e.target.value); setPredId(0) }}
+          title="Paso 1: elige la OTM de la antecesora"
+          className={inputCls} style={{ width: 150 }}>
+          <option value="">Todas las OTM</option>
+          {(otms.data ?? []).map(o => (
+            <option key={o.otm_id} value={o.otm_id}>{o.otm_id}</option>
+          ))}
+        </select>
         <select value={predId || ''} onChange={e => setPredId(Number(e.target.value) || 0)}
+          title="Paso 2: elige la actividad de esa OTM"
           className={`${inputCls} flex-1 min-w-[180px]`} style={{ width: 'auto' }}>
           <option value="">Elegir antecesora…</option>
           {(candidatas.data ?? []).filter(c => c.id !== act.id).map(c => (
-            <option key={c.id} value={c.id}>#{c.id} {c.otm_id ? `[${c.otm_id}] ` : ''}{c.titulo.slice(0, 40)} ({c.fecha}→{c.fecha_fin})</option>
+            <option key={c.id} value={c.id}>#{c.id} {c.titulo.slice(0, 44)} ({c.fecha}→{c.fecha_fin})</option>
           ))}
         </select>
         <input value={lag} onChange={e => setLag(e.target.value)} inputMode="numeric"

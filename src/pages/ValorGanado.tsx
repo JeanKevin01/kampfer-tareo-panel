@@ -730,12 +730,17 @@ function TabRegistro({ semana, otm }: { semana: number; otm?: string }) {
   // eslint-disable-next-line
   }, [captura.map(p=>p.partida_id).join(',')])
 
+  // Los hitos PRINCIPALES no viajan: los gobierna el rollup del avance diario
+  // (fuente única 0025) y guardarlos aquí pisaría el dato derivado.
+  const principales = new Set(captura.flatMap(p => p.hitos.filter(x => x.es_principal).map(x => x.hito_id)))
   const guardar = useMutation({
     mutationFn: () => req('/ev/captura', {
       method: 'POST',
       body: JSON.stringify({
         semana,
-        avances: Object.entries(avances).map(([id, v]) => ({ hito_id: Number(id), cantidad_acum: Number(v) || 0 })),
+        avances: Object.entries(avances)
+          .filter(([id]) => !principales.has(Number(id)))
+          .map(([id, v]) => ({ hito_id: Number(id), cantidad_acum: Number(v) || 0 })),
         hh_gastadas: Object.entries(hh).map(([id, v]) => ({ partida_id: Number(id), hh: Number(v) || 0 })),
       }),
     }),
@@ -896,9 +901,17 @@ function TabRegistro({ semana, otm }: { semana: number; otm?: string }) {
                         <td className="py-1 px-2 text-right font-mono text-k-text3" style={{ fontSize: 11 }}>{fmt(mp)}</td>
                         <td className="py-1 px-2 text-right font-mono text-k-text3" style={{ fontSize: 11 }}>{fmt(x.cant_anterior)}</td>
                         <td className="py-1 px-1" style={{ minWidth: 90 }}>
-                          <input type="number" step="0.01" min="0"
-                            value={avances[x.hito_id] ?? ''} onChange={e => setAvances({ ...avances, [x.hito_id]: e.target.value })}
-                            className="w-full bg-k-void border border-k-amber/40 focus:border-k-amber rounded px-2 py-1 text-k-text font-mono outline-none text-right transition-colors" style={{ fontSize: 12 }} />
+                          {x.es_principal ? (
+                            <div className="flex items-center justify-end gap-1.5"
+                              title="El hito principal se alimenta SOLO del avance diario (LookAhead / Avance diario) — corrígelo allá, celda por celda">
+                              <span className="font-mono text-right text-k-text2" style={{ fontSize: 12 }}>{fmt(Number(x.cant_actual ?? 0))}</span>
+                              <span className="text-[8px] font-bold text-sky-300 bg-sky-500/10 border border-sky-500/30 rounded px-1 py-0.5">AUTO</span>
+                            </div>
+                          ) : (
+                            <input type="number" step="0.01" min="0"
+                              value={avances[x.hito_id] ?? ''} onChange={e => setAvances({ ...avances, [x.hito_id]: e.target.value })}
+                              className="w-full bg-k-void border border-k-amber/40 focus:border-k-amber rounded px-2 py-1 text-k-text font-mono outline-none text-right transition-colors" style={{ fontSize: 12 }} />
+                          )}
                         </td>
                         <td className={`py-1 px-2 text-right font-mono font-bold ${sp > 0 ? 'text-k-green' : sp < 0 ? 'text-k-red' : 'text-k-text3'}`} style={{ fontSize: 10 }}>{sp > 0 ? '+' : ''}{fmt(sp)}</td>
                         <td colSpan={2} />
