@@ -4,8 +4,7 @@ import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
 
-import { API_BASE } from '@/lib/api'
-const API = API_BASE
+import { api } from '@/lib/api'
 
 interface SemInfo { semana: number; label: string }
 interface SemDato { hh_gan_acum: number; hh_gast_acum: number }
@@ -20,11 +19,7 @@ function pfColor(pf: number) {
 export default function TabSeguimiento({ semana, otm }: { semana: number; otm?: string }) {
   const { data, isLoading, error } = useQuery<{ semanas: SemInfo[]; partidas: PartidaISP[] }>({
     queryKey: ['ev-isp', otm],
-    queryFn: async () => {
-      const r = await fetch(`${API}/ev/isp${otm ? `?otm=${otm}` : ''}`)
-      if (!r.ok) throw new Error(`Error ${r.status}`)
-      return r.json()
-    },
+    queryFn: () => api(`/ev/isp${otm ? `?otm=${otm}` : ''}`),
     staleTime: 2 * 60_000,
   })
 
@@ -41,7 +36,7 @@ export default function TabSeguimiento({ semana, otm }: { semana: number; otm?: 
       })
     })
     return Object.entries(map).sort((a, b) => a[0].localeCompare(b[0]))
-  }, [data, semana])
+  }, [data, semanas])
 
   if (isLoading) return <p className="text-k-text3 text-sm flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Cargando…</p>
   if (error) return <p className="text-k-red text-sm">Error: {(error as Error).message}</p>

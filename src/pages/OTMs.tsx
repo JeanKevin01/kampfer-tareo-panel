@@ -11,8 +11,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Search, Plus, X, Loader2, ChevronDown, Upload, Download, FileSpreadsheet, CheckCircle, AlertTriangle } from 'lucide-react'
 import * as XLSX from 'xlsx'
 
-import { API_BASE } from '@/lib/api'
-const API = API_BASE
+import { api, ApiError } from '@/lib/api'
 
 interface Proyecto {
   id: string; descripcion: string; estado: string; area?: string; centro_costo?: string
@@ -120,7 +119,7 @@ export default function OTMs() {
         const s = String(v).trim()
         if (!s) return ''
         if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
-        const m = s.match(/^(\d{1,2})[/\-](\d{1,2})[/\-](\d{4})$/)
+        const m = s.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/)
         if (m) { const [, dd, mm, yyyy] = m; return `${yyyy}-${mm.padStart(2,'0')}-${dd.padStart(2,'0')}` }
         return ''
       }
@@ -150,15 +149,13 @@ export default function OTMs() {
     reader.readAsArrayBuffer(file)
   }
 
-  const enviarBulk = async (otms: Record<string, unknown>[]) => {
-    const r = await fetch(API + '/admin/otms/bulk', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ otms }),
-    })
-    const j = await r.json()
-    if (!r.ok) throw new Error(typeof j.detail === 'string' ? j.detail : 'Error al importar')
-    return j
+  interface BulkResp {
+    creadas: number; actualizadas?: number
+    errores: { fila: number; error: string }[]
+    requieren_confirmacion?: { fila: number; nombre: string; similares: Similar[] }[]
   }
+  const enviarBulk = (otms: Record<string, unknown>[]) =>
+    api<BulkResp>('/admin/otms/bulk', { method: 'POST', body: JSON.stringify({ otms }) })
 
   const importBulkMutation = useMutation({
     mutationFn: async () => {
@@ -204,21 +201,21 @@ export default function OTMs() {
 
   const { data: otms = [], isLoading } = useQuery<Proyecto[]>({
     queryKey: ['otms-all'],
-    queryFn: () => fetch(API + '/api/otms').then(r => r.json()),
+    queryFn: () => api<Proyecto[]>('/api/otms'),
   })
 
   const createMutation = useMutation({
     mutationFn: async (extra: Record<string, unknown> = {}) => {
-      const r = await fetch(API + '/admin/otm', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...form, ...extra }),
-      })
-      const j = await r.json()
-      if (r.status === 409 && j.detail?.similares) {
-        setSimilares(j.detail.similares); throw new Error('__similares__')
+      try {
+        return await api<{ id: string; nuevo: boolean }>('/admin/otm', { method: 'POST', body: JSON.stringify({ ...form, ...extra }) })
+      } catch (e) {
+        const err = e as ApiError & { detail?: unknown }
+        const det = err.detail as { similares?: unknown[] } | string | undefined
+        if (err instanceof ApiError && err.status === 409 && typeof det === 'object' && det?.similares) {
+          setSimilares(det.similares as Similar[]); throw new Error('__similares__', { cause: e })
+        }
+        throw new Error(typeof det === 'string' ? det : err.message || 'Error', { cause: e })
       }
-      if (!r.ok) throw new Error(typeof j.detail === 'string' ? j.detail : 'Error')
-      return j
     },
     onSuccess: (j: { id: string; nuevo: boolean }) => {
       qc.invalidateQueries({ queryKey: ['otms-all'] })
@@ -233,10 +230,7 @@ export default function OTMs() {
 
   const estadoMutation = useMutation({
     mutationFn: ({ id, estado }: { id: string; estado: string }) =>
-      fetch(API + `/admin/otm/${id}/estado`, {
-        method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ estado }),
-      }).then(r => r.json()),
+      api(`/admin/otm/${id}/estado`, { method: 'PUT', body: JSON.stringify({ estado }) }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['otms-all'] })
       qc.invalidateQueries({ queryKey: ['otms'] })

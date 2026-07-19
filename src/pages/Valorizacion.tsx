@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState} from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Loader2, Send, CheckCircle2, Undo2 } from 'lucide-react'
 import { api } from '@/lib/api'
@@ -84,9 +84,11 @@ function Detalle({ vid, onChange }: { vid: number; onChange: () => void }) {
   })
   const [rows, setRows] = useState<Linea[]>([])
   const [dirty, setDirty] = useState(false)
-  useEffect(() => {
+  const [prevDet, setPrevDet] = useState<typeof det.data>(undefined)
+  if (det.data !== prevDet) {
+    setPrevDet(det.data)
     if (det.data) { setRows(det.data.lineas.map(l => ({ ...l }))); setDirty(false) }
-  }, [det.data])
+  }
 
   const esBorrador = det.data?.valorizacion.estado === 'BORRADOR'
   const invalidar = () => { qc.invalidateQueries({ queryKey: ['valorizacion', vid] }); onChange() }

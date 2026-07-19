@@ -2,8 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Users, User, BarChart2 } from 'lucide-react'
 
-import { API_BASE } from '@/lib/api'
-const API = API_BASE
+import { api } from '@/lib/api'
 
 interface PartidaRend {
   partida_id:    number
@@ -61,7 +60,7 @@ const pfChip = (pf: number | null | undefined) => {
   )
 }
 
-export default function TabRendimientos({ semana, selectedOtm, supervisores, trabajadores }: Props) {
+export default function TabRendimientos({ semana, selectedOtm, trabajadores }: Props) {
   const [vista, setVista] = useState<'cuadrilla' | 'persona'>('cuadrilla')
   const [trabId, setTrabId] = useState('')
   const [desde,  setDesde]  = useState('')
@@ -72,9 +71,7 @@ export default function TabRendimientos({ semana, selectedOtm, supervisores, tra
     queryKey: ['rend-cuadrilla', semana, selectedOtm],
     queryFn:  async () => {
       const p = new URLSearchParams({ semana: String(semana) })
-      const r = await fetch(`${API}/ev/rendimiento-cuadrillas?${p}`)
-      if (!r.ok) throw new Error()
-      return r.json()
+      return api<RendCuadrilla[]>(`/ev/rendimiento-cuadrillas?${p}`)
     },
     enabled: vista === 'cuadrilla',
     staleTime: 60_000,
@@ -87,9 +84,7 @@ export default function TabRendimientos({ semana, selectedOtm, supervisores, tra
       const p = new URLSearchParams({ trabajador_id: trabId })
       if (desde) p.set('desde', desde)
       if (hasta) p.set('hasta', hasta)
-      const r = await fetch(`${API}/ev/rendimiento-trabajador?${p}`)
-      if (!r.ok) throw new Error()
-      return r.json()
+      return api<RendTrabajador>(`/ev/rendimiento-trabajador?${p}`)
     },
     enabled: vista === 'persona' && !!trabId,
     staleTime: 60_000,
@@ -100,7 +95,7 @@ export default function TabRendimientos({ semana, selectedOtm, supervisores, tra
       {/* Sub-tabs */}
       <div className="flex gap-2">
         {([['cuadrilla', Users, 'Por cuadrilla'], ['persona', User, 'Por persona']] as const).map(([id, Icon, label]) => (
-          <button key={id} onClick={() => setVista(id as any)}
+          <button key={id} onClick={() => setVista(id)}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all
               ${vista === id
                 ? 'bg-k-amber text-black'

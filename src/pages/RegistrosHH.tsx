@@ -2,8 +2,7 @@ import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Calendar, Download, Loader2 } from 'lucide-react'
 
-import { API_BASE } from '@/lib/api'
-const API = API_BASE
+import { api } from '@/lib/api'
 
 interface Registro { id: number; trab_id: string; otm_id: string; supervisor_id: string; fecha: string; hora: string; hh: number | null }
 interface Trabajador { id: string; nombre: string; cargo: string }
@@ -21,18 +20,18 @@ export default function RegistrosHH() {
 
   const { data: registros = [], isLoading } = useQuery<Registro[]>({
     queryKey: ['registros', fecha],
-    queryFn: () => fetch(`${API}/api/registros/${fecha}`).then(r => r.json()),
+    queryFn: () => api<Registro[]>(`/api/registros/${fecha}`),
   })
 
   const { data: trabajadores = [] } = useQuery<Trabajador[]>({
     queryKey: ['trabajadores'],
-    queryFn: () => fetch(API + '/admin/trabajadores').then(r => r.json()),
+    queryFn: () => api<Trabajador[]>('/admin/trabajadores'),
     staleTime: 5 * 60 * 1000,
   })
 
   const { data: supervisores = [] } = useQuery<Supervisor[]>({
     queryKey: ['supervisores'],
-    queryFn: () => fetch(API + '/api/supervisores').then(r => r.json()),
+    queryFn: () => api<Supervisor[]>('/api/supervisores'),
     staleTime: 5 * 60 * 1000,
   })
 

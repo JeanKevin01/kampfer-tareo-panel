@@ -6,8 +6,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Loader2, Upload, Download, X, Plus, TrendingUp, DollarSign, Wallet, Percent } from 'lucide-react'
 import * as XLSX from 'xlsx'
 
-import { API_BASE } from '@/lib/api'
-const API = API_BASE
+import { api } from '@/lib/api'
 const PROYECTO_ID = 1
 
 interface Fila {
@@ -34,12 +33,11 @@ function TarifasCard() {
   const [draft, setDraft] = useState<Record<string, string>>({})
   const { data, isLoading } = useQuery<{ cargos: Cargo[]; default: number | null }>({
     queryKey: ['ev-tarifas'],
-    queryFn: () => fetch(`${API}/ev/tarifas`).then(r => r.json()),
+    queryFn: () => api<{ cargos: Cargo[]; default: number | null }>('/ev/tarifas'),
   })
   const guardar = useMutation({
-    mutationFn: (p: { cargo: string; costo_hh: number }) => fetch(`${API}/ev/tarifas`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(p),
-    }).then(r => r.json()),
+    mutationFn: (p: { cargo: string; costo_hh: number }) =>
+      api('/ev/tarifas', { method: 'POST', body: JSON.stringify(p) }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['ev-tarifas'] }); qc.invalidateQueries({ queryKey: ['ro'] }) },
   })
   if (isLoading || !data) return <div className="bg-k-surface border border-k-border rounded-xl p-5"><Loader2 size={14} className="animate-spin text-k-text3" /></div>
@@ -103,7 +101,7 @@ export default function Rentabilidad() {
   const qc = useQueryClient()
   const ro = useQuery<RO>({
     queryKey: ['ro'],
-    queryFn: () => fetch(`${API}/ev/ro?proyecto_id=${PROYECTO_ID}`).then(r => r.json()),
+    queryFn: () => api<RO>(`/ev/ro?proyecto_id=${PROYECTO_ID}`),
   })
 
   const [showImp, setShowImp] = useState(false)
@@ -155,19 +153,18 @@ export default function Rentabilidad() {
   }
 
   const importar = useMutation({
-    mutationFn: () => fetch(`${API}/ev/ro/costos`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ proyecto_id: PROYECTO_ID, costos: filas }),
-    }).then(async r => { const j = await r.json(); if (!r.ok) throw new Error(j.detail || 'Error'); return j }),
+    mutationFn: () => api('/ev/ro/costos', {
+      method: 'POST', body: JSON.stringify({ proyecto_id: PROYECTO_ID, costos: filas }),
+    }),
     onSuccess: () => { setShowImp(false); setFilas([]); qc.invalidateQueries({ queryKey: ['ro'] }) },
     onError: (e: Error) => setImpError(e.message),
   })
 
   const guardarAjuste = useMutation({
-    mutationFn: () => fetch(`${API}/ev/ro/venta-ajustes`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+    mutationFn: () => api('/ev/ro/venta-ajustes', {
+      method: 'POST',
       body: JSON.stringify({ proyecto_id: PROYECTO_ID, ajustes: [{ tipo: aj.tipo, fase: aj.fase || null, monto: Number(aj.monto) || 0 }] }),
-    }).then(async r => { const j = await r.json(); if (!r.ok) throw new Error(j.detail || 'Error'); return j }),
+    }),
     onSuccess: () => { setShowAj(false); setAj({ tipo: 'ADICIONAL', fase: '', monto: '' }); qc.invalidateQueries({ queryKey: ['ro'] }) },
   })
 

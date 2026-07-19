@@ -2,12 +2,11 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell, Legend
+  ResponsiveContainer, PieChart, Pie, Cell
 } from 'recharts'
 import { Calendar, Loader2 } from 'lucide-react'
 
-import { API_BASE } from '@/lib/api'
-const API = API_BASE
+import { api } from '@/lib/api'
 
 interface Registro {
   id: number; trab_id: string; otm_id: string
@@ -16,16 +15,16 @@ interface Registro {
 interface Supervisor { id: string; nombre: string }
 
 const hoy = () => new Date().toISOString().split('T')[0]
-const hace7 = () => { const d = new Date(); d.setDate(d.getDate() - 6); return d.toISOString().split('T')[0] }
 
 const COLORS = ['#f59e0b','#10b981','#3b82f6','#a855f7','#ef4444','#06b6d4','#f97316','#84cc16']
 
-const CustomTooltip = ({ active, payload, label }: any) => {
+interface TooltipPago { name: string; color: string; value: number }
+const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?: TooltipPago[]; label?: string }) => {
   if (!active || !payload?.length) return null
   return (
     <div className="bg-k-raised border border-k-border2 rounded-lg px-3 py-2 text-xs">
       <p className="text-k-text2 mb-1">{label}</p>
-      {payload.map((p: any) => (
+      {payload.map(p => (
         <p key={p.name} style={{ color: p.color }} className="font-mono font-bold">
           {p.value} {p.name}
         </p>
@@ -36,16 +35,15 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 
 export default function Reportes() {
   const [fecha, setFecha] = useState(hoy())
-  const [desde, setDesde] = useState(hace7())
 
   const { data: registrosHoy = [], isLoading: loadHoy } = useQuery<Registro[]>({
     queryKey: ['registros', fecha],
-    queryFn: () => fetch(`${API}/api/registros/${fecha}`).then(r => r.json()),
+    queryFn: () => api<Registro[]>(`/api/registros/${fecha}`),
   })
 
   const { data: supervisores = [] } = useQuery<Supervisor[]>({
     queryKey: ['supervisores'],
-    queryFn: () => fetch(API + '/api/supervisores').then(r => r.json()),
+    queryFn: () => api<Supervisor[]>('/api/supervisores'),
     staleTime: 5 * 60 * 1000,
   })
 
@@ -170,7 +168,7 @@ export default function Reportes() {
                 <PieChart>
                   <Pie data={pieData} cx="50%" cy="50%" outerRadius={75}
                     dataKey="value" nameKey="name" label={({ name, percent }) =>
-                      `${name} ${(percent * 100).toFixed(0)}%`}
+                      `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
                     labelLine={false}
                     style={{ fontSize: 9, fill: '#8a96ad' }}>
                     {pieData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}

@@ -13,10 +13,11 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      # Lint informativo: hay 43 errores pre-existentes (2026-07-04). Cuando se limpien
-      # (tarea F5), quitar continue-on-error para hacerlo bloqueante.
-      - name: Lint (informativo)
-        run: npm ci --no-audit --no-fund && npm run lint
-        continue-on-error: true
       - run: npm ci --no-audit --no-fund
+      # Fase S·S4 (2026-07-19): lint en 0 errores -> BLOQUEANTE. No introducir
+      # errores nuevos; el push a main despliega solo si lint y build pasan CI.
+      - name: Lint (bloqueante)
+        run: npm run lint
+      - name: Typecheck
+        run: npx tsc -b --force
       - run: npm run build

@@ -1,9 +1,8 @@
 import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Calendar, Download, Loader2, Plus, X, AlertCircle, FileText, Package, Users } from 'lucide-react'
+import { Calendar, Download, Loader2, Plus, X, AlertCircle, Package, Users } from 'lucide-react'
 
-import { API_BASE } from '@/lib/api'
-const API = API_BASE
+import { api, apiBlob } from '@/lib/api'
 
 interface OTM        { id: string; descripcion: string; estado: string }
 interface Registro   { id: number; trab_id: string; otm_id: string; fecha: string; hh: number | null }
@@ -27,19 +26,19 @@ export default function GenerarRDC() {
 
   const { data: otms = [], isLoading: loadingOtms } = useQuery<OTM[]>({
     queryKey: ['otms'],
-    queryFn: () => fetch(API + '/api/otms').then(r => r.json()),
+    queryFn: () => api<OTM[]>('/api/otms'),
     staleTime: 5 * 60 * 1000,
   })
 
   const { data: registros = [], isLoading: loadingReg } = useQuery<Registro[]>({
     queryKey: ['registros', fecha],
-    queryFn: () => fetch(`${API}/api/registros/${fecha}`).then(r => r.json()),
+    queryFn: () => api<Registro[]>(`/api/registros/${fecha}`),
     enabled: !!fecha,
   })
 
   const { data: trabajadores = [] } = useQuery<Trabajador[]>({
     queryKey: ['trabajadores'],
-    queryFn: () => fetch(API + '/admin/trabajadores').then(r => r.json()),
+    queryFn: () => api<Trabajador[]>('/admin/trabajadores'),
     staleTime: 5 * 60 * 1000,
   })
 
@@ -86,18 +85,16 @@ export default function GenerarRDC() {
     if (!otmId) return
     setGenerando(true)
     try {
-      const res = await fetch(API + '/api/rdc/generar', {
+      const blob = await apiBlob('/api/rdc/generar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ otm_id: otmId, fecha, equipos }),
       })
-      if (!res.ok) throw new Error(`${res.status}`)
-      const blob = await res.blob()
       const a = document.createElement('a')
       a.href = URL.createObjectURL(blob)
       a.download = `RDC_${otmId}_${fecha}.xlsm`
       a.click()
-    } catch (_) {
+    } catch {
       // backend devuelve 501 — esperado por ahora
     } finally {
       setGenerando(false)

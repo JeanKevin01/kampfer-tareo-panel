@@ -2,9 +2,8 @@ import { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Loader2, ChevronDown, ChevronRight, Info, Plus, BookOpen, Database } from 'lucide-react'
 
-import { API_BASE, api } from '@/lib/api'
+import { api } from '@/lib/api'
 import type { Fase as FaseCat } from '@/lib/catalogos'
-const API = API_BASE
 const PROYECTO_ID = 1
 
 interface Partida { id: number; otm_id: string; fase: string; sub_fase: string; descripcion: string; hh_presup: number; activo: boolean }
@@ -244,7 +243,7 @@ export default function GuiaFases() {
 
   const { data: partidas = [], isLoading } = useQuery<Partida[]>({
     queryKey: ['ev-partidas-all'],
-    queryFn: () => fetch(`${API}/ev/partidas`).then(r => r.json()),
+    queryFn: () => api<Partida[]>('/ev/partidas'),
     refetchInterval: 30_000,
   })
 

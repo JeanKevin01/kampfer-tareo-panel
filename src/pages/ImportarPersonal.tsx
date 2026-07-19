@@ -3,8 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as XLSX from 'xlsx'
 import { Upload, FileSpreadsheet, CheckCircle, XCircle, Loader2, Download, X, UserCog, HardHat } from 'lucide-react'
 
-import { API_BASE } from '@/lib/api'
-const API = API_BASE
+import { api } from '@/lib/api'
 
 interface Fila {
   nombre: string; cargo: string; dni: string; tipo: string
@@ -70,12 +69,12 @@ export default function ImportarPersonal() {
   // Personal ya registrado — para no duplicar al re-importar
   const { data: existTrab = [] } = useQuery<Array<{ nombre: string; dni?: string }>>({
     queryKey: ['trabajadores-all'],
-    queryFn: () => fetch(API + '/admin/trabajadores').then(r => r.json()),
+    queryFn: () => api<Array<{ nombre: string; dni?: string }>>('/admin/trabajadores'),
     staleTime: 60_000,
   })
   const { data: existSup = [] } = useQuery<Array<{ nombre: string }>>({
     queryKey: ['supervisores-all'],
-    queryFn: () => fetch(API + '/admin/supervisores').then(r => r.json()),
+    queryFn: () => api<Array<{ nombre: string }>>('/admin/supervisores'),
     staleTime: 60_000,
   })
   const { dniSet, trabNameSet, supNameSet } = useMemo(() => {
@@ -159,16 +158,12 @@ export default function ImportarPersonal() {
         const body = f.destino === 'SUPERVISOR'
           ? { nombre: f.nombre, email: '' }
           : { nombre: f.nombre, cargo: f.cargo, dni: f.dni, tipo: f.tipo }
-        const r = await fetch(API + endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
+        const j = await api<{ id: string }>(endpoint, {
+          method: 'POST', body: JSON.stringify(body),
         })
-        const j = await r.json()
-        if (r.ok) res.push({ nombre: f.nombre, ok: true,  msg: `ID: ${j.id}`, destino: f.destino })
-        else      res.push({ nombre: f.nombre, ok: false, msg: j.detail || 'Error', destino: f.destino })
-      } catch {
-        res.push({ nombre: f.nombre, ok: false, msg: 'Error de conexión', destino: f.destino })
+        res.push({ nombre: f.nombre, ok: true, msg: `ID: ${j.id}`, destino: f.destino })
+      } catch (e) {
+        res.push({ nombre: f.nombre, ok: false, msg: (e as Error).message || 'Error de conexión', destino: f.destino })
       }
       setProgreso(Math.round(((i + 1) / validas.length) * 100))
       await new Promise(r => setTimeout(r, 80))

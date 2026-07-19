@@ -20,8 +20,7 @@ import {
   Upload, FileSpreadsheet, CheckCircle, XCircle, Loader2, Download, X, AlertTriangle,
 } from 'lucide-react'
 
-import { API_BASE } from '@/lib/api'
-const API = API_BASE
+import { api } from '@/lib/api'
 
 interface OTMItem { otm_id: string; descripcion?: string; partidas: number }
 
@@ -124,7 +123,7 @@ export default function ImportarPartidas() {
 
   const { data: otms = [] } = useQuery<OTMItem[]>({
     queryKey: ['ev-otms'],
-    queryFn: async () => (await fetch(`${API}/ev/otms`)).json(),
+    queryFn: () => api(`/ev/otms`),
     staleTime: 30_000,
   })
   const otmIds = useMemo(() => new Set(otms.map(o => o.otm_id)), [otms])
@@ -222,9 +221,9 @@ export default function ImportarPartidas() {
     setPaso('importing')
     try {
       // Semana base para los valores iniciales — usar la última semana activa
-      const rSem = await fetch(`${API}/ev/semanas-auto`)
-      const semanasAuto = rSem.ok ? await rSem.json() : []
-      const ultActiva = [...semanasAuto].reverse().find((s: any) => s.activa)
+      interface SemAuto { semana: number; activa: boolean }
+      const semanasAuto = await api<SemAuto[]>('/ev/semanas-auto').catch(() => [] as SemAuto[])
+      const ultActiva = [...semanasAuto].reverse().find(s => s.activa)
       const semanaBase = ultActiva ? ultActiva.semana : (semanasAuto[semanasAuto.length - 1]?.semana ?? 1)
 
       const avances: { codigo: string; semana: number; hito: number; cantidad_acum: number }[] = []
@@ -259,15 +258,17 @@ export default function ImportarPartidas() {
         avances, hh,
       }
 
-      const res = await fetch(`${API}/ev/importar`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-      const j = await res.json()
-      if (!res.ok) {
-        const det = j?.detail?.errores ?? (typeof j?.detail === 'string' ? [j.detail] : ['Error desconocido'])
+      let j: { partidas_creadas: number; partidas_actualizadas: number
+               hh_importadas: number; avances_importados: number }
+      try {
+        j = await api('/ev/importar', { method: 'POST', body: JSON.stringify(payload) })
+      } catch (e) {
+        const det = [(e as Error).message || 'Error desconocido']
         setResultado({ ok: false, msg: 'La importación fue rechazada (no se guardó nada):', detalle: det })
-      } else {
+        setPaso('result')
+        return
+      }
+      {
         setResultado({
           ok: true,
           msg: `${j.partidas_creadas} partidas creadas, ${j.partidas_actualizadas} actualizadas`

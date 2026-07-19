@@ -1,9 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState,} from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Save, Upload, CheckCircle2, AlertTriangle, ChevronDown } from 'lucide-react'
 
-import { API_BASE } from '@/lib/api'
-const API = API_BASE
+import { api } from '@/lib/api'
 
 interface PartidaHoja {
   id:             number
@@ -35,38 +34,40 @@ export default function CargaHistorica({ semana, selectedOtm }: Props) {
     queryKey: ['partidas-otm-hist', selectedOtm],
     queryFn:  async () => {
       if (!selectedOtm) return []
-      const r = await fetch(`${API}/api/partidas-otm/${encodeURIComponent(selectedOtm)}`)
-      if (!r.ok) throw new Error()
-      return r.json()
+      return api<PartidaHoja[]>(`/api/partidas-otm/${encodeURIComponent(selectedOtm)}`)
     },
     enabled: !!selectedOtm,
     staleTime: 60_000,
   })
 
   /* ── Histórico existente → precargar ─────────────────────── */
-  const { data: historico } = useQuery<any[]>({
+  interface HistRow { partida_id: number; hh_gastadas_acum?: number; cantidad_ejecutada_acum?: number }
+  const { data: historico } = useQuery<HistRow[]>({
     queryKey: ['historico', selectedOtm, semana],
     queryFn:  async () => {
       if (!selectedOtm) return []
-      const r = await fetch(`${API}/ev/historico/lista?otm_id=${selectedOtm}&semana=${semana}`)
-      if (!r.ok) throw new Error()
-      return r.json()
+      return api<HistRow[]>(`/ev/historico/lista?otm_id=${selectedOtm}&semana=${semana}`)
     },
     enabled: !!selectedOtm,
     staleTime: 30_000,
   })
 
-  useEffect(() => {
-    if (!historico) return
-    const next: Record<number, { hh: string; cant: string }> = {}
-    historico.forEach((h: any) => {
-      next[h.partida_id] = {
-        hh:   h.hh_gastadas_acum        ? String(h.hh_gastadas_acum)        : '',
-        cant: h.cantidad_ejecutada_acum  ? String(h.cantidad_ejecutada_acum) : '',
-      }
-    })
-    setFilas(next)
-  }, [historico])
+  // Precarga derivada DURANTE el render (patrón React "adjusting state"):
+  // al cambiar el histórico se reconstruyen las filas, sin effect.
+  const [prevHist, setPrevHist] = useState<HistRow[] | undefined>(undefined)
+  if (historico !== prevHist) {
+    setPrevHist(historico)
+    if (historico) {
+      const next: Record<number, { hh: string; cant: string }> = {}
+      historico.forEach(h => {
+        next[h.partida_id] = {
+          hh:   h.hh_gastadas_acum        ? String(h.hh_gastadas_acum)        : '',
+          cant: h.cantidad_ejecutada_acum  ? String(h.cantidad_ejecutada_acum) : '',
+        }
+      })
+      setFilas(next)
+    }
+  }
 
   const set = (pid: number, campo: 'hh' | 'cant', val: string) =>
     setFilas(p => ({ ...p, [pid]: { ...(p[pid] || { hh:'', cant:'' }), [campo]: val } }))
@@ -82,13 +83,10 @@ export default function CargaHistorica({ semana, selectedOtm }: Props) {
           cantidad_ejecutada_acum: v.cant === '' ? 0 : parseFloat(v.cant.replace(',', '.')),
         }))
       if (!payload.length) throw new Error('No hay datos')
-      const r = await fetch(`${API}/ev/historico/cargar`, {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ otm_id: selectedOtm, semana, filas: payload }),
+      return api('/ev/historico/cargar', {
+        method: 'POST',
+        body: JSON.stringify({ otm_id: selectedOtm, semana, filas: payload }),
       })
-      if (!r.ok) throw new Error()
-      return r.json()
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['historico'] })

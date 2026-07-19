@@ -3,8 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { QRCodeSVG } from 'qrcode.react'
 import { Search, Printer, CheckSquare, Square, Loader2, Grid2x2, Grid3x3 } from 'lucide-react'
 
-import { API_BASE } from '@/lib/api'
-const API = API_BASE
+import { api } from '@/lib/api'
 interface Trabajador { id: string; nombre: string; cargo: string; activo: boolean }
 
 function imprimirSeleccion(lista: Trabajador[], cols: number) {
@@ -48,7 +47,7 @@ function imprimirSeleccion(lista: Trabajador[], cols: number) {
   </head><body>
     <h1>KAMPFER · ${lista.length} trabajadores</h1>
     <div class="grid">${cards}</div>
-    <script>window.onload=()=>{ setTimeout(()=>window.print(), 300) }<\/script>
+    <script>window.onload=()=>{ setTimeout(()=>window.print(), 300) }</scr` + `ipt>
   </body></html>`)
   win.document.close()
 }
@@ -61,7 +60,7 @@ export default function ImpresionQR() {
 
   const { data: trabajadores = [], isLoading } = useQuery<Trabajador[]>({
     queryKey: ['trabajadores'],
-    queryFn: () => fetch(API + '/admin/trabajadores').then(r => r.json()),
+    queryFn: () => api<Trabajador[]>('/admin/trabajadores'),
   })
 
   const activos = useMemo(() => trabajadores.filter(t => t.activo), [trabajadores])
@@ -96,7 +95,8 @@ export default function ImpresionQR() {
   function toggle(id: string) {
     setSeleccionados(prev => {
       const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
       return next
     })
   }

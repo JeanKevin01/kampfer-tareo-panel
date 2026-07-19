@@ -4,8 +4,7 @@ import { useMemo, useState, Fragment } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
 
-import { API_BASE } from '@/lib/api'
-const API = API_BASE
+import { api } from '@/lib/api'
 
 interface SemInfo { semana: number; label: string }
 interface SemDato { hh_gast_acum: number; hh_gast_sem: number; cant_acum: number }
@@ -32,11 +31,7 @@ export default function TabProductividad({ semana, otm }: { semana: number; otm?
 
   const { data, isLoading, error } = useQuery<{ semanas: SemInfo[]; partidas: PartidaISP[] }>({
     queryKey: ['ev-isp', otm],
-    queryFn: async () => {
-      const r = await fetch(`${API}/ev/isp${otm ? `?otm=${otm}` : ''}`)
-      if (!r.ok) throw new Error(`Error ${r.status}`)
-      return r.json()
-    },
+    queryFn: () => api(`/ev/isp${otm ? `?otm=${otm}` : ''}`),
     staleTime: 2 * 60_000,
   })
 

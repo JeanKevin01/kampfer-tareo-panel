@@ -11,6 +11,7 @@ import { LookaheadGrid, EvaluacionSemanal, type ActGrid } from '@/components/Loo
 import { ProgramarLote } from '@/components/ProgramarLote'
 import { CalendarioLaboral } from '@/components/CalendarioLaboral'
 import { CalendarioMes } from '@/components/CalendarioMes'
+import HistogramaMO from '@/components/HistogramaMO'
 
 const PROYECTO_ID = 1
 const DIAS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
@@ -64,7 +65,7 @@ const fmtMB = (b: number) => `${(b / 1024 / 1024).toFixed(1)} MB`
 
 export default function Programacion() {
   const qc = useQueryClient()
-  const [vista, setVista] = useState<'semana' | 'lookahead' | 'ppc'>('semana')
+  const [vista, setVista] = useState<'semana' | 'lookahead' | 'histograma' | 'ppc'>('semana')
   const [laModo, setLaModo] = useState<'tabla' | 'tarjetas'>('tabla')
   const [planModo, setPlanModo] = useState<'semana' | 'mes'>('semana')
   const [lunes, setLunes] = useState(() => iso(lunesDe(new Date())))
@@ -127,7 +128,7 @@ export default function Programacion() {
 
       {/* Vistas Last Planner: plan semanal / lookahead / aprendizaje */}
       <div className="flex gap-2">
-        {([['semana', 'Plan semanal'], ['lookahead', 'Lookahead'], ['ppc', 'PPC · Causas']] as const).map(([k, l]) => (
+        {([['semana', 'Plan semanal'], ['lookahead', 'Lookahead'], ['histograma', 'Histograma · Ratios'], ['ppc', 'PPC · Causas']] as const).map(([k, l]) => (
           <button key={k} onClick={() => setVista(k)}
             className={`text-sm px-3 py-2 rounded-lg border font-medium ${
               vista === k ? 'border-k-amber bg-amber-500/10 text-k-amber' : 'border-k-border text-k-text2 hover:bg-k-raised'}`}>
@@ -153,6 +154,8 @@ export default function Programacion() {
                 onCrear={f => setModalLote(f)} />}
         </div>
       )}
+      {vista === 'histograma' && <HistogramaMO />}
+
       {vista === 'ppc' && <PanelPPC />}
 
       {vista === 'semana' && (
@@ -605,7 +608,7 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
 
         {showNC && (
           <ModalNC onClose={() => setShowNC(false)}
-            onConfirmar={(cat, detalle) => { setShowNC(false); estado.mutate({ estado: 'NO_CUMPLIDA', causa_nc_cat: cat, causa_nc: detalle }) }} />
+            onConfirmar={(cat, detalle) => { setShowNC(false); estado.mutate({ estado: 'NO_CUMPLIDA', causa_nc_cat: cat, causa_nc: detalle } as { estado: string; causa_nc?: string }) }} />
         )}
       </div>
     </div>

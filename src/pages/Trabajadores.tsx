@@ -2,8 +2,7 @@ import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Search, UserPlus, UserX, X, Loader2, CheckCircle, XCircle } from 'lucide-react'
 
-import { API_BASE } from '@/lib/api'
-const API = API_BASE
+import { api } from '@/lib/api'
 
 interface Trabajador {
   id: string; nombre: string; cargo: string; dni?: string; activo: boolean
@@ -19,16 +18,12 @@ export default function Trabajadores() {
 
   const { data: trabajadores = [], isLoading } = useQuery<Trabajador[]>({
     queryKey: ['trabajadores'],
-    queryFn: () => fetch(API + '/admin/trabajadores').then(r => r.json()),
+    queryFn: () => api<Trabajador[]>('/admin/trabajadores'),
   })
 
   const addMutation = useMutation({
     mutationFn: (d: { nombre: string; cargo: string; dni: string }) =>
-      fetch(API + '/admin/trabajador', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(d),
-      }).then(async r => { const j = await r.json(); if (!r.ok) throw new Error(j.detail || 'Error'); return j }),
+      api('/admin/trabajador', { method: 'POST', body: JSON.stringify(d) }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['trabajadores'] })
       setShowModal(false); setForm({ nombre: '', cargo: '', dni: '' }); setFormError('')
@@ -38,7 +33,7 @@ export default function Trabajadores() {
 
   const bajaMutation = useMutation({
     mutationFn: (id: string) =>
-      fetch(API + `/admin/trabajador/${id}/baja`, { method: 'PUT' }).then(r => r.json()),
+      api(`/admin/trabajador/${id}/baja`, { method: 'PUT' }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['trabajadores'] }),
   })
 

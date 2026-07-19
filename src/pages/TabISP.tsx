@@ -4,9 +4,8 @@ import { useState, useMemo, useCallback, Fragment as Frag } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { ChevronDown, ChevronRight, Loader2, AlertTriangle, Plus, Trash2 } from 'lucide-react'
 
-import { API_BASE } from '@/lib/api'
+import { api } from '@/lib/api'
 import { FASE_COLOR } from '@/lib/wbs'
-const API = API_BASE
 
 // Colores por nivel WBS (igual que WBSArbol) — Raíz/Sección/Sub-sección/Detalle
 // (alphas más suaves que los de lib/wbs.ts a propósito: fondo de tabla densa)
@@ -268,21 +267,15 @@ function ImproductivasCard({ semana, otm, partidas }: { semana:number; otm?:stri
       const qs = new URLSearchParams()
       if (otm) qs.set('otm', otm)
       qs.set('semana', String(semana))
-      const r = await fetch(`${API}/ev/improductivas?${qs.toString()}`)
-      if (!r.ok) throw new Error(`Error ${r.status}`)
-      return r.json()
+      return api(`/ev/improductivas?${qs.toString()}`)
     },
   })
 
   const guardar = useMutation({
-    mutationFn: async () => {
-      const r = await fetch(`${API}/ev/improductivas`, {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ otm_id: otm || null, semana, hh: Number(hh), motivo, nota: nota || null, partida_id: partidaId ? Number(partidaId) : null }),
-      })
-      if (!r.ok) { const j = await r.json().catch(()=>({})); throw new Error(j.detail || `Error ${r.status}`) }
-      return r.json()
-    },
+    mutationFn: () => api('/ev/improductivas', {
+      method: 'POST',
+      body: JSON.stringify({ otm_id: otm || null, semana, hh: Number(hh), motivo, nota: nota || null, partida_id: partidaId ? Number(partidaId) : null }),
+    }),
     onSuccess: () => {
       setHh(''); setNota(''); setPartidaId('')
       qc.invalidateQueries({ queryKey:['ev-improd'] })
@@ -291,11 +284,7 @@ function ImproductivasCard({ semana, otm, partidas }: { semana:number; otm?:stri
   })
 
   const borrar = useMutation({
-    mutationFn: async (id:number) => {
-      const r = await fetch(`${API}/ev/improductivas/${id}`, { method:'DELETE' })
-      if (!r.ok) throw new Error(`Error ${r.status}`)
-      return r.json()
-    },
+    mutationFn: (id: number) => api(`/ev/improductivas/${id}`, { method: 'DELETE' }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey:['ev-improd'] })
       qc.invalidateQueries({ queryKey:['ev-reporte'] })
@@ -396,25 +385,18 @@ export default function TabISP({ semana, otm }: { semana: number; otm?: string }
 
   const { data, isLoading, error } = useQuery<{semanas:SemInfo[]; partidas:PartidaISP[]}>({
     queryKey: ['ev-isp', otm],
-    queryFn: async () => {
-      const r = await fetch(`${API}/ev/isp${otm?`?otm=${otm}`:''}`)
-      if (!r.ok) {
-        const j = await r.json().catch(() => ({}))
-        throw new Error(j.detail ? JSON.stringify(j.detail) : `Error ${r.status}`)
-      }
-      return r.json()
-    },
+    queryFn: () => api(`/ev/isp${otm ? `?otm=${otm}` : ''}`),
     staleTime: 2 * 60_000,
     retry: 1,
   })
 
-  const semanas  = data?.semanas ?? []
-  const todas    = data?.partidas ?? []
+  const semanas  = useMemo(() => data?.semanas ?? [], [data])
+  const todas    = useMemo(() => data?.partidas ?? [], [data])
   const hojas    = todas.filter(p => p.es_hoja)
   const tree     = useMemo(() => buildTreeISP(todas, semanas), [todas, semanas])
 
-  const toggle = useCallback((c:string)=>setCollapsed(prev=>{ const n=new Set(prev); n.has(c)?n.delete(c):n.add(c); return n }),[])
-  const detail = useCallback((c:string)=>setOpenDetail(prev=>{ const n=new Set(prev); n.has(c)?n.delete(c):n.add(c); return n }),[])
+  const toggle = useCallback((c:string)=>setCollapsed(prev=>{ const n=new Set(prev); if (n.has(c)) n.delete(c); else n.add(c); return n }),[])
+  const detail = useCallback((c:string)=>setOpenDetail(prev=>{ const n=new Set(prev); if (n.has(c)) n.delete(c); else n.add(c); return n }),[])
 
   // Resumen por fase para semana actual (sobre hojas)
   const resFases = useMemo(() => {

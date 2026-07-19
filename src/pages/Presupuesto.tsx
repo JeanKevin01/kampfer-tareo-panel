@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo,} from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Plus, X, Loader2, Lock, Star, FileSpreadsheet, Save, Snowflake, Upload,
@@ -6,7 +6,7 @@ import {
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 
-import { api, ApiError, apiBlob, descargarBlob } from '@/lib/api'
+import { api, apiBlob, descargarBlob, ApiError } from '@/lib/api'
 import { RECURSOS_APU, nombreLargo } from '@/lib/catalogos'
 
 const PROYECTO_ID = 1   // TODO: vendrá del selector de proyecto (tenant) cuando se active el scoping
@@ -68,10 +68,12 @@ export default function Presupuesto() {
     enabled: selId != null,
   })
 
-  // al cargar el detalle, copiar líneas a estado editable
-  useEffect(() => {
+  // al cargar el detalle, copiar líneas a estado editable (derivado en render)
+  const [prevDet, setPrevDet] = useState<typeof detalle.data>(undefined)
+  if (detalle.data !== prevDet) {
+    setPrevDet(detalle.data)
     if (detalle.data?.partidas) { setRows(detalle.data.partidas.map(p => ({ ...p }))); setDirty(false) }
-  }, [detalle.data])
+  }
 
   const pres = detalle.data?.presupuesto
   const esMeta = pres?.tipo === 'META'

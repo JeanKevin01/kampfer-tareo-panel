@@ -4,8 +4,7 @@ import { useState, useMemo, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ChevronRight, ChevronDown, Loader2 } from 'lucide-react'
 
-import { API_BASE } from '@/lib/api'
-const API = API_BASE
+import { api } from '@/lib/api'
 
 // ── Colores por nivel — tono pastel, más distinguibles entre sí ───
 // Panel usa tema oscuro → pasteles claros con más opacidad de fondo
@@ -176,7 +175,7 @@ export default function WBSArbol({ otm, semana }: { otm: string; semana: number 
 
   const { data, isLoading, isError } = useQuery<{ filas: Fila[] }>({
     queryKey: ['ev-arbol', otm, semana],
-    queryFn: () => fetch(`${API}/ev/arbol?semana=${semana}${otm ? `&otm=${otm}` : ''}`).then(r => r.json()),
+    queryFn: () => api<{ filas: Fila[] }>(`/ev/arbol?semana=${semana}${otm ? `&otm=${otm}` : ''}`),
     enabled: semana > 0,
   })
 

@@ -3,8 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { QRCodeSVG } from 'qrcode.react'
 import { Search, Download, Printer, Loader2 } from 'lucide-react'
 
-import { API_BASE } from '@/lib/api'
-const API = API_BASE
+import { api } from '@/lib/api'
 interface Trabajador { id: string; nombre: string; cargo: string; activo: boolean }
 
 function getSVG(wrapId: string) {
@@ -42,7 +41,7 @@ function printQRs(lista: Trabajador[]) {
     .id{font-size:9px;color:#d97706;font-family:monospace;font-weight:700;margin-top:3px}
     @media print{@page{margin:8mm}}
   </style></head><body><div class="grid">${cards}</div>
-  <script>window.onload=()=>window.print()<\/script></body></html>`)
+  <script>window.onload=()=>window.print()</scr` + `ipt></body></html>`)
   win.document.close()
 }
 
@@ -52,7 +51,7 @@ export default function QRs() {
 
   const { data: trabajadores = [], isLoading } = useQuery<Trabajador[]>({
     queryKey: ['trabajadores'],
-    queryFn: () => fetch(API + '/admin/trabajadores').then(r => r.json()),
+    queryFn: () => api<Trabajador[]>('/admin/trabajadores'),
   })
 
   const activos = useMemo(() => trabajadores.filter(t => t.activo), [trabajadores])

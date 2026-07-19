@@ -2,8 +2,7 @@ import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Users, ClipboardList, TrendingUp, CheckCircle, XCircle, Loader2 } from 'lucide-react'
 
-import { API_BASE } from '@/lib/api'
-const API = API_BASE
+import { api } from '@/lib/api'
 const hoy = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}` }
 
 interface Supervisor { id: string; nombre: string }
@@ -14,22 +13,22 @@ interface Registro   { trab_id: string; otm_id: string; supervisor_id: string; h
 export default function Dashboard() {
   const { data: supervisores = [], isLoading: lS } = useQuery<Supervisor[]>({
     queryKey: ['supervisores'],
-    queryFn: () => fetch(`${API}/api/supervisores`).then(r => r.json()),
+    queryFn: () => api<Supervisor[]>('/api/supervisores'),
     staleTime: 5 * 60 * 1000,
   })
   const { data: otms = [], isLoading: lO } = useQuery<OTM[]>({
     queryKey: ['otms'],
-    queryFn: () => fetch(`${API}/api/otms`).then(r => r.json()),
+    queryFn: () => api<OTM[]>('/api/otms'),
     staleTime: 5 * 60 * 1000,
   })
   const { data: trabajadores = [], isLoading: lT } = useQuery<Trabajador[]>({
     queryKey: ['trabajadores-admin'],
-    queryFn: () => fetch(`${API}/admin/trabajadores`).then(r => r.json()),
+    queryFn: () => api<Trabajador[]>('/admin/trabajadores'),
     staleTime: 5 * 60 * 1000,
   })
   const { data: registros = [], isLoading: lR } = useQuery<Registro[]>({
     queryKey: ['registros-hoy'],
-    queryFn: () => fetch(`${API}/api/registros/${hoy()}`).then(r => r.json()),
+    queryFn: () => api<Registro[]>(`/api/registros/${hoy()}`),
     refetchInterval: 60_000,
   })
 

@@ -2,7 +2,8 @@ import { useState, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Activity, Database, Server, RefreshCw, CheckCircle, XCircle, Zap, Clock, Users, ClipboardList, FileText } from 'lucide-react'
 
-import { API_BASE } from '@/lib/api'
+import { api, API_BASE } from '@/lib/api'
+import MonitorTareo from '@/pages/MonitorTareo'
 const API = API_BASE
 
 interface HealthData { version?: string; status?: string; [key: string]: unknown }
@@ -33,7 +34,28 @@ function StatusBadge({ ok, ms }: { ok: boolean; ms: number }) {
   )
 }
 
+// ── Fase S·S5: monitor UNIFICADO — tab Tareo (control de HH del día) +
+// tab Sistema (salud del API/BD). Antes eran dos páginas del menú.
 export default function Monitor() {
+  const [tab, setTab] = useState<'tareo' | 'sistema'>('tareo')
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-2">
+        {([['tareo', 'Tareo del día'], ['sistema', 'Sistema']] as const).map(([id, label]) => (
+          <button key={id} onClick={() => setTab(id)}
+            className={`px-4 py-2 rounded-lg text-sm font-semibold border transition-all ${
+              tab === id ? 'bg-amber-500/15 border-amber-500/30 text-k-amber'
+                         : 'bg-k-surface border-k-border text-k-text2 hover:text-k-text'}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+      {tab === 'tareo' ? <MonitorTareo /> : <MonitorSistema />}
+    </div>
+  )
+}
+
+function MonitorSistema() {
   const [refreshKey, setRefreshKey] = useState(0)
   const refresh = useCallback(() => setRefreshKey(k => k + 1), [])
 
@@ -45,22 +67,22 @@ export default function Monitor() {
 
   const { data: trabajadores = [] } = useQuery<Trabajador[]>({
     queryKey: ['trabajadores-monitor', refreshKey],
-    queryFn: () => fetch(API + '/admin/trabajadores').then(r => r.json()),
+    queryFn: () => api<Trabajador[]>('/admin/trabajadores'),
   })
 
   const { data: otms = [] } = useQuery<OTM[]>({
     queryKey: ['otms-monitor', refreshKey],
-    queryFn: () => fetch(API + '/api/otms').then(r => r.json()),
+    queryFn: () => api<OTM[]>('/api/otms'),
   })
 
   const { data: registrosHoy = [] } = useQuery<Registro[]>({
     queryKey: ['registros-monitor', refreshKey],
-    queryFn: () => fetch(API + '/api/registros/hoy').then(r => r.json()),
+    queryFn: () => api<Registro[]>('/api/registros/hoy'),
   })
 
   const { data: supervisores = [] } = useQuery<{ id: string }[]>({
     queryKey: ['sup-monitor', refreshKey],
-    queryFn: () => fetch(API + '/api/supervisores').then(r => r.json()),
+    queryFn: () => api<{ id: string }[]>('/api/supervisores'),
   })
 
   const apiOk  = health.data?.ok ?? false

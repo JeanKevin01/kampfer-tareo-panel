@@ -9,7 +9,6 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import Layout from '@/components/Layout'
 import Dashboard from '@/pages/Dashboard'
-import Placeholder from '@/pages/Placeholder'
 import Presupuesto from '@/pages/Presupuesto'
 import ResultadoOperativo from '@/pages/ResultadoOperativo'
 import Costos from '@/pages/Costos'
@@ -21,7 +20,6 @@ import QRs from '@/pages/QRs'
 import RegistrosHH from '@/pages/RegistrosHH'
 import Reportes from '@/pages/Reportes'
 import Monitor from '@/pages/Monitor'
-import MonitorTareo from '@/pages/MonitorTareo'
 import Login from '@/pages/Login'
 import Usuarios from '@/pages/Usuarios'
 import Programacion from '@/pages/Programacion'
@@ -62,7 +60,7 @@ export default function App() {
             <Route path="registros"    element={<RegistrosHH />} />
             <Route path="matriz"       element={<MatrizHistorica />} />
             <Route path="reportes"     element={<Reportes />} />
-            <Route path="monitor-tareo" element={<MonitorTareo />} />
+            <Route path="monitor-tareo" element={<Navigate to="/monitor" replace />} />
             <Route path="otms"         element={<OTMs />} />
             <Route path="rdc"          element={<GenerarRDC />} />
             <Route path="valor-ganado" element={<ValorGanado />} />

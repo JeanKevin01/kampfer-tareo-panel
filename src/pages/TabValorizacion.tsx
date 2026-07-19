@@ -1,11 +1,10 @@
 // TabValorizacion.tsx — Cantidad ejecutada vs valorizada (#2). Puerta a la Valorización.
 // Ejecutada (del motor EV) vs Valorizada (lo que el cliente reconoce). Variación = ejec - valoriz.
-import { useState, useEffect } from 'react'
+import { useState,} from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
 
-import { API_BASE } from '@/lib/api'
-const API = API_BASE
+import { api } from '@/lib/api'
 
 interface ValFila {
   partida_id: number; codigo: string; fase: string | null; descripcion: string
@@ -18,25 +17,20 @@ export default function TabValorizacion({ semana, otm }: { semana: number; otm?:
   const qc = useQueryClient()
   const { data, isLoading, error } = useQuery<{ partidas: ValFila[] }>({
     queryKey: ['ev-valorizado', semana, otm],
-    queryFn: async () => {
-      const r = await fetch(`${API}/ev/valorizado?semana=${semana}${otm ? `&otm=${otm}` : ''}`)
-      if (!r.ok) throw new Error(`Error ${r.status}`)
-      return r.json()
-    },
+    queryFn: () => api(`/ev/valorizado?semana=${semana}${otm ? `&otm=${otm}` : ''}`),
   })
 
   const [draft, setDraft] = useState<Record<number, string>>({})
-  useEffect(() => { setDraft({}) }, [semana, otm])
+  const claveVista = `${semana}|${otm ?? ''}`
+  const [prevVista, setPrevVista] = useState(claveVista)
+  if (claveVista !== prevVista) { setPrevVista(claveVista); setDraft({}) }
 
   const guardar = useMutation({
-    mutationFn: async (p: { partida_id: number; cantidad_valorizada: number }) => {
-      const r = await fetch(`${API}/ev/valorizado`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+    mutationFn: (p: { partida_id: number; cantidad_valorizada: number }) =>
+      api('/ev/valorizado', {
+        method: 'POST',
         body: JSON.stringify({ partida_id: p.partida_id, semana, cantidad_valorizada: p.cantidad_valorizada }),
-      })
-      if (!r.ok) throw new Error(`Error ${r.status}`)
-      return r.json()
-    },
+      }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['ev-valorizado'] }),
   })
 

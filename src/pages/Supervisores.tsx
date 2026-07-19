@@ -5,8 +5,7 @@ import {
   Loader2, Users, Search, X, ChevronDown, ChevronUp, UserPlus,
 } from 'lucide-react'
 
-import { API_BASE } from '@/lib/api'
-const API = API_BASE
+import { api, ApiError } from '@/lib/api'
 
 interface Supervisor  { id: string; nombre: string; email?: string }
 interface Registro    { id: number; supervisor_id: string; otm_id: string; trab_id: string; hh: number | null }
@@ -25,12 +24,12 @@ function CuadrillaPanel({ supId, supNombre }: { supId: string; supNombre: string
 
   const { data: miembros = [], isLoading: loadCua } = useQuery<CuaItem[]>({
     queryKey: ['cuadrilla', supId],
-    queryFn: () => fetch(`${API}/api/cuadrilla/${supId}`).then(r => r.json()),
+    queryFn: () => api<CuaItem[]>(`/api/cuadrilla/${supId}`),
   })
 
   const { data: trabajadores = [] } = useQuery<Trabajador[]>({
     queryKey: ['trabajadores'],
-    queryFn: () => fetch(`${API}/admin/trabajadores`).then(r => r.json()),
+    queryFn: () => api<Trabajador[]>('/admin/trabajadores'),
     staleTime: 5 * 60 * 1000,
   })
 
@@ -50,7 +49,7 @@ function CuadrillaPanel({ supId, supNombre }: { supId: string; supNombre: string
 
   const agregar = useMutation({
     mutationFn: (trabId: string) =>
-      fetch(`${API}/api/cuadrilla/${supId}/${trabId}`, { method: 'POST' }).then(r => r.json()),
+      api(`/api/cuadrilla/${supId}/${trabId}`, { method: 'POST' }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['cuadrilla', supId] })
       setBusq('')
@@ -59,7 +58,7 @@ function CuadrillaPanel({ supId, supNombre }: { supId: string; supNombre: string
 
   const quitar = useMutation({
     mutationFn: (trabId: string) =>
-      fetch(`${API}/api/cuadrilla/${supId}/${trabId}`, { method: 'DELETE' }).then(r => r.json()),
+      api(`/api/cuadrilla/${supId}/${trabId}`, { method: 'DELETE' }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['cuadrilla', supId] }),
   })
 
@@ -165,20 +164,15 @@ export default function Supervisores() {
 
   const { data: supervisores = [], isLoading: loadSup } = useQuery<Supervisor[]>({
     queryKey: ['supervisores'],
-    queryFn: () => fetch(API + '/api/supervisores').then(r => r.json()),
+    queryFn: () => api<Supervisor[]>('/api/supervisores'),
     staleTime: 5 * 60 * 1000,
   })
 
   const crearSupervisor = useMutation({
-    mutationFn: async () => {
-      const r = await fetch(API + '/admin/supervisor', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nombre: nuevoNombre, email: nuevoEmail }),
-      })
-      if (!r.ok) throw new Error((await r.json()).detail || 'Error al crear')
-      return r.json()
-    },
+    mutationFn: () => api('/admin/supervisor', {
+      method: 'POST',
+      body: JSON.stringify({ nombre: nuevoNombre, email: nuevoEmail }),
+    }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['supervisores'] })
       setNuevoNombre(''); setNuevoEmail(''); setShowNuevo(false)
@@ -187,7 +181,7 @@ export default function Supervisores() {
 
   const { data: registros = [], isLoading: loadReg } = useQuery<Registro[]>({
     queryKey: ['registros', fecha],
-    queryFn: () => fetch(`${API}/api/registros/${fecha}`).then(r => r.json()),
+    queryFn: () => api<Registro[]>(`/api/registros/${fecha}`),
   })
 
   const isLoading = loadSup || loadReg
@@ -251,7 +245,7 @@ export default function Supervisores() {
             <X size={14} />
           </button>
           {crearSupervisor.isError && (
-            <p className="text-xs text-k-red w-full">{(crearSupervisor.error as Error).message}</p>
+            <p className="text-xs text-k-red w-full">{(crearSupervisor.error as ApiError).message}</p>
           )}
         </div>
       )}

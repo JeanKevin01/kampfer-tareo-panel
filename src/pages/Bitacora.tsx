@@ -2,8 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Calendar, Clock, Users, TrendingUp, Loader2, ChevronDown, ChevronUp } from 'lucide-react'
 
-import { API_BASE } from '@/lib/api'
-const API = API_BASE
+import { api } from '@/lib/api'
 
 interface Registro {
   id: number; trab_id: string; otm_id: string
@@ -50,7 +49,7 @@ export default function Bitacora() {
 
   const { data: supervisores = [] } = useQuery<Supervisor[]>({
     queryKey: ['supervisores'],
-    queryFn: () => fetch(API + '/api/supervisores').then(r => r.json()),
+    queryFn: () => api<Supervisor[]>('/api/supervisores'),
     staleTime: 10 * 60 * 1000,
   })
 
@@ -60,8 +59,7 @@ export default function Bitacora() {
       const fechas = getDatesInRange(rangoDesde, rangoHasta)
       const resultados = await Promise.all(
         fechas.map(f =>
-          fetch(`${API}/api/registros/${f}`)
-            .then(r => r.json())
+          api(`/api/registros/${f}`)
             .then(data => ({ fecha: f, regs: Array.isArray(data) ? data : [] }))
             .catch(() => ({ fecha: f, regs: [] }))
         )
@@ -90,7 +88,8 @@ export default function Bitacora() {
   function toggleDia(fecha: string) {
     setExpandidos(prev => {
       const next = new Set(prev)
-      next.has(fecha) ? next.delete(fecha) : next.add(fecha)
+      if (next.has(fecha)) next.delete(fecha)
+      else next.add(fecha)
       return next
     })
   }

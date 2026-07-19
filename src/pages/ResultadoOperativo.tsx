@@ -1,9 +1,8 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Loader2, Download, RefreshCw, Pencil } from 'lucide-react'
-import { api, API_BASE } from '@/lib/api'
+import { api, apiBlob, descargarBlob } from '@/lib/api'
 import { RECURSOS, CONCEPTOS_VENTA, nombreLargo } from '@/lib/catalogos'
-import { getToken } from '@/lib/auth'
 import Rentabilidad from '@/pages/Rentabilidad'
 
 const PROYECTO_ID = 1
@@ -58,15 +57,10 @@ export default function ResultadoOperativo() {
   })
 
   async function exportar() {
-    const r = await fetch(`${API_BASE}/ev/ro/export?proyecto_id=${PROYECTO_ID}&anio=${sel!.anio}&mes=${sel!.mes}`,
-      { headers: { Authorization: `Bearer ${getToken()}` } })
-    if (!r.ok) { alert('No se pudo exportar'); return }
-    const blob = await r.blob()
-    const a = document.createElement('a')
-    a.href = URL.createObjectURL(blob)
-    a.download = `RO_${sel!.anio}-${String(sel!.mes).padStart(2, '0')}.xlsx`
-    a.click()
-    URL.revokeObjectURL(a.href)
+    try {
+      const blob = await apiBlob(`/ev/ro/export?proyecto_id=${PROYECTO_ID}&anio=${sel!.anio}&mes=${sel!.mes}`)
+      descargarBlob(blob, `RO_${sel!.anio}-${String(sel!.mes).padStart(2, '0')}.xlsx`)
+    } catch { alert('No se pudo exportar') }
   }
 
   const t = ro.data?.totales

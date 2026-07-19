@@ -12,7 +12,7 @@ import WBSArbol from './WBSArbol'
 // Módulo Valor Ganado — lógica ISP Fluor digitalizada
 // Autocontenido (sin shadcn), design system k- del panel
 // ============================================================
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import { Fragment, useMemo, useState} from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   ResponsiveContainer, ComposedChart, LineChart, Line, Area,
@@ -27,18 +27,9 @@ import {
 import { buildWbsTree, flattenVisible, nivelStyle, NIVEL_LABELS, faseColor } from '@/lib/wbs'
 import ImportarPartidas from '@/pages/ImportarPartidas'
 
-import { API_BASE } from '@/lib/api'
-const API = API_BASE
+import { api } from '@/lib/api'
 
-async function req<T>(path: string, options?: RequestInit): Promise<T> {
-  const r = await fetch(API + path, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-  })
-  const j = await r.json().catch(() => null)
-  if (!r.ok) throw new Error(j?.detail ?? `Error ${r.status}`)
-  return j as T
-}
+const req = <T,>(path: string, options?: RequestInit): Promise<T> => api<T>(path, options)
 
 // ---------------- Tipos ----------------
 interface Hito {
@@ -165,12 +156,15 @@ function PFChip({ value }: { value: number }) {
   )
 }
 
-const CustomTooltip = ({ active, payload, label }: any) => {
+interface TooltipItem { name: string; color?: string; value: number | string }
+const CustomTooltip = ({ active, payload, label }: {
+  active?: boolean; payload?: TooltipItem[]; label?: string | number
+}) => {
   if (!active || !payload?.length) return null
   return (
     <div className="bg-k-raised border border-k-border2 rounded-lg px-3 py-2 text-xs">
       <p className="text-k-text2 mb-1">Semana {label}</p>
-      {payload.map((p: any) => (
+      {payload.map(p => (
         <p key={p.name} style={{ color: p.color }} className="font-mono font-bold">
           {typeof p.value === 'number' ? fmt(p.value, p.value < 10 ? 2 : 0) : p.value} {p.name}
         </p>
@@ -216,12 +210,14 @@ export default function ValorGanado() {
   })
   const semanas = semanasAuto.map(s => s.semana)
 
-  useEffect(() => {
-    if (!semanasAuto.length) return
-    // Auto-seleccionar última semana activa cuando cargan los datos
+  // Auto-seleccionar última semana activa cuando cargan los datos (derivado
+  // en render, una sola vez — sin setState dentro de un effect)
+  const [autoSel, setAutoSel] = useState(false)
+  if (!autoSel && semanasAuto.length) {
+    setAutoSel(true)
     const ultActiva = [...semanasAuto].reverse().find(s => s.activa)
     setSemana(ultActiva ? ultActiva.semana : semanasAuto[semanasAuto.length - 1].semana)
-  }, [semanasAuto.length]) // solo cuando llegan datos por primera vez
+  }
 
   // Ya no bloqueamos el render — si no hay semanas, mostramos semana 1
 
@@ -664,7 +660,7 @@ function CurvasFase({ semana }: { semana: number }) {
                    tickFormatter={v => v.toFixed(2)} />
             <Tooltip
               contentStyle={{ background: '#1c2436', border: '1px solid #252f45', borderRadius: 8, fontSize: 12 }}
-              formatter={(v: any, name: string) => [Number(v).toFixed(3), name.replace('pf_', '')]}
+              formatter={(v: unknown, name: unknown) => [Number(v).toFixed(3), String(name).replace('pf_', '')]}
               labelFormatter={l => `Semana ${l}`}
             />
             <Legend wrapperStyle={{ fontSize: 11 }}
@@ -708,7 +704,6 @@ function CurvasFase({ semana }: { semana: number }) {
 
 function TabRegistro({ semana, otm }: { semana: number; otm?: string }) {
   const qc = useQueryClient()
-  const [expanded, setExpanded] = useState<Set<number>>(new Set())
   const [avances, setAvances] = useState<Record<number, string>>({})
   const [hh, setHh] = useState<Record<number, string>>({})
   const [msg, setMsg] = useState('')
@@ -719,7 +714,12 @@ function TabRegistro({ semana, otm }: { semana: number; otm?: string }) {
   })
   const captura = todasCaptura.filter(p => p.hitos && p.hitos.length > 0)
 
-  useEffect(() => {
+  // Precarga derivada en render: al cambiar el set de partidas de la captura
+  // se reconstruyen los borradores (sin setState dentro de un effect).
+  const claveCaptura = captura.map(p => p.partida_id).join(',')
+  const [prevCaptura, setPrevCaptura] = useState<string | null>(null)
+  if (claveCaptura !== prevCaptura) {
+    setPrevCaptura(claveCaptura)
     const a: Record<number, string> = {}
     const h: Record<number, string> = {}
     captura.forEach(p => {
@@ -727,8 +727,7 @@ function TabRegistro({ semana, otm }: { semana: number; otm?: string }) {
       p.hitos.forEach(x => { a[x.hito_id] = String(x.cant_actual ?? '') })
     })
     setAvances(a); setHh(h); setMsg('')
-  // eslint-disable-next-line
-  }, [captura.map(p=>p.partida_id).join(',')])
+  }
 
   // Los hitos PRINCIPALES no viajan: los gobierna el rollup del avance diario
   // (fuente única 0025) y guardarlos aquí pisaría el dato derivado.
@@ -758,7 +757,7 @@ function TabRegistro({ semana, otm }: { semana: number; otm?: string }) {
   const tree = useMemo(() => buildWbsTree(todasCaptura), [todasCaptura])
   const visibles = useMemo(() => flattenVisible(tree, collapsed), [tree, collapsed])
   const padres = useMemo(() => new Set(todasCaptura.filter(p => todasCaptura.some(c => c.parent_codigo === p.codigo)).map(p => p.codigo)), [todasCaptura])
-  const toggleNivel = (c: string) => setCollapsed(prev => { const n = new Set(prev); n.has(c) ? n.delete(c) : n.add(c); return n })
+  const toggleNivel = (c: string) => setCollapsed(prev => { const n = new Set(prev); if (n.has(c)) n.delete(c); else n.add(c); return n })
   const hhRollup = useMemo(() => {
     const memo = new Map<string, number>()
     const byCode = new Map(todasCaptura.map(p => [p.codigo, p]))
@@ -771,8 +770,6 @@ function TabRegistro({ semana, otm }: { semana: number; otm?: string }) {
     todasCaptura.forEach(p => calc(p.codigo))
     return memo
   }, [todasCaptura])
-
-  const toggleExp = (id: number) => setExpanded(prev => { const n = new Set(prev); n.has(id)?n.delete(id):n.add(id); return n })
 
   if (isLoading) return <p className="text-k-text3 text-sm flex items-center gap-2"><Loader2 size={14} className="animate-spin"/>Cargando…</p>
 
@@ -883,9 +880,22 @@ function TabRegistro({ semana, otm }: { semana: number; otm?: string }) {
                     <td className="py-1 px-2" />
                     <td className="py-1 px-2 text-right font-mono text-k-green" style={{ fontSize: 11 }}>{p.hh_tareo > 0 ? fmt(p.hh_tareo) : '—'}</td>
                     <td className="py-1 px-1" style={{ minWidth: 70 }}>
-                      <input type="number" step="0.5" min="0" value={hh[p.partida_id] ?? ''} placeholder="0"
-                        onChange={e => setHh({ ...hh, [p.partida_id]: e.target.value })}
-                        className="w-full bg-k-void border border-k-border focus:border-k-amber rounded px-2 py-1 text-k-text font-mono outline-none text-right transition-colors" style={{ fontSize: 12 }} />
+                      {/* Aviso fuente única (Fase S·S3): HH manual con tareo presente REEMPLAZA */}
+                      <div className="flex items-center gap-1">
+                        <input type="number" step="0.5" min="0" value={hh[p.partida_id] ?? ''} placeholder="0"
+                          onChange={e => setHh({ ...hh, [p.partida_id]: e.target.value })}
+                          title={p.hh_tareo > 0 && Number(hh[p.partida_id] || 0) > 0
+                            ? `⚠ Esta semana ya tiene ${fmt(p.hh_tareo)} HH del tareo QR — lo manual la REEMPLAZA (precedencia manual > tareo). Déjalo en 0 para usar el tareo.`
+                            : 'HH manuales de la semana (solo para corregir o cargar histórico; 0 = usar el tareo)'}
+                          className={`w-full bg-k-void border rounded px-2 py-1 text-k-text font-mono outline-none text-right transition-colors ${
+                            p.hh_tareo > 0 && Number(hh[p.partida_id] || 0) > 0
+                              ? 'border-amber-500/60 focus:border-amber-400' : 'border-k-border focus:border-k-amber'}`}
+                          style={{ fontSize: 12 }} />
+                        {p.hh_tareo > 0 && Number(hh[p.partida_id] || 0) > 0 && (
+                          <span className="text-[10px] text-k-amber flex-shrink-0"
+                            title={`Reemplazará las ${fmt(p.hh_tareo)} HH del tareo de esta semana`}>⚠</span>
+                        )}
+                      </div>
                     </td>
                   </tr>
                   {/* Un renglón editable por cada hito (siempre visible) */}
@@ -964,9 +974,11 @@ function JornadaConfig() {
   const [msg, setMsg] = useState('')
   const scopeLbl = scope || 'todos los proyectos'
 
-  useEffect(() => {
-    if (data) { const m: Record<number, string> = {}; data.vigentes.forEach(v => m[v.dia_semana] = String(v.hh)); setHh(m) }
-  }, [data])
+  const [prevJornada, setPrevJornada] = useState<typeof data>(undefined)
+  if (data !== prevJornada) {
+    setPrevJornada(data)
+    if (data) { const m: Record<number, string> = {}; data.vigentes.forEach(v => { m[v.dia_semana] = String(v.hh) }); setHh(m) }
+  }
 
   const guardarSemanal = useMutation({
     mutationFn: () => req('/api/jornada', { method: 'POST', body: JSON.stringify({ tipo: 'semanal', desde, otm_id: scope || null, dias: Object.fromEntries(Object.entries(hh).map(([k, v]) => [k, Number(v) || 0])) }) }),
@@ -1091,7 +1103,7 @@ function TabConfig({ otm }: { otm?: string }) {
 
   const tree = useMemo(() => buildWbsTree(partidas), [partidas])
   const visibles = useMemo(() => flattenVisible(tree, collapsed), [tree, collapsed])
-  const toggle = (c: string) => setCollapsed(prev => { const n = new Set(prev); n.has(c) ? n.delete(c) : n.add(c); return n })
+  const toggle = (c: string) => setCollapsed(prev => { const n = new Set(prev); if (n.has(c)) n.delete(c); else n.add(c); return n })
   const padres = useMemo(() => new Set(partidas.filter(p => partidas.some(c => c.parent_codigo === p.codigo)).map(p => p.codigo)), [partidas])
 
   const invalidar = () => {

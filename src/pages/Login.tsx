@@ -2,8 +2,7 @@ import { useState } from 'react'
 import { setToken } from '@/lib/auth'
 import { Lock, User, Loader2 } from 'lucide-react'
 
-import { API_BASE } from '@/lib/api'
-const API = API_BASE
+import { api } from '@/lib/api'
 
 export default function Login() {
   const [username, setUsername] = useState('')
@@ -15,13 +14,10 @@ export default function Login() {
     e.preventDefault()
     setError(''); setLoading(true)
     try {
-      const r = await fetch(`${API}/api/auth/login`, {
+      const d = await api<{ token: string }>('/api/auth/login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password }),
       })
-      const d = await r.json().catch(() => ({}))
-      if (!r.ok) throw new Error(d.detail || 'No se pudo iniciar sesión')
       setToken(d.token)
       location.reload()
     } catch (err) {

@@ -2,8 +2,7 @@ import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Search, Pencil, X, Loader2, Save, Users, ClipboardList } from 'lucide-react'
 
-import { API_BASE } from '@/lib/api'
-const API = API_BASE
+import { api } from '@/lib/api'
 
 type Tab = 'trabajadores' | 'otms'
 interface Trabajador { id: string; nombre: string; cargo: string; dni?: string; activo: boolean }
@@ -23,7 +22,7 @@ export default function EdicionDatos() {
   /* ── Trabajadores ── */
   const { data: trabajadores = [], isLoading: loadT } = useQuery<Trabajador[]>({
     queryKey: ['trabajadores'],
-    queryFn: () => fetch(API + '/admin/trabajadores').then(r => r.json()),
+    queryFn: () => api<Trabajador[]>('/admin/trabajadores'),
   })
 
   const filteredT = useMemo(() => {
@@ -36,31 +35,25 @@ export default function EdicionDatos() {
     if (!editTrab) return
     setSaving(true); setSaveMsg('')
     try {
-      const r = await fetch(API + `/admin/trabajador/${editTrab.id}`, {
+      await api(`/admin/trabajador/${editTrab.id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           nombre: editTrab.nombre.toUpperCase(),
           cargo:  editTrab.cargo.toUpperCase(),
           dni:    editTrab.dni ?? '',
         }),
       })
-      if (r.ok) {
-        qc.invalidateQueries({ queryKey: ['trabajadores'] })
-        setSaveMsg('✓ Guardado')
-        setTimeout(() => { setEditTrab(null); setSaveMsg('') }, 800)
-      } else {
-        const j = await r.json()
-        setSaveMsg('Error: ' + (j.detail || 'revisa el backend'))
-      }
-    } catch { setSaveMsg('Error de conexión') }
+      qc.invalidateQueries({ queryKey: ['trabajadores'] })
+      setSaveMsg('✓ Guardado')
+      setTimeout(() => { setEditTrab(null); setSaveMsg('') }, 800)
+    } catch (e) { setSaveMsg('Error: ' + (e as Error).message) }
     setSaving(false)
   }
 
   /* ── OTMs ── */
   const { data: otms = [], isLoading: loadO } = useQuery<OTM[]>({
     queryKey: ['otms-all'],
-    queryFn: () => fetch(API + '/api/otms').then(r => r.json()),
+    queryFn: () => api<OTM[]>('/api/otms'),
   })
 
   const filteredO = useMemo(() => {
@@ -70,11 +63,7 @@ export default function EdicionDatos() {
 
   const otmMutation = useMutation({
     mutationFn: (o: OTM) =>
-      fetch(API + '/admin/otm', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(o),
-      }).then(async r => { const j = await r.json(); if (!r.ok) throw new Error(j.detail); return j }),
+      api('/admin/otm', { method: 'POST', body: JSON.stringify(o) }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['otms-all'] })
       qc.invalidateQueries({ queryKey: ['otms'] })
@@ -227,7 +216,7 @@ export default function EdicionDatos() {
                 <div key={f.key}>
                   <label className="text-[11px] font-bold text-k-text3 uppercase tracking-wider block mb-1.5">{f.label}</label>
                   <input type="text"
-                    value={(editTrab as Record<string, string>)[f.key] ?? ''}
+                    value={(editTrab as unknown as Record<string, string>)[f.key] ?? ''}
                     onChange={e => setEditTrab(p => p ? ({ ...p, [f.key]: e.target.value }) : p)}
                     className="w-full bg-k-raised border border-k-border2 rounded-lg px-4 py-2.5 text-sm text-k-text outline-none focus:border-k-amber transition-colors" />
                 </div>
@@ -279,7 +268,7 @@ export default function EdicionDatos() {
                   <div key={f.key}>
                     <label className="text-[11px] font-bold text-k-text3 uppercase tracking-wider block mb-1.5">{f.label}</label>
                     <input type="text"
-                      value={(editOTM as Record<string, string>)[f.key] ?? ''}
+                      value={(editOTM as unknown as Record<string, string>)[f.key] ?? ''}
                       onChange={e => setEditOTM(p => p ? ({ ...p, [f.key]: e.target.value }) : p)}
                       className="w-full bg-k-raised border border-k-border2 rounded-lg px-4 py-2.5 text-sm text-k-text outline-none focus:border-k-amber transition-colors" />
                   </div>
