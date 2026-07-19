@@ -5,7 +5,7 @@
 // ev_avances_diarios, la MISMA tabla del módulo de Valor Ganado).
 // EvaluacionSemanal = el formato "F030b - Planeamiento" (comprometido vs
 // alcanzado de la semana, con cumplimiento SI/NO y causa).
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { ChevronLeft, ChevronRight, Loader2, Printer } from 'lucide-react'
 import { api } from '@/lib/api'
@@ -185,9 +185,41 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
         <span className="text-red-300 font-bold">rojo</span> menos — los días anteriores no se tocan y el{' '}
         <b>saldo se re-prorratea en los días siguientes</b> para cumplir el meta en F.Fin. El meta solo se
         cambia abriendo la actividad. El real alimenta el avance diario de <b>Valor Ganado</b> (un solo dato).
+        Una partida <b>desplegada por etapas</b> se agrupa bajo una cabecera con su color de cadena:
+        clic en la cabecera para <b>compactarla en una sola fila</b> (suma el programado y el real de sus
+        etapas, solo lectura) y clic de nuevo para desplegarla y editar.
       </p>
     </div>
   )
+}
+
+// Paleta de "cadenas" (inspiración Panel Maestro): cada partida desplegada
+// por etapas recibe un color para identificar su flujo constructivo.
+const PALETA_CADENA = ['#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#14b8a6']
+
+type ItemGrid = { tipo: 'suelta'; a: ActGrid } | { tipo: 'partida'; pid: number; acts: ActGrid[] }
+
+// Agrupa las actividades de la OTM: una partida con 2+ actividades (etapas
+// desplegadas por hitos) se junta bajo una cabecera colapsable; el resto
+// (actividades libres o de etapa única) queda como fila suelta.
+function agruparPorPartida(acts: ActGrid[]): ItemGrid[] {
+  const porPartida = new Map<number, ActGrid[]>()
+  for (const a of acts) {
+    if (!a.partida_id) continue
+    const l = porPartida.get(a.partida_id) ?? []
+    l.push(a); porPartida.set(a.partida_id, l)
+  }
+  const items: ItemGrid[] = []
+  const vistas = new Set<number>()
+  for (const a of acts) {
+    const pid = a.partida_id
+    if (pid && (porPartida.get(pid)?.length ?? 0) > 1) {
+      if (!vistas.has(pid)) { vistas.add(pid); items.push({ tipo: 'partida', pid, acts: porPartida.get(pid)! }) }
+    } else {
+      items.push({ tipo: 'suelta', a })
+    }
+  }
+  return items
 }
 
 function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, onReal }: {
@@ -198,6 +230,14 @@ function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, o
   onEditar: (a: ActGrid) => void
   onReal: (actId: number, fecha: string, v: number | null) => void
 }) {
+  // Partidas compactadas (▸): sus etapas se muestran en UNA sola fila agregada.
+  const [compactas, setCompactas] = useState<Set<number>>(new Set())
+  const toggle = (pid: number) => setCompactas(prev => {
+    const s = new Set(prev); if (s.has(pid)) s.delete(pid); else s.add(pid); return s
+  })
+  const items = agruparPorPartida(grupo.actividades)
+  const idxCadena = new Map<number, number>()
+  for (const it of items) if (it.tipo === 'partida') idxCadena.set(it.pid, idxCadena.size)
   return (
     <>
       <tr>
@@ -206,7 +246,113 @@ function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, o
           {grupo.otm_id ?? 'Sin OTM'}{grupo.otm_desc ? ` — ${grupo.otm_desc}` : ''}
         </td>
       </tr>
-      {grupo.actividades.map(a => {
+      {items.map(it => {
+        if (it.tipo === 'suelta') {
+          return <FilaActividad key={it.a.id} a={it.a} fechas={fechas} hoy={hoy}
+            laborable={laborable} cadena={cadena} onCadena={onCadena}
+            onEditar={onEditar} onReal={onReal} />
+        }
+        const color = PALETA_CADENA[(idxCadena.get(it.pid) ?? 0) % PALETA_CADENA.length]
+        const compacta = compactas.has(it.pid)
+        const a0 = it.acts[0]
+        if (compacta) {
+          return <FilaPartidaCompacta key={`p${it.pid}`} acts={it.acts} color={color}
+            fechas={fechas} laborable={laborable} onToggle={() => toggle(it.pid)} />
+        }
+        return (
+          <Fragment key={`p${it.pid}`}>
+            <tr>
+              <td colSpan={7 + fechas.length} onClick={() => toggle(it.pid)}
+                title="Partida desplegada por etapas (hitos) — clic para compactarla en una sola fila"
+                className="border border-k-border px-2 py-1 text-[10px] font-bold sticky left-0 cursor-pointer hover:bg-k-raised/60"
+                style={{ borderLeft: `3px solid ${color}`, background: `${color}14` }}>
+                <span className="text-k-text2">▾</span>{' '}
+                <span style={{ color }}>●</span>{' '}
+                <span className="text-k-text">{a0.partida_codigo} — {a0.partida_desc}</span>{' '}
+                <span className="text-k-text3 font-normal">· {it.acts.length} etapas · clic para compactar</span>
+              </td>
+            </tr>
+            {it.acts.map(a => (
+              <FilaActividad key={a.id} a={a} fechas={fechas} hoy={hoy}
+                laborable={laborable} cadena={cadena} onCadena={onCadena}
+                onEditar={onEditar} onReal={onReal} color={color} />
+            ))}
+          </Fragment>
+        )
+      })}
+    </>
+  )
+}
+
+// Fila única de una partida COMPACTADA: agrega el programado y el real de
+// todas sus etapas por día (solo lectura — para editar, despliega con ▸).
+function FilaPartidaCompacta({ acts, color, fechas, laborable, onToggle }: {
+  acts: ActGrid[]; color: string; fechas: string[]
+  laborable: (f: string) => boolean; onToggle: () => void
+}) {
+  const a0 = acts[0]
+  const progAgg: Record<string, number> = {}
+  const realAgg: Record<string, number> = {}
+  for (const a of acts) {
+    for (const [f, v] of Object.entries(a.prog)) progAgg[f] = (progAgg[f] ?? 0) + v
+    for (const [f, v] of Object.entries(a.real)) realAgg[f] = (realAgg[f] ?? 0) + v
+  }
+  const totalMeta = acts.reduce((s, a) => s + (a.metrado_prog ?? 0), 0)
+  const totalReal = acts.reduce((s, a) => s + (a.acum_real ?? 0), 0)
+  const ejecutadas = acts.filter(a => a.estado === 'EJECUTADO').length
+  const fIni = acts.reduce((m, a) => (a.fecha < m ? a.fecha : m), acts[0].fecha)
+  const fFin = acts.reduce((m, a) => (a.fecha_fin > m ? a.fecha_fin : m), acts[0].fecha_fin)
+  const conFS = acts.some(a => (a.predecesoras ?? []).length > 0)
+  return (
+    <tr>
+      <td onClick={onToggle}
+        className={`${tdFijo} sticky left-0 z-10 cursor-pointer hover:bg-k-raised align-top`}
+        style={{ borderLeft: `3px solid ${color}` }}
+        title={'Partida compactada: la fila suma el programado y el real de todas sus etapas.\nClic para desplegar las etapas (y poder editar los avances).'}>
+        <div className="flex items-center gap-1.5">
+          <span className="text-k-text2">▸</span>
+          <span style={{ color }}>●</span>
+          <span className="text-k-text leading-tight font-bold">{a0.partida_codigo} — {a0.partida_desc}</span>
+        </div>
+        <div className="text-[9px] text-k-text3 pl-3.5">
+          ◆ {acts.length} etapas compactadas · {ejecutadas}/{acts.length} ✓
+        </div>
+      </td>
+      <td className={`${tdFijo} text-center text-k-text2`}>
+        {a0.supervisor_nombre?.split(' ')[0] || a0.responsable || '—'}
+      </td>
+      <td className={`${tdFijo} text-center align-middle`}
+        title="Σ metrado meta de las etapas · Σ real anotado">
+        <div className="font-mono font-bold text-k-text">{totalMeta > 0 ? num(totalMeta) : '—'}</div>
+        {totalMeta > 0 && (
+          <div className="text-[9px] text-k-text3">Σ etapas · saldo {num(Math.max(totalMeta - totalReal, 0))}</div>
+        )}
+      </td>
+      <td className={`${tdFijo} text-center text-k-text2`}>{a0.und ?? '—'}</td>
+      <td className={`${tdFijo} text-center font-mono text-[10px] text-k-text2`}>{fmtCorta(fIni)}</td>
+      <td className={`${tdFijo} text-center font-mono text-[10px] text-k-text2`}>{fmtCorta(fFin)}</td>
+      <td className={`${tdFijo} text-center font-mono text-[9px] text-k-text2`}
+        title={conFS ? 'Las etapas están encadenadas FS (despliega para verlas)' : 'Sin antecesoras'}>
+        {conFS ? '⛓ FS' : '—'}
+      </td>
+      {fechas.map(f => (
+        <CeldaDia key={f} prog={progAgg[f]} real={realAgg[f]}
+          esSalto={false} esMedio={false} laborable={laborable(f)}
+          editable={false} onRegistrar={() => {}} />
+      ))}
+    </tr>
+  )
+}
+
+function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, onReal, color }: {
+  a: ActGrid; fechas: string[]; hoy: string
+  laborable: (f: string) => boolean
+  cadena: { focal: number; azules: Set<number>; violetas: Set<number> } | null
+  onCadena: (id: number) => void
+  onEditar: (a: ActGrid) => void
+  onReal: (actId: number, fecha: string, v: number | null) => void
+  color?: string
+}) {
         const editable = a.estado !== 'CANCELADO'
         const saltos = new Set(a.dias_salto ?? [])
         const medios = new Set(a.dias_medio ?? [])
@@ -220,8 +366,9 @@ function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, o
           <tr key={a.id} className={`${a.estado === 'CANCELADO' ? 'opacity-50' : ''} ${claseCadena}`}>
             <td onClick={() => onEditar(a)}
               className={`${tdFijo} sticky left-0 z-10 cursor-pointer hover:bg-k-raised align-top`}
+              style={color ? { borderLeft: `3px solid ${color}` } : undefined}
               title={`${a.titulo}${a.partida_desc ? `\n📌 ${a.partida_codigo} — ${a.partida_desc}` : ''}\n(clic para editar: meta, fechas, saltos, antecesoras, restricciones)`}>
-              <div className="flex items-center gap-1.5">
+              <div className={`flex items-center gap-1.5${color ? ' pl-2' : ''}`}>
                 <span className={`w-2 h-2 rounded-full flex-shrink-0 ${ESTADO_DOT[a.estado] ?? 'bg-zinc-500'}`} />
                 <span className="text-[8px] font-mono text-k-text3 flex-shrink-0">#{a.id}</span>
                 <span className="text-k-text leading-tight">{a.titulo}</span>
@@ -235,7 +382,7 @@ function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, o
                   </button>
                 )}
               </div>
-              {a.partida_codigo && (
+              {!color && a.partida_codigo && (
                 <div className="text-[9px] text-k-text3 font-mono pl-3.5 truncate max-w-[240px]">
                   📌 {a.partida_codigo}{a.partida_desc ? ` · ${a.partida_desc.slice(0, 34)}` : ''}
                 </div>
@@ -279,9 +426,6 @@ function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, o
             ))}
           </tr>
         )
-      })}
-    </>
-  )
 }
 
 // ── F030b: evaluación de la semana (comprometido vs alcanzado) ──
