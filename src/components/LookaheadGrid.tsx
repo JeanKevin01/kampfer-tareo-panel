@@ -30,6 +30,7 @@ export interface ActGrid {
   predecesoras?: { id: number; dep_id: number; titulo: string; fecha_fin: string; lag_dias: number }[]
   sucesoras?: number[]; dep_total?: number
   prog: Record<string, number>; real: Record<string, number>
+  prog_manual?: string[]
 }
 export interface GridResp {
   desde: string; hasta: string
@@ -139,6 +140,16 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
         method: 'POST', body: JSON.stringify({ fecha, cantidad: v }),
       }),
     onSuccess: invalidar, onError: (e: Error) => { alert(e.message); invalidar() },
+  })
+  // Replanificar un día FUTURO del programado: la celda queda manual ✎
+  // (protegida) y el API re-prorratea el saldo en los demás días.
+  const guardarProg = useMutation({
+    mutationFn: ({ actId, fecha, v }: { actId: number; fecha: string; v: number | null }) =>
+      api(`/ev/programacion/actividades/${actId}/metrado-dias`, {
+        method: 'PUT', body: JSON.stringify({ dias: { [fecha]: v } }),
+      }),
+    onSuccess: () => { setToast({ msg: '✓ Día replanificado — el saldo se re-prorrateó' }); invalidar() },
+    onError: (e: Error) => { setToast({ msg: e.message, error: true }); invalidar() },
   })
   const mover = (dias: number) => {
     const d = new Date(desde + 'T12:00:00'); d.setDate(d.getDate() + dias); setDesde(iso(lunesDe(d)))
@@ -259,7 +270,8 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
                 vincular={vincular} onPick={pick}
                 onPanel={id => { setPanelDe(id); setCadenaDe(id) }}
                 onHover={setHoverDe}
-                onReal={(actId, fecha, v) => guardarReal.mutate({ actId, fecha, v })} />
+                onReal={(actId, fecha, v) => guardarReal.mutate({ actId, fecha, v })}
+                onProg={(actId, fecha, v) => guardarProg.mutate({ actId, fecha, v })} />
             ))}
             {(d?.grupos ?? []).length === 0 && !grid.isLoading && (
               <tr><td colSpan={nCols} className="px-4 py-8 text-center text-k-text3 text-sm">
@@ -277,7 +289,9 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
         <span className="text-green-300 font-bold">verde</span> si avanzaste más,{' '}
         <span className="text-amber-300 font-bold">ámbar</span> justo lo programado,{' '}
         <span className="text-red-300 font-bold">rojo</span> menos — los días anteriores no se tocan y el{' '}
-        <b>saldo se re-prorratea en los días siguientes</b> para cumplir el meta en F.Fin. El meta solo se
+        <b>saldo se re-prorratea en los días siguientes</b> para cumplir el meta en F.Fin. En los{' '}
+        <b>días futuros</b> escribir <b>replanifica</b> el día: la celda queda manual ✎ (protegida ante
+        re-prorrateos) y el resto se acomoda solo; vaciarla vuelve al prorrateo automático. El meta solo se
         cambia abriendo la actividad. El real alimenta el avance diario de <b>Valor Ganado</b> (un solo dato).
         Una partida <b>desplegada por etapas</b> se agrupa bajo una cabecera con su color de cadena:
         clic en la cabecera para <b>compactarla en una sola fila</b> (suma el programado y el real de sus
@@ -321,8 +335,9 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
 interface DepSel {
   dep_id: number; lag: number; predId: number; sucId: number
   predTitulo: string; sucTitulo: string
+  nodoId: number          // la actividad de la tarjeta clicada (editable abajo)
 }
-interface Nodo { id: number; titulo: string; a?: ActGrid; dep: DepSel | null }
+interface Nodo { id: number; titulo: string; a?: ActGrid; dep: Omit<DepSel, 'nodoId'> | null }
 
 // Campo editable con commit al salir (mismo patrón no-controlado de CeldaDia).
 function CampoAct({ etiqueta, tipo, valor, onCommit }: {
@@ -403,8 +418,8 @@ function PanelDeps({ actId, data, onCerrar, onIr, onCrear, onLag, onQuitar, onGu
       ? 'border-blue-500/50 bg-blue-500/10 hover:bg-blue-500/20'
       : 'border-green-500/50 bg-green-500/10 hover:bg-green-500/20'
     return (
-      <div onClick={() => n.dep && setSel(activa ? null : n.dep)}
-        title={n.dep ? 'Clic: ver y editar este vínculo en «Detalles de la dependencia»' : 'Actividad fuera del rango visible del grid'}
+      <div onClick={() => n.dep && setSel(activa ? null : { ...n.dep, nodoId: n.id })}
+        title={n.dep ? 'Clic: ver los datos de esta actividad y su vínculo en «Detalles de la dependencia»' : 'Actividad fuera del rango visible del grid'}
         className={`rounded-lg border px-2.5 py-1.5 cursor-pointer flex-1 min-w-[130px] ${base} ${activa ? 'ring-2 ring-amber-400/70' : ''}`}>
         <div className="flex items-center gap-1">
           <span className="text-[11px] text-k-text truncate flex-1">{n.titulo}</span>
@@ -530,6 +545,28 @@ function PanelDeps({ actId, data, onCerrar, onIr, onCrear, onLag, onQuitar, onGu
         {sel && (
           <div className="rounded-xl border border-k-border bg-k-raised/40 px-3 py-2.5 space-y-1.5">
             <p className="text-[10px] uppercase font-bold text-k-text3">Detalles de la dependencia</p>
+            {(() => {
+              const actSel = porId.get(sel.nodoId)
+              if (!actSel) return null
+              return (
+                <div className="rounded-lg border border-k-border bg-k-void/40 px-2.5 py-2 space-y-1.5">
+                  <p className="text-[11px] font-bold text-k-text truncate">{actSel.titulo}</p>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    <CampoAct etiqueta={`Metrado${actSel.und ? ` (${actSel.und})` : ''}`} tipo="text"
+                      valor={actSel.metrado_prog != null ? String(actSel.metrado_prog) : ''}
+                      onCommit={v => {
+                        if (v === '') { onGuardarAct(actSel.id, { metrado_prog: null }); return }
+                        const m = Number(v)
+                        if (Number.isFinite(m) && m >= 0) onGuardarAct(actSel.id, { metrado_prog: m })
+                      }} />
+                    <CampoAct etiqueta="F. Inicio" tipo="date" valor={actSel.fecha}
+                      onCommit={v => { if (v) onGuardarAct(actSel.id, { fecha: v }) }} />
+                    <CampoAct etiqueta="F. Fin" tipo="date" valor={actSel.fecha_fin}
+                      onCommit={v => { if (v) onGuardarAct(actSel.id, { fecha_fin: v }) }} />
+                  </div>
+                </div>
+              )
+            })()}
             <p className="text-[11px] text-k-text2">
               {sel.predTitulo} <span className="text-k-text3">→</span> {sel.sucTitulo}
             </p>
@@ -594,13 +631,14 @@ function agruparPorPartida(acts: ActGrid[]): ItemGrid[] {
 
 interface Vincular { on: boolean; primera: number | null }
 
-function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, onReal, vincular, onPick, onPanel, onHover }: {
+function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, onReal, onProg, vincular, onPick, onPanel, onHover }: {
   grupo: GridResp['grupos'][number]; fechas: string[]; hoy: string
   laborable: (f: string) => boolean
   cadena: { focal: number; azules: Set<number>; verdes: Set<number> } | null
   onCadena: (id: number) => void
   onEditar: (a: ActGrid) => void
   onReal: (actId: number, fecha: string, v: number | null) => void
+  onProg: (actId: number, fecha: string, v: number | null) => void
   vincular: Vincular; onPick: (id: number) => void; onPanel: (id: number) => void
   onHover: (id: number | null) => void
 }) {
@@ -624,7 +662,7 @@ function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, o
         if (it.tipo === 'suelta') {
           return <FilaActividad key={it.a.id} a={it.a} fechas={fechas} hoy={hoy}
             laborable={laborable} cadena={cadena} onCadena={onCadena}
-            onEditar={onEditar} onReal={onReal}
+            onEditar={onEditar} onReal={onReal} onProg={onProg}
             vincular={vincular} onPick={onPick} onPanel={onPanel} onHover={onHover} />
         }
         const color = PALETA_CADENA[(idxCadena.get(it.pid) ?? 0) % PALETA_CADENA.length]
@@ -650,7 +688,7 @@ function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, o
             {it.acts.map(a => (
               <FilaActividad key={a.id} a={a} fechas={fechas} hoy={hoy}
                 laborable={laborable} cadena={cadena} onCadena={onCadena}
-                onEditar={onEditar} onReal={onReal} color={color}
+                onEditar={onEditar} onReal={onReal} onProg={onProg} color={color}
                 vincular={vincular} onPick={onPick} onPanel={onPanel} onHover={onHover} />
             ))}
           </Fragment>
@@ -720,13 +758,14 @@ function FilaPartidaCompacta({ acts, color, fechas, laborable, onToggle }: {
   )
 }
 
-function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, onReal, color, vincular, onPick, onPanel, onHover }: {
+function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, onReal, onProg, color, vincular, onPick, onPanel, onHover }: {
   a: ActGrid; fechas: string[]; hoy: string
   laborable: (f: string) => boolean
   cadena: { focal: number; azules: Set<number>; verdes: Set<number> } | null
   onCadena: (id: number) => void
   onEditar: (a: ActGrid) => void
   onReal: (actId: number, fecha: string, v: number | null) => void
+  onProg: (actId: number, fecha: string, v: number | null) => void
   color?: string
   vincular: Vincular; onPick: (id: number) => void; onPanel: (id: number) => void
   onHover: (id: number | null) => void
@@ -734,6 +773,7 @@ function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, 
         const editable = a.estado !== 'CANCELADO'
         const saltos = new Set(a.dias_salto ?? [])
         const medios = new Set(a.dias_medio ?? [])
+        const manuales = new Set(a.prog_manual ?? [])
         // Resaltado de cadena: focal normal, antecesoras azul, sucesoras violeta, resto atenuado
         const claseCadena = !cadena ? ''
           : cadena.focal === a.id ? 'ring-1 ring-inset ring-amber-500/50'
@@ -818,6 +858,8 @@ function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, 
               <CeldaDia key={f} prog={a.prog[f]} real={a.real[f]}
                 esSalto={saltos.has(f)} esMedio={medios.has(f)} laborable={laborable(f)}
                 editable={editable && !!a.partida_id && f <= hoy}
+                editableProg={editable && f > hoy} esManual={manuales.has(f)}
+                onProgramar={v => onProg(a.id, f, v)}
                 onRegistrar={v => onReal(a.id, f, v)} />
             ))}
           </tr>
@@ -847,11 +889,20 @@ export function EvaluacionSemanal() {
   }
   const d = grid.data
   const fechas = d?.fechas ?? []
+  const hoy = iso(new Date())
 
-  const cumplimiento = (a: ActGrid) =>
-    a.estado === 'EJECUTADO' ? ['SI', 'text-k-green'] :
-    a.estado === 'NO_CUMPLIDA' ? ['NO', 'text-k-red'] :
-    a.estado === 'CANCELADO' ? ['—', 'text-k-text3'] : ['…', 'text-k-amber']
+  // CUMPL. AUTOMÁTICO (al cierre + SI anticipado): SI apenas lo alcanzado ≥
+  // lo comprometido de la semana; NO recién cuando la semana CERRÓ sin
+  // llegar; «…» mientras corre. Los estados manuales mandan.
+  const cumplimiento = (a: ActGrid, comprom: number, alcanz: number) => {
+    if (a.estado === 'EJECUTADO') return ['SI', 'text-k-green']
+    if (a.estado === 'NO_CUMPLIDA') return ['NO', 'text-k-red']
+    if (a.estado === 'CANCELADO') return ['—', 'text-k-text3']
+    if (comprom <= 0) return ['…', 'text-k-amber']
+    if (alcanz >= comprom - 0.0005) return ['SI', 'text-k-green']
+    if (fechas.length && fechas[6] < hoy) return ['NO', 'text-k-red']
+    return ['…', 'text-k-amber']
+  }
 
   return (
     <div className="bg-k-surface border border-k-border rounded-xl overflow-hidden">
@@ -896,8 +947,10 @@ export function EvaluacionSemanal() {
         Por día: <span className="text-sky-300">programado</span> / real (<span className="text-green-300">verde</span> más,{' '}
         <span className="text-amber-300">ámbar</span> igual, <span className="text-red-300">rojo</span> menos que lo programado).
         COMPROM. = metrado comprometido de la semana · ALCANZ. = metrado real registrado (avance diario del EV).
-        CAUSA (CAMPO) la reporta el supervisor; CAUSA (PLANNER) la depura oficina — en el Pareto de
-        PPC·Causas manda la del planner y, si no existe, cuenta la de campo.
+        CUMPL. es <b>automático</b>: SI apenas lo alcanzado iguala o supera lo comprometido (aunque la semana
+        siga corriendo); NO recién cuando la semana cerró sin llegar; «…» = en curso. Marcar NO CUMPLIDA a
+        mano (con causa) manda sobre el cálculo. CAUSA (CAMPO) la reporta el supervisor; CAUSA (PLANNER) la
+        depura oficina — en el Pareto de PPC·Causas manda la del planner y, si no existe, cuenta la de campo.
       </p>
     </div>
   )
@@ -905,7 +958,7 @@ export function EvaluacionSemanal() {
 
 function EvalGrupo({ grupo, fechas, cumplimiento, onCausaPlanner }: {
   grupo: GridResp['grupos'][number]; fechas: string[]
-  cumplimiento: (a: ActGrid) => string[]
+  cumplimiento: (a: ActGrid, comprom: number, alcanz: number) => string[]
   onCausaPlanner: (actId: number, cat: string | null, detalle: string | null) => void
 }) {
   return (
@@ -918,7 +971,7 @@ function EvalGrupo({ grupo, fechas, cumplimiento, onCausaPlanner }: {
       {grupo.actividades.map(a => {
         const comprom = fechas.reduce((s, f) => s + (a.prog[f] ?? 0), 0)
         const alcanz = fechas.reduce((s, f) => s + (a.real[f] ?? 0), 0)
-        const [cumpl, clr] = cumplimiento(a)
+        const [cumpl, clr] = cumplimiento(a, comprom, alcanz)
         return (
           <tr key={a.id} className={a.estado === 'CANCELADO' ? 'opacity-50' : ''}>
             <td className={`${tdFijo}`}>
