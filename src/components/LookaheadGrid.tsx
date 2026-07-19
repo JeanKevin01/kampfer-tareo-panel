@@ -5,7 +5,7 @@
 // ev_avances_diarios, la MISMA tabla del módulo de Valor Ganado).
 // EvaluacionSemanal = el formato "F030b - Planeamiento" (comprometido vs
 // alcanzado de la semana, con cumplimiento SI/NO y causa).
-import { Fragment, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { ChevronLeft, ChevronRight, Loader2, Printer } from 'lucide-react'
 import { api } from '@/lib/api'
@@ -27,7 +27,7 @@ export interface ActGrid {
   metrado_base?: number | null; acum_real?: number | null; saldo?: number | null
   hito_id?: number | null; hito_desc?: string | null; hito_peso?: number | null
   dias_salto?: string[]; dias_medio?: string[]
-  predecesoras?: { id: number; titulo: string; fecha_fin: string; lag_dias: number }[]
+  predecesoras?: { id: number; dep_id: number; titulo: string; fecha_fin: string; lag_dias: number }[]
   sucesoras?: number[]; dep_total?: number
   prog: Record<string, number>; real: Record<string, number>
 }
@@ -54,6 +54,11 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
   const [desde, setDesde] = useState(() => iso(lunesDe(new Date())))
   // Cadena resaltada (clic en 🔗): antecesoras en azul, sucesoras en violeta.
   const [cadenaDe, setCadenaDe] = useState<number | null>(null)
+  // Modo Vincular (clic-clic): 1er clic = la que va PRIMERO, 2º = la que sigue.
+  const [vincular, setVincular] = useState<{ on: boolean; primera: number | null }>({ on: false, primera: null })
+  // Panel lateral de dependencias de una actividad (clic en 🔗 o en un chip PRED).
+  const [panelDe, setPanelDe] = useState<number | null>(null)
+  const [toast, setToast] = useState<{ msg: string; undo?: () => void; error?: boolean } | null>(null)
 
   const grid = useQuery<GridResp>({
     queryKey: ['lookahead-grid', desde, nSemanas],
@@ -65,6 +70,51 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
     qc.invalidateQueries({ queryKey: ['lookahead'] })
     qc.invalidateQueries({ queryKey: ['ppc'] })
   }
+  const borrarDep = useMutation({
+    mutationFn: (depId: number) => api(`/ev/programacion/dependencias/${depId}`, { method: 'DELETE' }),
+    onSuccess: () => { setToast({ msg: 'Vínculo eliminado' }); invalidar() },
+    onError: (e: Error) => setToast({ msg: e.message, error: true }),
+  })
+  // POST upsertea: mismo par (sucesora, antecesora) solo actualiza el lag.
+  const crearDep = useMutation({
+    mutationFn: ({ suc, pred, lag }: { suc: number; pred: number; lag?: number }) =>
+      api(`/ev/programacion/actividades/${suc}/dependencias`, {
+        method: 'POST', body: JSON.stringify({ predecesora_id: pred, lag_dias: lag ?? 0 }),
+      }),
+    onSuccess: (j: unknown, vars) => {
+      const r = j as { id?: number; movidas?: number[] }
+      setToast({
+        msg: vars.lag != null
+          ? 'Lag actualizado'
+          : `✓ Vinculada (FS)${r.movidas?.length ? ` · la cascada movió ${r.movidas.length} actividad(es)` : ''}`,
+        undo: vars.lag == null && r.id ? () => { borrarDep.mutate(r.id!); setToast(null) } : undefined,
+      })
+      invalidar()
+    },
+    onError: (e: Error) => setToast({ msg: e.message, error: true }),
+  })
+  // Clic-clic: el 2º clic crea el FS y esa actividad pasa a ser la nueva
+  // "primera" — clics sucesivos van encadenando 1→2→3→4 sin reabrir nada.
+  const pick = (id: number) => {
+    if (vincular.primera == null || vincular.primera === id) {
+      setVincular({ on: true, primera: id }); return
+    }
+    crearDep.mutate({ suc: id, pred: vincular.primera })
+    setVincular({ on: true, primera: id })
+  }
+  useEffect(() => {
+    if (!toast || toast.error) return
+    const t = setTimeout(() => setToast(null), 6000)
+    return () => clearTimeout(t)
+  }, [toast])
+  useEffect(() => {
+    const esc = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      setVincular({ on: false, primera: null }); setPanelDe(null)
+    }
+    window.addEventListener('keydown', esc)
+    return () => window.removeEventListener('keydown', esc)
+  }, [])
   // El real va por actividad: el API escribe en el avance diario del EV y
   // RE-PRORRATEA el saldo entre los días hábiles SIGUIENTES de la actividad.
   const guardarReal = useMutation({
@@ -121,6 +171,12 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
           className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-k-border bg-k-raised text-k-text2 hover:bg-k-border">
           <Printer size={14} /> Exportar PDF
         </button>
+        <button onClick={() => { setVincular(v => v.on ? { on: false, primera: null } : { on: true, primera: null }); setPanelDe(null) }}
+          title="Vincular actividades con dos clics: primero la que va PRIMERO, luego la que sigue (FS). Esc para salir."
+          className={`flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border font-bold ${
+            vincular.on ? 'border-amber-500/60 bg-amber-500/15 text-k-amber' : 'border-k-border bg-k-raised text-k-text2 hover:bg-k-border'}`}>
+          🔗 Vincular
+        </button>
         {grid.isFetching && <Loader2 size={14} className="animate-spin text-k-text3" />}
         {desde < iso(lunesDe(new Date())) && (
           <span className="text-[11px] font-bold text-k-amber bg-amber-500/10 border border-amber-500/30 rounded-lg px-2.5 py-1.5">
@@ -128,6 +184,17 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
           </span>
         )}
       </div>
+
+      {vincular.on && (
+        <div className="flex items-center gap-2 text-[11px] font-bold text-k-amber bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
+          🔗 Modo Vincular:{' '}
+          {vincular.primera == null
+            ? 'clic en la actividad que va PRIMERO…'
+            : `#${vincular.primera} elegida — ahora clic en la que va DESPUÉS (los clics siguientes van encadenando)`}
+          <button onClick={() => setVincular({ on: false, primera: null })}
+            className="ml-auto text-[11px] px-2 py-0.5 rounded border border-amber-500/40 hover:bg-amber-500/15">Salir (Esc)</button>
+        </div>
+      )}
 
       <div className="overflow-x-auto rounded-xl border border-k-border">
         <table className="border-collapse w-max min-w-full">
@@ -139,8 +206,8 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
               <th className={thBase} rowSpan={2}>UND</th>
               <th className={thBase} rowSpan={2}>F. Inic</th>
               <th className={thBase} rowSpan={2}>F. Fin</th>
-              <th className={`${thBase} min-w-[60px]`} rowSpan={2}
-                title="Antecesoras (estilo MS Project): #id de la actividad que debe terminar antes, FS = Fin→Inicio, +d = lag">PRED.</th>
+              <th className={`${thBase} min-w-[110px]`} rowSpan={2}
+                title="Después de qué actividad(es) puede empezar (FS = Fin→Inicio). Clic en un chip abre el panel de vínculos; usa el botón 🔗 Vincular para crear nuevos con dos clics">DESPUÉS DE</th>
               {(d?.semanas ?? []).map((s, i) => (
                 <th key={s.lunes} colSpan={7}
                   className="border border-k-border px-1 py-1 text-[10px] font-bold uppercase bg-red-900/30 text-red-200">
@@ -164,7 +231,9 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
             {(d?.grupos ?? []).map(g => (
               <GrupoOTM key={g.otm_id ?? '-'} grupo={g} fechas={d!.fechas} hoy={hoy}
                 laborable={laborable} onEditar={onEditar} cadena={cadena}
-                onCadena={id => setCadenaDe(v => (v === id ? null : id))}
+                onCadena={id => { setCadenaDe(v => (v === id ? null : id)); setPanelDe(v => (v === id ? null : id)) }}
+                vincular={vincular} onPick={pick}
+                onPanel={id => { setPanelDe(id); setCadenaDe(id) }}
                 onReal={(actId, fecha, v) => guardarReal.mutate({ actId, fecha, v })} />
             ))}
             {(d?.grupos ?? []).length === 0 && !grid.isLoading && (
@@ -187,7 +256,166 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
         cambia abriendo la actividad. El real alimenta el avance diario de <b>Valor Ganado</b> (un solo dato).
         Una partida <b>desplegada por etapas</b> se agrupa bajo una cabecera con su color de cadena:
         clic en la cabecera para <b>compactarla en una sola fila</b> (suma el programado y el real de sus
-        etapas, solo lectura) y clic de nuevo para desplegarla y editar.
+        etapas, solo lectura) y clic de nuevo para desplegarla y editar. Para vincular actividades usa el
+        botón <b>🔗 Vincular</b> (dos clics: primero la que va antes, luego la que sigue) — la columna
+        DESPUÉS DE muestra los vínculos y el chip abre el panel para editarlos.
+      </p>
+
+      {toast && (
+        <div className={`fixed bottom-4 right-4 z-50 flex items-center gap-3 rounded-xl border px-4 py-2.5 text-sm shadow-2xl ${
+          toast.error ? 'border-red-500/50 bg-red-950 text-red-200' : 'border-k-border bg-k-surface text-k-text'}`}>
+          {toast.msg}
+          {toast.undo && (
+            <button onClick={toast.undo}
+              className="text-xs font-bold px-2 py-1 rounded border border-k-border text-k-amber hover:bg-k-raised">Deshacer</button>
+          )}
+          <button onClick={() => setToast(null)} className="text-k-text3 hover:text-k-text">✕</button>
+        </div>
+      )}
+
+      {panelDe != null && d && (
+        <PanelDeps actId={panelDe} data={d}
+          onCerrar={() => { setPanelDe(null); setCadenaDe(null) }}
+          onIr={id => { setPanelDe(id); setCadenaDe(id) }}
+          onCrear={(suc, pred) => crearDep.mutate({ suc, pred })}
+          onLag={(suc, pred, lag) => crearDep.mutate({ suc, pred, lag })}
+          onQuitar={depId => borrarDep.mutate(depId)} />
+      )}
+    </div>
+  )
+}
+
+// ── Panel lateral de dependencias (entrega 2 del combo clic-clic + panel) ──
+// Grafo de la actividad: PREDECESORAS → focal → SUCESORAS, con lag editable,
+// quitar vínculo y agregar antecesora/sucesora buscando en el rango visible.
+function PanelDeps({ actId, data, onCerrar, onIr, onCrear, onLag, onQuitar }: {
+  actId: number; data: GridResp
+  onCerrar: () => void; onIr: (id: number) => void
+  onCrear: (suc: number, pred: number) => void
+  onLag: (suc: number, pred: number, lag: number) => void
+  onQuitar: (depId: number) => void
+}) {
+  const [agregar, setAgregar] = useState<'pred' | 'suc' | null>(null)
+  const [busca, setBusca] = useState('')
+  const acts = data.grupos.flatMap(g => g.actividades)
+  const porId = new Map(acts.map(a => [a.id, a]))
+  const focal = porId.get(actId)
+  if (!focal) return null
+  const preds = focal.predecesoras ?? []
+  const sucs = (focal.sucesoras ?? []).map(id => porId.get(id)).filter(Boolean) as ActGrid[]
+  const vinculadas = new Set([actId, ...preds.map(p => p.id), ...sucs.map(s => s.id)])
+  const q = busca.trim().toLowerCase()
+  const candidatas = acts.filter(a => !vinculadas.has(a.id)
+    && (!q || a.titulo.toLowerCase().includes(q) || String(a.id) === q)).slice(0, 30)
+  const filaCls = 'flex items-center gap-2 rounded-lg border border-k-border bg-k-raised/40 px-2 py-1.5'
+  return (
+    <div className="fixed inset-y-0 right-0 z-40 w-[340px] bg-k-surface border-l border-k-border shadow-2xl flex flex-col">
+      <div className="flex items-center gap-2 px-4 py-3 border-b border-k-border">
+        <p className="text-xs font-bold text-k-text">Vínculos de la actividad</p>
+        <button onClick={onCerrar} className="ml-auto text-k-text3 hover:text-k-text">✕</button>
+      </div>
+      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
+        <div>
+          <p className="text-[10px] uppercase font-bold text-k-blue mb-1.5">⬆ Antes (predecesoras)</p>
+          <div className="space-y-1.5">
+            {preds.map(p => (
+              <div key={p.dep_id} className={filaCls}>
+                <button onClick={() => onIr(p.id)} title="Ver los vínculos de esta actividad"
+                  className="text-[11px] text-k-text2 flex-1 truncate text-left hover:text-k-text">
+                  {p.titulo}
+                  <span className="text-k-text3 block text-[9px]">termina {fmtCorta(p.fecha_fin)}</span>
+                </button>
+                <label className="text-[9px] text-k-text3">lag
+                  <input key={p.lag_dias} defaultValue={p.lag_dias} inputMode="numeric"
+                    title="Días de espera tras el fin de la antecesora (Enter para guardar)"
+                    onKeyDown={e => {
+                      if (e.key !== 'Enter') return
+                      const v = Number((e.target as HTMLInputElement).value)
+                      if (Number.isFinite(v) && v >= 0) onLag(actId, p.id, v)
+                    }}
+                    className="w-9 ml-1 bg-k-void border border-k-border rounded px-1 py-0.5 text-[10px] text-k-text text-center outline-none focus:border-k-amber" />
+                </label>
+                <button onClick={() => onQuitar(p.dep_id)} title="Quitar el vínculo"
+                  className="text-k-text3 hover:text-k-red text-[11px]">✕</button>
+              </div>
+            ))}
+            {preds.length === 0 && <p className="text-[11px] text-k-text3">Puede arrancar cuando se quiera.</p>}
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-2.5 py-2">
+          <p className="text-[11px] font-bold text-k-amber truncate">▶ #{focal.id} {focal.titulo}</p>
+          <p className="text-[9px] text-k-text3">{fmtCorta(focal.fecha)} → {fmtCorta(focal.fecha_fin)}</p>
+        </div>
+
+        <div>
+          <p className="text-[10px] uppercase font-bold text-violet-300 mb-1.5">⬇ Después (sucesoras)</p>
+          <div className="space-y-1.5">
+            {sucs.map(s => {
+              const dep = (s.predecesoras ?? []).find(p => p.id === actId)
+              return (
+                <div key={s.id} className={filaCls}>
+                  <button onClick={() => onIr(s.id)} title="Ver los vínculos de esta actividad"
+                    className="text-[11px] text-k-text2 flex-1 truncate text-left hover:text-k-text">
+                    {s.titulo}
+                    <span className="text-k-text3 block text-[9px]">empieza {fmtCorta(s.fecha)}{dep?.lag_dias ? ` · lag ${dep.lag_dias}d` : ''}</span>
+                  </button>
+                  {dep && (
+                    <button onClick={() => onQuitar(dep.dep_id)} title="Quitar el vínculo"
+                      className="text-k-text3 hover:text-k-red text-[11px]">✕</button>
+                  )}
+                </div>
+              )
+            })}
+            {(focal.sucesoras ?? []).length > sucs.length && (
+              <p className="text-[10px] text-k-text3">
+                +{(focal.sucesoras ?? []).length - sucs.length} sucesora(s) fuera del rango visible.
+              </p>
+            )}
+            {(focal.sucesoras ?? []).length === 0 && <p className="text-[11px] text-k-text3">Nada depende de esta actividad.</p>}
+          </div>
+        </div>
+
+        <div>
+          <div className="flex gap-1.5 mb-1.5">
+            <button onClick={() => { setAgregar(v => v === 'pred' ? null : 'pred'); setBusca('') }}
+              className={`text-[10px] px-2 py-1 rounded border font-bold ${
+                agregar === 'pred' ? 'border-blue-500/50 bg-blue-500/15 text-k-blue' : 'border-k-border text-k-text2 hover:bg-k-raised'}`}>
+              + antecesora
+            </button>
+            <button onClick={() => { setAgregar(v => v === 'suc' ? null : 'suc'); setBusca('') }}
+              className={`text-[10px] px-2 py-1 rounded border font-bold ${
+                agregar === 'suc' ? 'border-violet-500/50 bg-violet-500/15 text-violet-300' : 'border-k-border text-k-text2 hover:bg-k-raised'}`}>
+              + sucesora
+            </button>
+          </div>
+          {agregar && (
+            <div className="space-y-1.5">
+              <input value={busca} onChange={e => setBusca(e.target.value)} autoFocus
+                placeholder={`Buscar la ${agregar === 'pred' ? 'antecesora (la que va ANTES)' : 'sucesora (la que va DESPUÉS)'}…`}
+                className="w-full bg-k-void border border-k-border rounded-lg px-2 py-1.5 text-[11px] text-k-text outline-none focus:border-k-amber" />
+              <div className="max-h-44 overflow-y-auto space-y-1">
+                {candidatas.map(cand => (
+                  <button key={cand.id}
+                    onClick={() => {
+                      if (agregar === 'pred') onCrear(actId, cand.id)
+                      else onCrear(cand.id, actId)
+                      setAgregar(null)
+                    }}
+                    className="w-full text-left text-[11px] text-k-text2 rounded-lg border border-k-border px-2 py-1.5 hover:bg-k-raised">
+                    {cand.titulo}
+                    <span className="text-k-text3 block text-[9px]">{cand.otm_id ?? ''} · {fmtCorta(cand.fecha)} → {fmtCorta(cand.fecha_fin)}</span>
+                  </button>
+                ))}
+                {candidatas.length === 0 && <p className="text-[10px] text-k-text3">Sin actividades en el rango visible que coincidan.</p>}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+      <p className="px-4 py-2 text-[9px] text-k-text3 border-t border-k-border">
+        FS: la sucesora arranca al terminar la antecesora (+lag). Mover una antecesora
+        empuja a sus sucesoras automáticamente, nunca las adelanta.
       </p>
     </div>
   )
@@ -222,13 +450,16 @@ function agruparPorPartida(acts: ActGrid[]): ItemGrid[] {
   return items
 }
 
-function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, onReal }: {
+interface Vincular { on: boolean; primera: number | null }
+
+function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, onReal, vincular, onPick, onPanel }: {
   grupo: GridResp['grupos'][number]; fechas: string[]; hoy: string
   laborable: (f: string) => boolean
   cadena: { focal: number; azules: Set<number>; violetas: Set<number> } | null
   onCadena: (id: number) => void
   onEditar: (a: ActGrid) => void
   onReal: (actId: number, fecha: string, v: number | null) => void
+  vincular: Vincular; onPick: (id: number) => void; onPanel: (id: number) => void
 }) {
   // Partidas compactadas (▸): sus etapas se muestran en UNA sola fila agregada.
   const [compactas, setCompactas] = useState<Set<number>>(new Set())
@@ -250,7 +481,8 @@ function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, o
         if (it.tipo === 'suelta') {
           return <FilaActividad key={it.a.id} a={it.a} fechas={fechas} hoy={hoy}
             laborable={laborable} cadena={cadena} onCadena={onCadena}
-            onEditar={onEditar} onReal={onReal} />
+            onEditar={onEditar} onReal={onReal}
+            vincular={vincular} onPick={onPick} onPanel={onPanel} />
         }
         const color = PALETA_CADENA[(idxCadena.get(it.pid) ?? 0) % PALETA_CADENA.length]
         const compacta = compactas.has(it.pid)
@@ -275,7 +507,8 @@ function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, o
             {it.acts.map(a => (
               <FilaActividad key={a.id} a={a} fechas={fechas} hoy={hoy}
                 laborable={laborable} cadena={cadena} onCadena={onCadena}
-                onEditar={onEditar} onReal={onReal} color={color} />
+                onEditar={onEditar} onReal={onReal} color={color}
+                vincular={vincular} onPick={onPick} onPanel={onPanel} />
             ))}
           </Fragment>
         )
@@ -344,7 +577,7 @@ function FilaPartidaCompacta({ acts, color, fechas, laborable, onToggle }: {
   )
 }
 
-function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, onReal, color }: {
+function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, onReal, color, vincular, onPick, onPanel }: {
   a: ActGrid; fechas: string[]; hoy: string
   laborable: (f: string) => boolean
   cadena: { focal: number; azules: Set<number>; violetas: Set<number> } | null
@@ -352,6 +585,7 @@ function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, 
   onEditar: (a: ActGrid) => void
   onReal: (actId: number, fecha: string, v: number | null) => void
   color?: string
+  vincular: Vincular; onPick: (id: number) => void; onPanel: (id: number) => void
 }) {
         const editable = a.estado !== 'CANCELADO'
         const saltos = new Set(a.dias_salto ?? [])
@@ -362,12 +596,17 @@ function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, 
           : cadena.azules.has(a.id) ? 'bg-blue-500/10'
           : cadena.violetas.has(a.id) ? 'bg-violet-500/10'
           : 'opacity-30'
+        const esPrimera = vincular.on && vincular.primera === a.id
         return (
-          <tr key={a.id} className={`${a.estado === 'CANCELADO' ? 'opacity-50' : ''} ${claseCadena}`}>
-            <td onClick={() => onEditar(a)}
+          <tr key={a.id} className={`${a.estado === 'CANCELADO' ? 'opacity-50' : ''} ${claseCadena} ${esPrimera ? 'bg-amber-500/15' : ''}`}>
+            <td onClick={() => (vincular.on ? onPick(a.id) : onEditar(a))}
               className={`${tdFijo} sticky left-0 z-10 cursor-pointer hover:bg-k-raised align-top`}
               style={color ? { borderLeft: `3px solid ${color}` } : undefined}
-              title={`${a.titulo}${a.partida_desc ? `\n📌 ${a.partida_codigo} — ${a.partida_desc}` : ''}\n(clic para editar: meta, fechas, saltos, antecesoras, restricciones)`}>
+              title={vincular.on
+                ? (vincular.primera == null ? 'Clic: esta actividad va PRIMERO'
+                  : esPrimera ? 'Elegida como la que va primero'
+                  : `Clic: esta va DESPUÉS de #${vincular.primera}`)
+                : `${a.titulo}${a.partida_desc ? `\n📌 ${a.partida_codigo} — ${a.partida_desc}` : ''}\n(clic para editar: meta, fechas, saltos, antecesoras, restricciones)`}>
               <div className={`flex items-center gap-1.5${color ? ' pl-2' : ''}`}>
                 <span className={`w-2 h-2 rounded-full flex-shrink-0 ${ESTADO_DOT[a.estado] ?? 'bg-zinc-500'}`} />
                 <span className="text-[8px] font-mono text-k-text3 flex-shrink-0">#{a.id}</span>
@@ -414,9 +653,20 @@ function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, 
             <td className={`${tdFijo} text-center text-k-text2`}>{a.und ?? '—'}</td>
             <td className={`${tdFijo} text-center font-mono text-[10px] text-k-text2`}>{fmtCorta(a.fecha)}</td>
             <td className={`${tdFijo} text-center font-mono text-[10px] text-k-text2`}>{fmtCorta(a.fecha_fin)}</td>
-            <td className={`${tdFijo} text-center font-mono text-[9px] text-k-text2`}
-              title={(a.predecesoras ?? []).map(p => `#${p.id} ${p.titulo} (termina ${fmtCorta(p.fecha_fin)}${p.lag_dias ? `, lag ${p.lag_dias}d` : ''})`).join('\n') || 'Sin antecesoras'}>
-              {(a.predecesoras ?? []).map(p => `${p.id}FS${p.lag_dias ? `+${p.lag_dias}d` : ''}`).join(', ') || '—'}
+            <td className={`${tdFijo} align-middle`}>
+              <div className="flex flex-col gap-0.5 items-stretch">
+                {(a.predecesoras ?? []).map(p => (
+                  <button key={p.dep_id} onClick={() => onPanel(a.id)}
+                    title={`Después de: ${p.titulo} (termina ${fmtCorta(p.fecha_fin)}${p.lag_dias ? `, lag ${p.lag_dias}d` : ''}) — clic para editar el vínculo`}
+                    className="text-left text-[9px] px-1.5 py-0.5 rounded bg-blue-500/10 text-k-blue truncate max-w-[110px] hover:bg-blue-500/20">
+                    ↳ {p.titulo.slice(0, 15)}{p.lag_dias ? ` +${p.lag_dias}d` : ''}
+                  </button>
+                ))}
+                {(a.predecesoras ?? []).length === 0 && (
+                  <button onClick={() => onPanel(a.id)} title="Sin antecesoras — clic para vincular desde el panel"
+                    className="text-[9px] text-k-text3 hover:text-k-text text-center">—</button>
+                )}
+              </div>
             </td>
             {fechas.map(f => (
               <CeldaDia key={f} prog={a.prog[f]} real={a.real[f]}
