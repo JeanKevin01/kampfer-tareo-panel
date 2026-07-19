@@ -1,4 +1,4 @@
-// Lookahead tipo Excel — réplica del "Anexo 01 - LookAhead" del ex-gerente:
+﻿// Lookahead tipo Excel — réplica del "Anexo 01 - LookAhead" del ex-gerente:
 // filas = actividades agrupadas por proyecto, columnas = días de N semanas.
 // Cada actividad tiene 2 filas: PROG (metrado programado por día, celdas
 // verdes, editables) y REAL (metrado ejecutado, celdas azules — escribe en
@@ -59,6 +59,10 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
   // Panel lateral de dependencias de una actividad (clic en 🔗 o en un chip PRED).
   const [panelDe, setPanelDe] = useState<number | null>(null)
   const [toast, setToast] = useState<{ msg: string; undo?: () => void; error?: boolean } | null>(null)
+  // Mostrar relaciones: al pasar el mouse por una actividad vinculada se
+  // resalta su cadena (azul = antecesoras, verde = sucesoras) sin hacer clic.
+  const [mostrarRel, setMostrarRel] = useState(true)
+  const [hoverDe, setHoverDe] = useState<number | null>(null)
 
   const grid = useQuery<GridResp>({
     queryKey: ['lookahead-grid', desde, nSemanas],
@@ -89,6 +93,18 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
           : `✓ Vinculada (FS)${r.movidas?.length ? ` · la cascada movió ${r.movidas.length} actividad(es)` : ''}`,
         undo: vars.lag == null && r.id ? () => { borrarDep.mutate(r.id!); setToast(null) } : undefined,
       })
+      invalidar()
+    },
+    onError: (e: Error) => setToast({ msg: e.message, error: true }),
+  })
+  // Edición rápida desde el panel lateral: metrado / F.Inicio / F.Fin.
+  // El PUT re-prorratea y dispara la cascada FS si el rango cambió.
+  const editarAct = useMutation({
+    mutationFn: ({ id, patch }: { id: number; patch: Record<string, unknown> }) =>
+      api(`/ev/programacion/actividades/${id}`, { method: 'PUT', body: JSON.stringify(patch) }),
+    onSuccess: (j: unknown) => {
+      const m = (j as { movidas?: number[] })?.movidas
+      setToast({ msg: `✓ Actividad actualizada${m?.length ? ` · la cascada movió ${m.length} actividad(es)` : ''}` })
       invalidar()
     },
     onError: (e: Error) => setToast({ msg: e.message, error: true }),
@@ -135,22 +151,24 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
   const laborable = (f: string) => diasSemana.has(isoDow(f)) && !feriados.has(f)
 
   // BFS transitivo sobre las actividades visibles para pintar la cadena.
+  // El clic (cadenaDe) manda; si no hay, el hover con «Mostrar relaciones».
   const cadena = (() => {
-    if (cadenaDe == null || !d) return null
+    const focalId = cadenaDe ?? (mostrarRel ? hoverDe : null)
+    if (focalId == null || !d) return null
     const acts = d.grupos.flatMap(g => g.actividades)
     const porId = new Map(acts.map(a => [a.id, a]))
-    const azules = new Set<number>(); const violetas = new Set<number>()
-    const subir = [cadenaDe]
+    const azules = new Set<number>(); const verdes = new Set<number>()
+    const subir = [focalId]
     while (subir.length) {
       const a = porId.get(subir.pop()!)
       for (const p of a?.predecesoras ?? []) if (!azules.has(p.id)) { azules.add(p.id); subir.push(p.id) }
     }
-    const bajar = [cadenaDe]
+    const bajar = [focalId]
     while (bajar.length) {
       const a = porId.get(bajar.pop()!)
-      for (const s of a?.sucesoras ?? []) if (!violetas.has(s)) { violetas.add(s); bajar.push(s) }
+      for (const s of a?.sucesoras ?? []) if (!verdes.has(s)) { verdes.add(s); bajar.push(s) }
     }
-    return { focal: cadenaDe, azules, violetas }
+    return { focal: focalId, azules, verdes }
   })()
 
   return (
@@ -177,6 +195,12 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
             vincular.on ? 'border-amber-500/60 bg-amber-500/15 text-k-amber' : 'border-k-border bg-k-raised text-k-text2 hover:bg-k-border'}`}>
           🔗 Vincular
         </button>
+        <label className="flex items-center gap-1.5 text-xs text-k-text2 px-2.5 py-2 rounded-lg border border-k-border bg-k-raised cursor-pointer select-none"
+          title="Al pasar el mouse por una actividad vinculada se resalta su cadena: azul = antecesoras, verde = sucesoras">
+          <input type="checkbox" checked={mostrarRel} onChange={e => setMostrarRel(e.target.checked)}
+            className="accent-amber-500" />
+          Mostrar relaciones
+        </label>
         {grid.isFetching && <Loader2 size={14} className="animate-spin text-k-text3" />}
         {desde < iso(lunesDe(new Date())) && (
           <span className="text-[11px] font-bold text-k-amber bg-amber-500/10 border border-amber-500/30 rounded-lg px-2.5 py-1.5">
@@ -234,6 +258,7 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
                 onCadena={id => { setCadenaDe(v => (v === id ? null : id)); setPanelDe(v => (v === id ? null : id)) }}
                 vincular={vincular} onPick={pick}
                 onPanel={id => { setPanelDe(id); setCadenaDe(id) }}
+                onHover={setHoverDe}
                 onReal={(actId, fecha, v) => guardarReal.mutate({ actId, fecha, v })} />
             ))}
             {(d?.grupos ?? []).length === 0 && !grid.isLoading && (
@@ -279,100 +304,189 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
           onIr={id => { setPanelDe(id); setCadenaDe(id) }}
           onCrear={(suc, pred) => crearDep.mutate({ suc, pred })}
           onLag={(suc, pred, lag) => crearDep.mutate({ suc, pred, lag })}
-          onQuitar={depId => borrarDep.mutate(depId)} />
+          onQuitar={depId => borrarDep.mutate(depId)}
+          onGuardarAct={(id, patch) => editarAct.mutate({ id, patch })} />
       )}
     </div>
   )
 }
 
-// ── Panel lateral de dependencias (entrega 2 del combo clic-clic + panel) ──
-// Grafo de la actividad: PREDECESORAS → focal → SUCESORAS, con lag editable,
-// quitar vínculo y agregar antecesora/sucesora buscando en el rango visible.
-function PanelDeps({ actId, data, onCerrar, onIr, onCrear, onLag, onQuitar }: {
+// ── Panel «Dependencias» (grafo estilo Panel Maestro, elección de Jean) ──
+// Cadena visual: ● PREDECESORAS (azul) ↓ actividad seleccionada (ámbar) ↓
+// ● SUCESORAS (verde). Clic en una tarjeta = ver/editar ese vínculo en
+// «Detalles de la dependencia»; ⤢ = centrar el grafo en esa actividad.
+// El metrado y las fechas de la actividad se editan aquí mismo (Enter o
+// salir del campo guarda; el API re-prorratea y corre la cascada FS).
+
+interface DepSel {
+  dep_id: number; lag: number; predId: number; sucId: number
+  predTitulo: string; sucTitulo: string
+}
+interface Nodo { id: number; titulo: string; a?: ActGrid; dep: DepSel | null }
+
+// Campo editable con commit al salir (mismo patrón no-controlado de CeldaDia).
+function CampoAct({ etiqueta, tipo, valor, onCommit }: {
+  etiqueta: string; tipo: 'text' | 'date'; valor: string
+  onCommit: (v: string) => void
+}) {
+  return (
+    <label className="text-[9px] text-k-text3 flex flex-col gap-0.5 min-w-0">
+      {etiqueta}
+      <input key={valor} type={tipo} defaultValue={valor}
+        inputMode={tipo === 'text' ? 'decimal' : undefined}
+        onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+        onBlur={e => { const v = e.target.value.trim(); if (v !== valor) onCommit(v) }}
+        className="w-full bg-k-void border border-k-border rounded-lg px-1.5 py-1 text-[11px] text-k-text outline-none focus:border-k-amber" />
+    </label>
+  )
+}
+
+function PanelDeps({ actId, data, onCerrar, onIr, onCrear, onLag, onQuitar, onGuardarAct }: {
   actId: number; data: GridResp
   onCerrar: () => void; onIr: (id: number) => void
   onCrear: (suc: number, pred: number) => void
   onLag: (suc: number, pred: number, lag: number) => void
   onQuitar: (depId: number) => void
+  onGuardarAct: (id: number, patch: Record<string, unknown>) => void
 }) {
+  const [sel, setSel] = useState<DepSel | null>(null)
   const [agregar, setAgregar] = useState<'pred' | 'suc' | null>(null)
   const [busca, setBusca] = useState('')
   const acts = data.grupos.flatMap(g => g.actividades)
   const porId = new Map(acts.map(a => [a.id, a]))
   const focal = porId.get(actId)
   if (!focal) return null
-  const preds = focal.predecesoras ?? []
-  const sucs = (focal.sucesoras ?? []).map(id => porId.get(id)).filter(Boolean) as ActGrid[]
-  const vinculadas = new Set([actId, ...preds.map(p => p.id), ...sucs.map(s => s.id)])
+
+  // Cadena hacia ARRIBA: sube mientras haya UNA sola predecesora directa
+  // (vista lineal como la imagen); con varias, se muestran en paralelo y
+  // ahí se detiene la subida.
+  const nivelesUp: Nodo[][] = []
+  let cur: ActGrid | undefined = focal
+  for (let i = 0; i < 8 && cur; i++) {
+    const abajo: ActGrid = cur
+    const ps = abajo.predecesoras ?? []
+    if (!ps.length) break
+    nivelesUp.unshift(ps.map(p => ({
+      id: p.id, titulo: p.titulo, a: porId.get(p.id),
+      dep: { dep_id: p.dep_id, lag: p.lag_dias, predId: p.id, sucId: abajo.id,
+             predTitulo: p.titulo, sucTitulo: abajo.titulo },
+    })))
+    cur = ps.length === 1 ? porId.get(ps[0].id) : undefined
+  }
+  // Cadena hacia ABAJO, con la misma regla.
+  const nivelesDown: Nodo[][] = []
+  cur = focal
+  for (let i = 0; i < 8 && cur; i++) {
+    const arriba: ActGrid = cur
+    const ids = arriba.sucesoras ?? []
+    if (!ids.length) break
+    nivelesDown.push(ids.map(id => {
+      const sa = porId.get(id)
+      const dp = sa?.predecesoras?.find(p => p.id === arriba.id)
+      return {
+        id, titulo: sa?.titulo ?? `#${id}`, a: sa,
+        dep: dp ? { dep_id: dp.dep_id, lag: dp.lag_dias, predId: arriba.id, sucId: id,
+                    predTitulo: arriba.titulo, sucTitulo: sa?.titulo ?? `#${id}` } : null,
+      }
+    }))
+    cur = ids.length === 1 ? porId.get(ids[0]) : undefined
+  }
+
+  const vinculadas = new Set([actId, ...(focal.predecesoras ?? []).map(p => p.id), ...(focal.sucesoras ?? [])])
   const q = busca.trim().toLowerCase()
   const candidatas = acts.filter(a => !vinculadas.has(a.id)
     && (!q || a.titulo.toLowerCase().includes(q) || String(a.id) === q)).slice(0, 30)
-  const filaCls = 'flex items-center gap-2 rounded-lg border border-k-border bg-k-raised/40 px-2 py-1.5'
+
+  const Tarjeta = ({ n, clr }: { n: Nodo; clr: 'azul' | 'verde' }) => {
+    const activa = sel != null && n.dep != null && n.dep.dep_id === sel.dep_id
+    const base = clr === 'azul'
+      ? 'border-blue-500/50 bg-blue-500/10 hover:bg-blue-500/20'
+      : 'border-green-500/50 bg-green-500/10 hover:bg-green-500/20'
+    return (
+      <div onClick={() => n.dep && setSel(activa ? null : n.dep)}
+        title={n.dep ? 'Clic: ver y editar este vínculo en «Detalles de la dependencia»' : 'Actividad fuera del rango visible del grid'}
+        className={`rounded-lg border px-2.5 py-1.5 cursor-pointer flex-1 min-w-[130px] ${base} ${activa ? 'ring-2 ring-amber-400/70' : ''}`}>
+        <div className="flex items-center gap-1">
+          <span className="text-[11px] text-k-text truncate flex-1">{n.titulo}</span>
+          {n.a && (
+            <button onClick={e => { e.stopPropagation(); setSel(null); onIr(n.id) }}
+              title="Centrar el grafo en esta actividad"
+              className="text-[10px] text-k-text3 hover:text-k-text flex-shrink-0">⤢</button>
+          )}
+        </div>
+        <p className="text-[9px] text-k-text3">
+          FS +{n.dep?.lag ?? 0}d{n.a ? ` · ${fmtCorta(n.a.fecha)} → ${fmtCorta(n.a.fecha_fin)}` : ''}
+        </p>
+      </div>
+    )
+  }
+
   return (
-    <div className="fixed inset-y-0 right-0 z-40 w-[340px] bg-k-surface border-l border-k-border shadow-2xl flex flex-col">
+    <div className="fixed inset-y-0 right-0 z-40 w-[360px] bg-k-surface border-l border-k-border shadow-2xl flex flex-col">
       <div className="flex items-center gap-2 px-4 py-3 border-b border-k-border">
-        <p className="text-xs font-bold text-k-text">Vínculos de la actividad</p>
+        <p className="text-sm font-bold text-k-text">Dependencias</p>
         <button onClick={onCerrar} className="ml-auto text-k-text3 hover:text-k-text">✕</button>
       </div>
-      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
+      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+
         <div>
-          <p className="text-[10px] uppercase font-bold text-k-blue mb-1.5">⬆ Antes (predecesoras)</p>
-          <div className="space-y-1.5">
-            {preds.map(p => (
-              <div key={p.dep_id} className={filaCls}>
-                <button onClick={() => onIr(p.id)} title="Ver los vínculos de esta actividad"
-                  className="text-[11px] text-k-text2 flex-1 truncate text-left hover:text-k-text">
-                  {p.titulo}
-                  <span className="text-k-text3 block text-[9px]">termina {fmtCorta(p.fecha_fin)}</span>
-                </button>
-                <label className="text-[9px] text-k-text3">lag
-                  <input key={p.lag_dias} defaultValue={p.lag_dias} inputMode="numeric"
-                    title="Días de espera tras el fin de la antecesora (Enter para guardar)"
-                    onKeyDown={e => {
-                      if (e.key !== 'Enter') return
-                      const v = Number((e.target as HTMLInputElement).value)
-                      if (Number.isFinite(v) && v >= 0) onLag(actId, p.id, v)
-                    }}
-                    className="w-9 ml-1 bg-k-void border border-k-border rounded px-1 py-0.5 text-[10px] text-k-text text-center outline-none focus:border-k-amber" />
-                </label>
-                <button onClick={() => onQuitar(p.dep_id)} title="Quitar el vínculo"
-                  className="text-k-text3 hover:text-k-red text-[11px]">✕</button>
-              </div>
-            ))}
-            {preds.length === 0 && <p className="text-[11px] text-k-text3">Puede arrancar cuando se quiera.</p>}
+          <p className="text-[10px] text-k-text3 mb-1">Actividad seleccionada</p>
+          <div className="rounded-xl border border-amber-500/50 bg-amber-500/10 px-3 py-2 space-y-1.5">
+            <div className="flex items-center gap-1.5">
+              <span className={`w-2 h-2 rounded-full flex-shrink-0 ${ESTADO_DOT[focal.estado] ?? 'bg-zinc-500'}`} />
+              <p className="text-[12px] font-bold text-k-text truncate">{focal.titulo}</p>
+            </div>
+            {focal.partida_codigo && (
+              <p className="text-[9px] text-k-text3 font-mono">📌 {focal.partida_codigo}{focal.und ? ` · ${focal.und}` : ''}</p>
+            )}
+            <div className="grid grid-cols-3 gap-1.5">
+              <CampoAct etiqueta={`Metrado${focal.und ? ` (${focal.und})` : ''}`} tipo="text"
+                valor={focal.metrado_prog != null ? String(focal.metrado_prog) : ''}
+                onCommit={v => {
+                  if (v === '') { onGuardarAct(focal.id, { metrado_prog: null }); return }
+                  const m = Number(v)
+                  if (Number.isFinite(m) && m >= 0) onGuardarAct(focal.id, { metrado_prog: m })
+                }} />
+              <CampoAct etiqueta="F. Inicio" tipo="date" valor={focal.fecha}
+                onCommit={v => { if (v) onGuardarAct(focal.id, { fecha: v }) }} />
+              <CampoAct etiqueta="F. Fin" tipo="date" valor={focal.fecha_fin}
+                onCommit={v => { if (v) onGuardarAct(focal.id, { fecha_fin: v }) }} />
+            </div>
           </div>
         </div>
 
-        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-2.5 py-2">
-          <p className="text-[11px] font-bold text-k-amber truncate">▶ #{focal.id} {focal.titulo}</p>
-          <p className="text-[9px] text-k-text3">{fmtCorta(focal.fecha)} → {fmtCorta(focal.fecha_fin)}</p>
-        </div>
-
         <div>
-          <p className="text-[10px] uppercase font-bold text-violet-300 mb-1.5">⬇ Después (sucesoras)</p>
-          <div className="space-y-1.5">
-            {sucs.map(s => {
-              const dep = (s.predecesoras ?? []).find(p => p.id === actId)
-              return (
-                <div key={s.id} className={filaCls}>
-                  <button onClick={() => onIr(s.id)} title="Ver los vínculos de esta actividad"
-                    className="text-[11px] text-k-text2 flex-1 truncate text-left hover:text-k-text">
-                    {s.titulo}
-                    <span className="text-k-text3 block text-[9px]">empieza {fmtCorta(s.fecha)}{dep?.lag_dias ? ` · lag ${dep.lag_dias}d` : ''}</span>
-                  </button>
-                  {dep && (
-                    <button onClick={() => onQuitar(dep.dep_id)} title="Quitar el vínculo"
-                      className="text-k-text3 hover:text-k-red text-[11px]">✕</button>
-                  )}
+          <p className="text-[10px] uppercase font-bold text-k-blue mb-1.5">● Predecesoras</p>
+          {nivelesUp.length === 0 && (
+            <p className="text-[11px] text-k-text3 mb-1.5">Ninguna: puede arrancar cuando se quiera.</p>
+          )}
+          <div className="space-y-1">
+            {nivelesUp.map((nivel, i) => (
+              <Fragment key={`u${i}`}>
+                <div className="flex gap-1 flex-wrap">
+                  {nivel.map(n => <Tarjeta key={n.id} n={n} clr="azul" />)}
                 </div>
-              )
-            })}
-            {(focal.sucesoras ?? []).length > sucs.length && (
-              <p className="text-[10px] text-k-text3">
-                +{(focal.sucesoras ?? []).length - sucs.length} sucesora(s) fuera del rango visible.
-              </p>
-            )}
-            {(focal.sucesoras ?? []).length === 0 && <p className="text-[11px] text-k-text3">Nada depende de esta actividad.</p>}
+                <div className="text-center text-sm leading-none text-k-blue">↓</div>
+              </Fragment>
+            ))}
+            <div className="rounded-lg border-2 border-amber-400/70 bg-amber-500/15 px-2.5 py-1.5">
+              <p className="text-[11px] font-bold text-k-amber truncate">{focal.titulo}</p>
+              <p className="text-[9px] text-k-text3">{fmtCorta(focal.fecha)} → {fmtCorta(focal.fecha_fin)}</p>
+            </div>
+          </div>
+          <p className="text-[10px] uppercase font-bold text-green-400 mt-2 mb-1.5">● Sucesoras</p>
+          {nivelesDown.length === 0 && (
+            <p className="text-[11px] text-k-text3">Nada depende de esta actividad.</p>
+          )}
+          <div className="space-y-1">
+            {nivelesDown.map((nivel, i) => (
+              <Fragment key={`d${i}`}>
+                <div className="text-center text-sm leading-none text-green-400">↓</div>
+                <div className="flex gap-1 flex-wrap">
+                  {nivel.map(n => <Tarjeta key={n.id} n={n} clr="verde" />)}
+                </div>
+              </Fragment>
+            ))}
           </div>
         </div>
 
@@ -385,7 +499,7 @@ function PanelDeps({ actId, data, onCerrar, onIr, onCrear, onLag, onQuitar }: {
             </button>
             <button onClick={() => { setAgregar(v => v === 'suc' ? null : 'suc'); setBusca('') }}
               className={`text-[10px] px-2 py-1 rounded border font-bold ${
-                agregar === 'suc' ? 'border-violet-500/50 bg-violet-500/15 text-violet-300' : 'border-k-border text-k-text2 hover:bg-k-raised'}`}>
+                agregar === 'suc' ? 'border-green-500/50 bg-green-500/15 text-green-400' : 'border-k-border text-k-text2 hover:bg-k-raised'}`}>
               + sucesora
             </button>
           </div>
@@ -412,6 +526,35 @@ function PanelDeps({ actId, data, onCerrar, onIr, onCrear, onLag, onQuitar }: {
             </div>
           )}
         </div>
+
+        {sel && (
+          <div className="rounded-xl border border-k-border bg-k-raised/40 px-3 py-2.5 space-y-1.5">
+            <p className="text-[10px] uppercase font-bold text-k-text3">Detalles de la dependencia</p>
+            <p className="text-[11px] text-k-text2">
+              {sel.predTitulo} <span className="text-k-text3">→</span> {sel.sucTitulo}
+            </p>
+            <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[11px] items-center">
+              <span className="text-k-text3">Tipo</span>
+              <span className="text-k-text2">FS — Fin a Inicio</span>
+              <span className="text-k-text3">Lag</span>
+              <span className="flex items-center gap-1.5 text-k-text2">
+                <input key={`${sel.dep_id}:${sel.lag}`} defaultValue={sel.lag} inputMode="numeric"
+                  title="Días de espera tras el fin de la antecesora"
+                  onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+                  onBlur={e => {
+                    const v = Number(e.target.value)
+                    if (Number.isFinite(v) && v >= 0 && v !== sel.lag) onLag(sel.sucId, sel.predId, v)
+                  }}
+                  className="w-12 bg-k-void border border-k-border rounded px-1.5 py-0.5 text-[11px] text-k-text text-center outline-none focus:border-k-amber" />
+                días
+              </span>
+            </div>
+            <button onClick={() => { onQuitar(sel.dep_id); setSel(null) }}
+              className="w-full text-[10px] font-bold px-2 py-1.5 rounded-lg border border-red-500/40 text-k-red hover:bg-red-500/10">
+              🗑 Quitar este vínculo
+            </button>
+          </div>
+        )}
       </div>
       <p className="px-4 py-2 text-[9px] text-k-text3 border-t border-k-border">
         FS: la sucesora arranca al terminar la antecesora (+lag). Mover una antecesora
@@ -420,7 +563,6 @@ function PanelDeps({ actId, data, onCerrar, onIr, onCrear, onLag, onQuitar }: {
     </div>
   )
 }
-
 // Paleta de "cadenas" (inspiración Panel Maestro): cada partida desplegada
 // por etapas recibe un color para identificar su flujo constructivo.
 const PALETA_CADENA = ['#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#14b8a6']
@@ -452,14 +594,15 @@ function agruparPorPartida(acts: ActGrid[]): ItemGrid[] {
 
 interface Vincular { on: boolean; primera: number | null }
 
-function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, onReal, vincular, onPick, onPanel }: {
+function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, onReal, vincular, onPick, onPanel, onHover }: {
   grupo: GridResp['grupos'][number]; fechas: string[]; hoy: string
   laborable: (f: string) => boolean
-  cadena: { focal: number; azules: Set<number>; violetas: Set<number> } | null
+  cadena: { focal: number; azules: Set<number>; verdes: Set<number> } | null
   onCadena: (id: number) => void
   onEditar: (a: ActGrid) => void
   onReal: (actId: number, fecha: string, v: number | null) => void
   vincular: Vincular; onPick: (id: number) => void; onPanel: (id: number) => void
+  onHover: (id: number | null) => void
 }) {
   // Partidas compactadas (▸): sus etapas se muestran en UNA sola fila agregada.
   const [compactas, setCompactas] = useState<Set<number>>(new Set())
@@ -482,7 +625,7 @@ function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, o
           return <FilaActividad key={it.a.id} a={it.a} fechas={fechas} hoy={hoy}
             laborable={laborable} cadena={cadena} onCadena={onCadena}
             onEditar={onEditar} onReal={onReal}
-            vincular={vincular} onPick={onPick} onPanel={onPanel} />
+            vincular={vincular} onPick={onPick} onPanel={onPanel} onHover={onHover} />
         }
         const color = PALETA_CADENA[(idxCadena.get(it.pid) ?? 0) % PALETA_CADENA.length]
         const compacta = compactas.has(it.pid)
@@ -508,7 +651,7 @@ function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, o
               <FilaActividad key={a.id} a={a} fechas={fechas} hoy={hoy}
                 laborable={laborable} cadena={cadena} onCadena={onCadena}
                 onEditar={onEditar} onReal={onReal} color={color}
-                vincular={vincular} onPick={onPick} onPanel={onPanel} />
+                vincular={vincular} onPick={onPick} onPanel={onPanel} onHover={onHover} />
             ))}
           </Fragment>
         )
@@ -577,15 +720,16 @@ function FilaPartidaCompacta({ acts, color, fechas, laborable, onToggle }: {
   )
 }
 
-function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, onReal, color, vincular, onPick, onPanel }: {
+function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, onReal, color, vincular, onPick, onPanel, onHover }: {
   a: ActGrid; fechas: string[]; hoy: string
   laborable: (f: string) => boolean
-  cadena: { focal: number; azules: Set<number>; violetas: Set<number> } | null
+  cadena: { focal: number; azules: Set<number>; verdes: Set<number> } | null
   onCadena: (id: number) => void
   onEditar: (a: ActGrid) => void
   onReal: (actId: number, fecha: string, v: number | null) => void
   color?: string
   vincular: Vincular; onPick: (id: number) => void; onPanel: (id: number) => void
+  onHover: (id: number | null) => void
 }) {
         const editable = a.estado !== 'CANCELADO'
         const saltos = new Set(a.dias_salto ?? [])
@@ -594,11 +738,13 @@ function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, 
         const claseCadena = !cadena ? ''
           : cadena.focal === a.id ? 'ring-1 ring-inset ring-amber-500/50'
           : cadena.azules.has(a.id) ? 'bg-blue-500/10'
-          : cadena.violetas.has(a.id) ? 'bg-violet-500/10'
+          : cadena.verdes.has(a.id) ? 'bg-green-500/10'
           : 'opacity-30'
         const esPrimera = vincular.on && vincular.primera === a.id
         return (
-          <tr key={a.id} className={`${a.estado === 'CANCELADO' ? 'opacity-50' : ''} ${claseCadena} ${esPrimera ? 'bg-amber-500/15' : ''}`}>
+          <tr key={a.id} className={`${a.estado === 'CANCELADO' ? 'opacity-50' : ''} ${claseCadena} ${esPrimera ? 'bg-amber-500/15' : ''}`}
+            onMouseEnter={() => onHover((a.dep_total ?? 0) > 0 ? a.id : null)}
+            onMouseLeave={() => onHover(null)}>
             <td onClick={() => (vincular.on ? onPick(a.id) : onEditar(a))}
               className={`${tdFijo} sticky left-0 z-10 cursor-pointer hover:bg-k-raised align-top`}
               style={color ? { borderLeft: `3px solid ${color}` } : undefined}
@@ -614,7 +760,7 @@ function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, 
                 {(a.rest_pend ?? 0) > 0 && <span className="text-[9px] font-bold text-k-red flex-shrink-0">⛔{a.rest_pend}</span>}
                 {(a.dep_total ?? 0) > 0 && (
                   <button onClick={e => { e.stopPropagation(); onCadena(a.id) }}
-                    title={`${a.dep_total} vínculo(s) — clic para resaltar la cadena (azul = antecesoras, violeta = sucesoras)`}
+                    title={`${a.dep_total} vínculo(s) — clic para resaltar la cadena (azul = antecesoras, verde = sucesoras)`}
                     className={`text-[9px] font-bold flex-shrink-0 px-1 rounded ${
                       cadena?.focal === a.id ? 'bg-amber-500/20 text-k-amber' : 'text-k-blue hover:bg-k-raised'}`}>
                     🔗{a.dep_total}
