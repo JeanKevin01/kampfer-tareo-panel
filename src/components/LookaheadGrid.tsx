@@ -5,7 +5,7 @@
 // ev_avances_diarios, la MISMA tabla del módulo de Valor Ganado).
 // EvaluacionSemanal = el formato "F030b - Planeamiento" (comprometido vs
 // alcanzado de la semana, con cumplimiento SI/NO y causa).
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { ChevronLeft, ChevronRight, Loader2, Printer } from 'lucide-react'
 import { api } from '@/lib/api'
@@ -884,6 +884,17 @@ export function EvaluacionSemanal() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['lookahead-grid'] }),
     onError: (e: Error) => alert(e.message),
   })
+  // Restricciones reportadas desde campo en esa semana (0032): la actividad
+  // se hizo, pero algo le bajó el rendimiento. No afectan el PPC.
+  const fin = useMemo(() => {
+    const f = new Date(lunes + 'T12:00:00'); f.setDate(f.getDate() + 6); return iso(f)
+  }, [lunes])
+  const ppc = useQuery<{ restricciones: Record<string, { cat: string; detalle: string; fecha: string }[]> }>({
+    queryKey: ['ppc-restricciones', lunes],
+    queryFn: () => api(`/ev/programacion/ppc?proyecto_id=${PROYECTO_ID}&desde=${lunes}&hasta=${fin}`),
+  })
+  const restPorAct = ppc.data?.restricciones ?? {}
+
   const mover = (dias: number) => {
     const d = new Date(lunes + 'T12:00:00'); d.setDate(d.getDate() + dias); setLunes(iso(lunesDe(d)))
   }
@@ -930,15 +941,17 @@ export function EvaluacionSemanal() {
               <th className={thBase}>CUMPL.</th>
               <th className={`${thBase} text-left min-w-[160px]`}>CAUSA (CAMPO)</th>
               <th className={`${thBase} text-left min-w-[200px]`}>CAUSA (PLANNER)</th>
+              <th className={`${thBase} text-left min-w-[190px]`}>RESTRICCIONES</th>
             </tr>
           </thead>
           <tbody>
             {(d?.grupos ?? []).map(g => (
               <EvalGrupo key={g.otm_id ?? '-'} grupo={g} fechas={fechas} cumplimiento={cumplimiento}
+                restricciones={restPorAct}
                 onCausaPlanner={(actId, cat, detalle) => causaPlanner.mutate({ actId, cat, detalle })} />
             ))}
             {(d?.grupos ?? []).length === 0 && !grid.isLoading && (
-              <tr><td colSpan={8 + fechas.length} className="px-4 py-6 text-center text-k-text3">Semana sin actividades programadas.</td></tr>
+              <tr><td colSpan={9 + fechas.length} className="px-4 py-6 text-center text-k-text3">Semana sin actividades programadas.</td></tr>
             )}
           </tbody>
         </table>
@@ -951,20 +964,23 @@ export function EvaluacionSemanal() {
         siga corriendo); NO recién cuando la semana cerró sin llegar; «…» = en curso. Marcar NO CUMPLIDA a
         mano (con causa) manda sobre el cálculo. CAUSA (CAMPO) la reporta el supervisor; CAUSA (PLANNER) la
         depura oficina — en el Pareto de PPC·Causas manda la del planner y, si no existe, cuenta la de campo.
+        RESTRICCIONES son las que el supervisor reportó desde campo <b>aunque la actividad sí se haya hecho</b>
+        (algo le bajó el rendimiento): no afectan el PPC y tienen su propio Pareto en PPC·Causas.
       </p>
     </div>
   )
 }
 
-function EvalGrupo({ grupo, fechas, cumplimiento, onCausaPlanner }: {
+function EvalGrupo({ grupo, fechas, cumplimiento, restricciones, onCausaPlanner }: {
   grupo: GridResp['grupos'][number]; fechas: string[]
   cumplimiento: (a: ActGrid, comprom: number, alcanz: number) => string[]
+  restricciones: Record<string, { cat: string; detalle: string; fecha: string }[]>
   onCausaPlanner: (actId: number, cat: string | null, detalle: string | null) => void
 }) {
   return (
     <>
       <tr>
-        <td colSpan={8 + fechas.length} className="border border-k-border px-2 py-1 font-bold bg-blue-500/15 text-k-blue">
+        <td colSpan={9 + fechas.length} className="border border-k-border px-2 py-1 font-bold bg-blue-500/15 text-k-blue">
           {grupo.otm_id ?? 'Sin OTM'}{grupo.otm_desc ? ` — ${grupo.otm_desc}` : ''}
         </td>
       </tr>
@@ -1013,6 +1029,15 @@ function EvalGrupo({ grupo, fechas, cumplimiento, onCausaPlanner }: {
                   onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
                   className="bg-transparent border-b border-k-border/60 text-[10px] text-k-text2 outline-none w-24 focus:border-k-amber" />
               </div>
+            </td>
+            {/* Restricciones que reportó el supervisor aunque el trabajo SÍ se hizo */}
+            <td className={`${tdFijo} text-amber-300/90`}>
+              {(restricciones[String(a.id)] ?? []).map((r, i) => (
+                <div key={i} className="leading-tight">
+                  • {r.detalle || CNC[r.cat] || r.cat}
+                  {r.detalle && <span className="text-k-text3"> ({CNC[r.cat] ?? r.cat})</span>}
+                </div>
+              ))}
             </td>
           </tr>
         )

@@ -1,8 +1,8 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   ChevronLeft, ChevronRight, Plus, X, Loader2, Printer, HardDrive,
-  Camera, User, Trash2, Ban, CheckCircle2, CalendarDays, ClipboardList, Copy, Check,
+  Camera, User, Trash2, Ban, CheckCircle2, CalendarDays, ClipboardList, Copy, Check, FileText,
 } from 'lucide-react'
 import { api, API_BASE } from '@/lib/api'
 import { CNC, TIPOS_RESTRICCION } from '@/lib/catalogos'
@@ -78,6 +78,7 @@ export default function Programacion() {
   const [repVer, setRepVer] = useState<Reporte | null>(null)
   const [verAlmacen, setVerAlmacen] = useState(false)
   const [verParte, setVerParte] = useState(false)
+  const [verSustento, setVerSustento] = useState(false)
   const [verCalendario, setVerCalendario] = useState(false)
 
   const sem = useQuery<Semana>({
@@ -121,6 +122,11 @@ export default function Programacion() {
             className={`flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border ${verAlmacen ? 'border-k-amber text-k-amber' : 'border-k-border bg-k-raised text-k-text2 hover:bg-k-border'}`}>
             <HardDrive size={14} /> Almacenamiento
           </button>
+          <button onClick={() => setVerSustento(true)}
+            title="Sustento de valorización: partes y fotos por partida"
+            className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-k-border bg-k-raised text-k-text2 hover:bg-k-border">
+            <FileText size={14} /> Reporte por partida
+          </button>
           <button onClick={() => setVerParte(true)}
             title="El parte diario tal como lo ve el supervisor (listo para copiar)"
             className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-k-border bg-k-raised text-k-text2 hover:bg-k-border">
@@ -136,6 +142,7 @@ export default function Programacion() {
       {verCalendario && <CalendarioLaboral />}
       {verAlmacen && <PanelAlmacenamiento onCambio={invalidar} />}
       {verParte && <ModalParteDia onClose={() => setVerParte(false)} />}
+      {verSustento && <ModalReportePartida onClose={() => setVerSustento(false)} />}
 
       {/* Vistas Last Planner: plan semanal / lookahead / aprendizaje */}
       <div className="flex gap-2">
@@ -892,6 +899,116 @@ function Restricciones({ actId, onCambio }: { actId: number; onCambio: () => voi
   )
 }
 
+// ── Sustento por partida: elige proyecto → partidas → rango y abre el PDF ──
+function ModalReportePartida({ onClose }: { onClose: () => void }) {
+  const [otm, setOtm] = useState('')
+  const [sel, setSel] = useState<Set<number>>(new Set())
+  const [filtro, setFiltro] = useState('')
+  const [desde, setDesde] = useState('')
+  const [hasta, setHasta] = useState('')
+
+  const otms = useQuery<{ otm_id: string; descripcion: string }[]>({
+    queryKey: ['otms-ev'],
+    queryFn: () => api('/ev/otms'),
+  })
+  const partidas = useQuery<{ id: number; codigo: string; descripcion: string; es_hoja?: boolean }[]>({
+    queryKey: ['partidas-otm', otm],
+    queryFn: () => api(`/ev/partidas?otm=${encodeURIComponent(otm)}`),
+    enabled: !!otm,
+  })
+
+  const lista = useMemo(() => {
+    const q = filtro.trim().toLowerCase()
+    return (partidas.data ?? []).filter(p =>
+      !q || p.codigo.toLowerCase().includes(q) || p.descripcion.toLowerCase().includes(q))
+  }, [partidas.data, filtro])
+
+  const toggle = (id: number) => setSel(s => {
+    const n = new Set(s)
+    if (n.has(id)) n.delete(id); else n.add(id)
+    return n
+  })
+
+  const abrir = () => {
+    const ids = [...sel].join(',')
+    window.open(`/programacion/reporte-partida?partidas=${ids}`
+      + `${desde ? `&desde=${desde}` : ''}${hasta ? `&hasta=${hasta}` : ''}`, '_blank')
+    onClose()
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-k-surface border border-k-border rounded-xl p-5 w-[620px] max-h-[88vh] overflow-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-1">
+          <h2 className="font-bold text-k-text flex items-center gap-2">
+            <FileText size={16} className="text-k-amber" /> Reporte por partida
+          </h2>
+          <button onClick={onClose} className="text-k-text3 hover:text-k-text"><X size={18} /></button>
+        </div>
+        <p className="text-xs text-k-text3 mb-4">
+          Sustento de valorización: cifras de la partida + los partes de campo con sus fotos,
+          del más antiguo al más nuevo.
+        </p>
+
+        <label className="block text-[10px] uppercase tracking-wider text-k-text3 mb-1">Proyecto</label>
+        <select value={otm} onChange={e => { setOtm(e.target.value); setSel(new Set()) }}
+          className="w-full bg-k-void border border-k-border rounded-lg px-3 py-2.5 text-sm text-k-text mb-3">
+          <option value="">— Elegir proyecto —</option>
+          {(otms.data ?? []).map(o => (
+            <option key={o.otm_id} value={o.otm_id}>{o.otm_id} · {o.descripcion}</option>
+          ))}
+        </select>
+
+        {otm && (
+          <>
+            <input value={filtro} onChange={e => setFiltro(e.target.value)}
+              placeholder="Buscar partida por código o descripción…"
+              className="w-full bg-k-void border border-k-border rounded-lg px-3 py-2 text-sm text-k-text mb-2" />
+            <div className="border border-k-border rounded-lg max-h-64 overflow-y-auto divide-y divide-k-border mb-3">
+              {partidas.isLoading ? (
+                <div className="flex items-center gap-2 justify-center py-6 text-k-text3 text-xs">
+                  <Loader2 size={14} className="animate-spin" /> Cargando partidas…
+                </div>
+              ) : lista.length === 0 ? (
+                <p className="text-center py-6 text-k-text3 text-xs">Sin partidas.</p>
+              ) : lista.map(p => (
+                <button key={p.id} type="button" onClick={() => toggle(p.id)}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-k-raised ${sel.has(p.id) ? 'bg-amber-500/10' : ''}`}>
+                  <span className={`w-4 h-4 rounded border flex items-center justify-center text-[10px] flex-shrink-0 ${
+                    sel.has(p.id) ? 'bg-k-amber border-k-amber text-black' : 'border-k-border'}`}>
+                    {sel.has(p.id) ? '✓' : ''}
+                  </span>
+                  <span className="font-mono text-[11px] text-k-amber flex-shrink-0">{p.codigo}</span>
+                  <span className="text-xs text-k-text2 truncate">{p.descripcion}</span>
+                </button>
+              ))}
+            </div>
+
+            <div className="flex gap-3 mb-4">
+              <div className="flex-1">
+                <label className="block text-[10px] uppercase tracking-wider text-k-text3 mb-1">Desde (opcional)</label>
+                <input type="date" value={desde} onChange={e => setDesde(e.target.value)}
+                  className="w-full bg-k-void border border-k-border rounded-lg px-3 py-2 text-sm text-k-text" />
+              </div>
+              <div className="flex-1">
+                <label className="block text-[10px] uppercase tracking-wider text-k-text3 mb-1">Hasta (opcional)</label>
+                <input type="date" value={hasta} onChange={e => setHasta(e.target.value)}
+                  className="w-full bg-k-void border border-k-border rounded-lg px-3 py-2 text-sm text-k-text" />
+              </div>
+            </div>
+            <p className="text-[10px] text-k-text3 mb-3">Sin fechas trae todo el historial de la partida.</p>
+          </>
+        )}
+
+        <button onClick={abrir} disabled={sel.size === 0}
+          className="w-full flex items-center justify-center gap-2 bg-k-amber text-k-void font-bold rounded-lg py-2.5 text-sm disabled:opacity-40">
+          <Printer size={15} /> Generar sustento ({sel.size} partida{sel.size !== 1 ? 's' : ''})
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ── Parte diario: el mismo texto que el supervisor manda al grupo ──
 // Sirve para reenviarlo desde oficina o pegarlo en el informe del cliente.
 function ModalParteDia({ onClose }: { onClose: () => void }) {
@@ -1078,6 +1195,7 @@ function PanelPPC() {
   interface Resp {
     semanal: { lunes: string; comprometidas: number; cumplidas: number; no_cumplidas: number; ppc: number | null }[]
     cnc: { causa: string; etiqueta: string; n: number }[]
+    pareto_restricciones?: { causa: string; etiqueta: string; n: number }[]
     por_supervisor: { supervisor_id: string; nombre?: string; comprometidas: number; cumplidas: number; ppc: number | null }[]
   }
   const [nSem, setNSem] = useState(8)
@@ -1091,6 +1209,8 @@ function PanelPPC() {
   const totNC = (d?.semanal ?? []).reduce((s, w) => s + w.no_cumplidas, 0)
   const ppcGlobal = totC ? totE / totC : null
   const maxCnc = Math.max(1, ...(d?.cnc ?? []).map(c => c.n))
+  const rest = d?.pareto_restricciones ?? []
+  const maxRest = Math.max(1, ...rest.map(c => c.n))
   const pctTxt = (v: number | null) => (v == null ? '—' : `${(v * 100).toFixed(0)}%`)
   const ppcClr = (v: number | null) => (v == null ? 'text-k-text3' : v >= 0.75 ? 'text-k-green' : v >= 0.5 ? 'text-k-amber' : 'text-k-red')
 
@@ -1154,6 +1274,31 @@ function PanelPPC() {
             ))}
             {(d?.cnc ?? []).length === 0 && <p className="text-k-text3 text-xs">Sin no-cumplimientos registrados 🎉</p>}
           </div>
+        </div>
+      </div>
+
+      {/* Restricciones reportadas desde campo: el trabajo SÍ se hizo, pero algo
+          lo frenó. Van aparte del PPC — mezclarlas falsearía el indicador. */}
+      <div className="bg-k-surface border border-k-border rounded-xl p-4">
+        <p className="text-xs font-bold text-k-text mb-1">
+          Restricciones que bajaron el rendimiento{' '}
+          <span className="text-k-text3 font-normal">(Pareto — reportadas por los supervisores)</span>
+        </p>
+        <p className="text-[10px] text-k-text3 mb-3">
+          La actividad se ejecutó, pero el supervisor reportó que algo le restó productividad.
+          No afectan el PPC; sirven para atacar lo que se repite.
+        </p>
+        <div className="space-y-2">
+          {rest.map(c => (
+            <div key={c.causa} className="flex items-center gap-2">
+              <span className="text-[10px] text-k-text2 w-44 flex-shrink-0 truncate" title={c.etiqueta}>{c.etiqueta}</span>
+              <div className="flex-1 h-4 bg-k-raised rounded overflow-hidden">
+                <div className="h-full bg-amber-500/60 rounded" style={{ width: `${Math.round((c.n / maxRest) * 100)}%` }} />
+              </div>
+              <span className="text-[11px] font-bold text-k-text w-6 text-right">{c.n}</span>
+            </div>
+          ))}
+          {rest.length === 0 && <p className="text-k-text3 text-xs">Ningún supervisor reportó restricciones en el periodo.</p>}
         </div>
       </div>
 
