@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   ChevronLeft, ChevronRight, Plus, X, Loader2, Printer, HardDrive,
-  Camera, User, Trash2, Ban, CheckCircle2, CalendarDays,
+  Camera, User, Trash2, Ban, CheckCircle2, CalendarDays, ClipboardList, Copy, Check,
 } from 'lucide-react'
 import { api, API_BASE } from '@/lib/api'
 import { CNC, TIPOS_RESTRICCION } from '@/lib/catalogos'
@@ -23,6 +23,10 @@ export interface Reporte {
   id: number; fecha: string; otm_id?: string; actividad_id?: number | null
   supervisor_id?: string; supervisor_nombre?: string; descripcion?: string
   creado_en?: string; fotos: Foto[]
+  // Parte estructurado del supervisor (0032)
+  area?: string | null; turno?: string | null
+  anotaciones?: string[] | null
+  restricciones?: { cat: string; detalle: string }[] | null
 }
 export interface Actividad {
   id: number; fecha: string; otm_id?: string | null; otm_desc?: string | null
@@ -73,6 +77,7 @@ export default function Programacion() {
   const [modalLote, setModalLote] = useState<string | null>(null)   // fecha base del wizard por partidas
   const [repVer, setRepVer] = useState<Reporte | null>(null)
   const [verAlmacen, setVerAlmacen] = useState(false)
+  const [verParte, setVerParte] = useState(false)
   const [verCalendario, setVerCalendario] = useState(false)
 
   const sem = useQuery<Semana>({
@@ -116,6 +121,11 @@ export default function Programacion() {
             className={`flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border ${verAlmacen ? 'border-k-amber text-k-amber' : 'border-k-border bg-k-raised text-k-text2 hover:bg-k-border'}`}>
             <HardDrive size={14} /> Almacenamiento
           </button>
+          <button onClick={() => setVerParte(true)}
+            title="El parte diario tal como lo ve el supervisor (listo para copiar)"
+            className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-k-border bg-k-raised text-k-text2 hover:bg-k-border">
+            <ClipboardList size={14} /> Parte del día
+          </button>
           <button onClick={() => window.open(`/programacion/imprimir?lunes=${lunes}`, '_blank')}
             className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-k-border bg-k-raised text-k-text2 hover:bg-k-border">
             <Printer size={14} /> Reporte semanal
@@ -125,6 +135,7 @@ export default function Programacion() {
 
       {verCalendario && <CalendarioLaboral />}
       {verAlmacen && <PanelAlmacenamiento onCambio={invalidar} />}
+      {verParte && <ModalParteDia onClose={() => setVerParte(false)} />}
 
       {/* Vistas Last Planner: plan semanal / lookahead / aprendizaje */}
       <div className="flex gap-2">
@@ -881,6 +892,60 @@ function Restricciones({ actId, onCambio }: { actId: number; onCambio: () => voi
   )
 }
 
+// ── Parte diario: el mismo texto que el supervisor manda al grupo ──
+// Sirve para reenviarlo desde oficina o pegarlo en el informe del cliente.
+function ModalParteDia({ onClose }: { onClose: () => void }) {
+  const [fecha, setFecha] = useState(iso(new Date()))
+  const [copiado, setCopiado] = useState('')
+
+  const { data, isLoading } = useQuery<{ fecha: string; partes: { supervisor_id: string; supervisor: string; texto: string }[] }>({
+    queryKey: ['reporte-dia', fecha],
+    queryFn: () => api(`/ev/programacion/reporte-dia?fecha=${fecha}`),
+  })
+
+  const copiar = (id: string, texto: string) => {
+    navigator.clipboard?.writeText(texto).then(() => {
+      setCopiado(id); setTimeout(() => setCopiado(''), 2000)
+    }).catch(() => {})
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-k-surface border border-k-border rounded-xl p-5 w-[680px] max-h-[88vh] overflow-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="font-bold text-k-text flex items-center gap-2">
+            <ClipboardList size={16} className="text-k-amber" /> Parte diario por supervisor
+          </h2>
+          <button onClick={onClose} className="text-k-text3 hover:text-k-text"><X size={18} /></button>
+        </div>
+        <input type="date" value={fecha} onChange={e => setFecha(e.target.value)}
+          className="bg-k-void border border-k-border rounded-lg px-3 py-2 text-sm text-k-text mb-4" />
+        {isLoading ? (
+          <div className="flex items-center gap-2 text-k-text3 text-sm py-8 justify-center">
+            <Loader2 size={15} className="animate-spin" /> Cargando…
+          </div>
+        ) : !data?.partes.length ? (
+          <p className="text-k-text3 text-sm py-6 text-center">Nadie reportó ese día.</p>
+        ) : data.partes.map(p => (
+          <div key={p.supervisor_id} className="mb-4">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-sm font-bold text-k-text">{p.supervisor}</span>
+              <button onClick={() => copiar(p.supervisor_id, p.texto)}
+                className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border border-k-border text-k-text2 hover:border-k-amber">
+                {copiado === p.supervisor_id ? <Check size={12} className="text-k-green" /> : <Copy size={12} />}
+                {copiado === p.supervisor_id ? 'Copiado' : 'Copiar'}
+              </button>
+            </div>
+            <pre className="bg-k-void border border-k-border rounded-lg p-3 text-[11px] font-mono text-k-text2 whitespace-pre-wrap leading-relaxed">
+              {p.texto}
+            </pre>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function ModalReporte({ rep, onClose }: { rep: Reporte; onClose: () => void }) {
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={onClose}>
@@ -891,8 +956,37 @@ function ModalReporte({ rep, onClose }: { rep: Reporte; onClose: () => void }) {
         </div>
         <p className="text-xs text-k-text3 mb-3">
           {rep.fecha} · {rep.otm_id} · {rep.supervisor_nombre || rep.supervisor_id}
+          {rep.turno ? ` · turno ${rep.turno.toLowerCase()}` : ''}
+          {rep.area ? ` · ${rep.area}` : ''}
         </p>
-        {rep.descripcion && <p className="text-sm text-k-text2 mb-3 whitespace-pre-wrap">{rep.descripcion}</p>}
+        {/* Parte estructurado: viñetas de lo ejecutado + lo que frenó el avance */}
+        {rep.anotaciones && rep.anotaciones.length > 0 ? (
+          <ul className="mb-3 space-y-1">
+            {rep.anotaciones.map((n, i) => (
+              <li key={i} className="text-sm text-k-text2 flex gap-2">
+                <span className="text-k-amber font-bold">•</span><span>{n}</span>
+              </li>
+            ))}
+          </ul>
+        ) : rep.descripcion && (
+          <p className="text-sm text-k-text2 mb-3 whitespace-pre-wrap">{rep.descripcion}</p>
+        )}
+        {rep.restricciones && rep.restricciones.length > 0 && (
+          <div className="mb-3 border border-red-500/20 bg-red-500/5 rounded-lg p-3">
+            <div className="text-[10px] font-bold text-k-red uppercase tracking-wider mb-1.5">
+              Restricciones que bajaron el rendimiento
+            </div>
+            <ul className="space-y-1">
+              {rep.restricciones.map((r, i) => (
+                <li key={i} className="text-xs text-k-text2">
+                  <span className="text-k-red font-bold">• </span>
+                  {r.detalle || CNC[r.cat] || r.cat}
+                  {r.detalle && <span className="text-k-text3"> ({CNC[r.cat] || r.cat})</span>}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         <div className="grid grid-cols-2 gap-2">
           {rep.fotos.map(f => f.url
             ? <img key={f.id} src={mediaUrl(f.url)} alt="" className="w-full rounded-lg border border-k-border" loading="lazy" />
