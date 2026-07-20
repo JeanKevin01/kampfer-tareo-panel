@@ -12,14 +12,15 @@ import { api, API_BASE } from '@/lib/api'
 interface Foto { id: number; url: string | null; url_thumb: string | null; purgada: boolean }
 interface ReporteBloque {
   id: number; fecha: string; area: string | null; turno: string | null
-  actividad: string | null; supervisor: string; texto: string; fotos: Foto[]
+  actividad: string | null; supervisor: string; texto: string
+  hh_dia: number; fotos: Foto[]
 }
 interface PartidaBloque {
   partida: {
     id: number; codigo: string; descripcion: string; unidad: string | null
     otm_id: string | null; otm_desc: string | null
     metrado_presup: number; metrado_ejec: number; avance: number | null
-    hh_presup: number; hh_gastadas: number
+    hh_presup: number; hh_gastadas: number; hh_rango: number; sin_tareo: boolean
   }
   reportes: ReporteBloque[]
 }
@@ -118,18 +119,37 @@ export default function ReportePartidaPrint() {
                     {b.partida.avance == null ? '—' : `${(b.partida.avance * 100).toFixed(1)}%`}
                   </td>
                   <td className="border border-gray-300 px-2 py-1.5">{nf(b.partida.hh_presup, 1)}</td>
-                  <td className="border border-gray-300 px-2 py-1.5">{nf(b.partida.hh_gastadas, 1)}</td>
+                  <td className="border border-gray-300 px-2 py-1.5">
+                    {nf(b.partida.hh_gastadas, 1)}
+                    {b.partida.hh_rango !== b.partida.hh_gastadas && (
+                      <span className="text-gray-500"> ({nf(b.partida.hh_rango, 1)} en el periodo)</span>
+                    )}
+                  </td>
                 </tr>
               </tbody>
             </table>
+
+            {/* Incoherencia visible: hay partes de campo pero el tareo no cargó
+                HH a esta partida. Mejor decirlo que imprimir un 0 sin explicar. */}
+            {b.partida.sin_tareo && (
+              <p className="text-[11px] text-amber-700 border border-amber-300 bg-amber-50 rounded px-3 py-2 mb-5">
+                Hay reportes de campo pero <b>ninguna HH del tareo quedó cargada a esta partida</b>.
+                Revísalo en «Registros y HH» del día: el tareo pudo enviarse sin partida, con 0 HH,
+                o lo reemplazó un envío posterior del mismo supervisor/OTM/día.
+              </p>
+            )}
 
             {b.reportes.length === 0 ? (
               <p className="text-sm text-gray-500 italic">Sin reportes de campo en el periodo.</p>
             ) : b.reportes.map(r => (
               <div key={r.id} className="quiebre mb-7">
-                <h3 className="text-sm font-bold border-b border-gray-300 pb-1 mb-2">
-                  {fechaLarga(r.fecha)}
-                  {r.actividad ? ` · ${r.actividad}` : ''}
+                <h3 className="text-sm font-bold border-b border-gray-300 pb-1 mb-2 flex justify-between gap-3">
+                  <span>{fechaLarga(r.fecha)}{r.actividad ? ` · ${r.actividad}` : ''}</span>
+                  {r.hh_dia > 0 && (
+                    <span className="font-normal text-xs text-gray-600 whitespace-nowrap">
+                      {nf(r.hh_dia, 1)} HH
+                    </span>
+                  )}
                 </h3>
                 {/* El parte tal como lo envió el supervisor */}
                 <pre className="text-[11px] leading-relaxed whitespace-pre-wrap bg-gray-50 border border-gray-200 rounded p-3"
