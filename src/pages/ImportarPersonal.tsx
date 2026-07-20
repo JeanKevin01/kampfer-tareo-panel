@@ -10,7 +10,7 @@ interface Fila {
   destino: 'TRABAJADOR' | 'SUPERVISOR'
   _fila: number; _error: string | null; _exists?: boolean
 }
-interface Resultado { nombre: string; ok: boolean; msg: string; destino: string }
+interface Resultado { nombre: string; ok: boolean; msg: string; destino: string; usuario?: string | null }
 
 // Detecta variantes: SUPERVISOR, SUPERVISOR DE CAMPO, SUPERVISORA, SUPERV., etc.
 function esSupervisor(cargo: string): boolean {
@@ -84,13 +84,17 @@ export default function ImportarPersonal() {
     return { dniSet, trabNameSet, supNameSet }
   }, [existTrab, existSup])
 
-  // Marca cada fila con _exists si ya está registrada (supervisor por nombre; trabajador por DNI o nombre)
+  // TODA persona entra al padrón de trabajadores; ser supervisor es un rol
+  // adicional. Una fila está "completa" (_exists) solo si ya está en el padrón
+  // Y, cuando viene marcada como supervisor, ya tiene ese rol — así un
+  // trabajador existente que ahora reportará SÍ se procesa (para darle acceso).
   const filasMarcadas = useMemo(() => filas.map(f => {
     let _exists = false
     if (!f._error) {
+      const enPadron = (!!f.dni && dniSet.has(f.dni.trim())) || trabNameSet.has(f.nombre.trim())
       _exists = f.destino === 'SUPERVISOR'
-        ? supNameSet.has(f.nombre.trim())
-        : ((!!f.dni && dniSet.has(f.dni.trim())) || trabNameSet.has(f.nombre.trim()))
+        ? enPadron && supNameSet.has(f.nombre.trim())
+        : enPadron
     }
     return { ...f, _exists }
   }), [filas, dniSet, trabNameSet, supNameSet])
@@ -154,14 +158,20 @@ export default function ImportarPersonal() {
     for (let i = 0; i < validas.length; i++) {
       const f = validas[i]
       try {
-        const endpoint = f.destino === 'SUPERVISOR' ? '/admin/supervisor' : '/admin/trabajador'
-        const body = f.destino === 'SUPERVISOR'
-          ? { nombre: f.nombre, email: '' }
-          : { nombre: f.nombre, cargo: f.cargo, dni: f.dni, tipo: f.tipo }
-        const j = await api<{ id: string }>(endpoint, {
-          method: 'POST', body: JSON.stringify(body),
+        // Un solo destino: el padrón de trabajadores. El flag es_supervisor
+        // añade el rol (ficha de supervisor + acceso a la app con clave 1234).
+        const j = await api<{ id: string; usuario?: string | null; password?: string | null }>(
+          '/admin/trabajador', {
+            method: 'POST',
+            body: JSON.stringify({
+              nombre: f.nombre, cargo: f.cargo, dni: f.dni, tipo: f.tipo,
+              es_supervisor: f.destino === 'SUPERVISOR',
+            }),
+          })
+        res.push({
+          nombre: f.nombre, ok: true, destino: f.destino, usuario: j.usuario,
+          msg: j.usuario ? `ID: ${j.id} · acceso ${j.usuario} / ${j.password}` : `ID: ${j.id}`,
         })
-        res.push({ nombre: f.nombre, ok: true, msg: `ID: ${j.id}`, destino: f.destino })
       } catch (e) {
         res.push({ nombre: f.nombre, ok: false, msg: (e as Error).message || 'Error de conexión', destino: f.destino })
       }
@@ -244,11 +254,14 @@ export default function ImportarPersonal() {
               <span className="text-k-text font-bold">DNI</span> (opcional),{' '}
               <span className="text-k-text font-bold">TIPO</span> (DIRECTO / INDIRECTO, default DIRECTO) y{' '}
               <span className="text-k-text font-bold">ES_SUPERVISOR</span> (SI / NO).
-              La columna <span className="text-k-amber font-bold">ES_SUPERVISOR=SI</span> crea a la persona como{' '}
-              <span className="text-k-amber font-bold">supervisor de tareo</span>. Si la dejas vacía, se usa el
-              criterio anterior (cargo que contenga «SUPERVISOR»). Así un{' '}
+              <b className="text-k-text"> Todos</b> entran al padrón de trabajadores (directos e indirectos);
+              los marcados con <span className="text-k-amber font-bold">ES_SUPERVISOR=SI</span> reciben{' '}
+              <span className="text-k-amber font-bold">además</span> el rol de supervisor y su acceso a la app
+              (clave <span className="text-k-amber font-bold">1234</span>). Si la dejas vacía se usa el cargo
+              (que contenga «SUPERVISOR»), así un{' '}
               <span className="text-k-text font-bold">SUPERVISOR DE CALIDAD/SSOMA</span> con ES_SUPERVISOR=NO
-              entra como trabajador indirecto, no como supervisor de cuadrilla.
+              queda solo como personal indirecto. Reimportar no duplica: si la persona ya existe se reutiliza
+              su ficha —y su contraseña— tal como está.
             </p>
             <button onClick={e => { e.stopPropagation(); descargarPlantilla() }}
               className="flex items-center gap-1.5 text-xs font-bold text-k-amber bg-amber-500/10 border border-amber-500/20 px-3 py-2 rounded-lg hover:bg-amber-500/20 transition-colors flex-shrink-0">
@@ -266,7 +279,7 @@ export default function ImportarPersonal() {
               { label: 'Total leídos',  value: filas.length,    color: 'text-k-text',   border: 'border-k-border' },
               { label: 'Nuevos',        value: validas.length,  color: 'text-k-green',  border: 'border-green-500/20' },
               { label: 'Ya registrados', value: nExisten,        color: nExisten > 0 ? 'text-k-blue' : 'text-k-text3', border: nExisten > 0 ? 'border-blue-500/20' : 'border-k-border' },
-              { label: 'Supervisores (nuevos)', value: nSupervisor, color: 'text-k-amber', border: 'border-amber-500/20' },
+              { label: 'Con acceso de supervisor', value: nSupervisor, color: 'text-k-amber', border: 'border-amber-500/20' },
               { label: 'Con error',     value: errores.length,  color: errores.length > 0 ? 'text-k-red' : 'text-k-text3', border: errores.length > 0 ? 'border-red-500/20' : 'border-k-border' },
             ].map(s => (
               <div key={s.label} className={`bg-k-surface border ${s.border} rounded-xl p-4 flex items-center gap-3`}>
@@ -292,14 +305,13 @@ export default function ImportarPersonal() {
                       <td className="px-4 py-2.5 font-mono text-xs text-k-text3">F{f._fila}</td>
                       <td className="px-4 py-2.5 text-sm text-k-text">{f.nombre || '—'}</td>
                       <td className="px-4 py-2.5 text-xs text-k-text2">{f.cargo || '—'}</td>
-                      <td className="px-4 py-2.5 text-xs text-k-text3">
-                        {f.destino === 'TRABAJADOR' ? f.tipo : '—'}
-                      </td>
+                      <td className="px-4 py-2.5 text-xs text-k-text3">{f.tipo}</td>
                       <td className="px-4 py-2.5 font-mono text-xs text-k-text3">{f.dni || '—'}</td>
                       <td className="px-4 py-2.5">
                         {f.destino === 'SUPERVISOR'
-                          ? <span className="flex items-center gap-1 text-[10px] font-bold text-k-amber bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded w-fit"><UserCog size={10}/> SUPERVISOR</span>
-                          : <span className="flex items-center gap-1 text-[10px] font-bold text-k-text2 bg-k-raised border border-k-border px-2 py-0.5 rounded w-fit"><HardHat size={10}/> TRABAJADOR</span>
+                          ? <span title="Entra al padrón y además recibe acceso para reportar"
+                              className="flex items-center gap-1 text-[10px] font-bold text-k-amber bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded w-fit"><UserCog size={10}/> + REPORTA</span>
+                          : <span className="flex items-center gap-1 text-[10px] font-bold text-k-text2 bg-k-raised border border-k-border px-2 py-0.5 rounded w-fit"><HardHat size={10}/> PADRÓN</span>
                         }
                       </td>
                       <td className="px-4 py-2.5">
@@ -327,7 +339,7 @@ export default function ImportarPersonal() {
             </button>
             <button onClick={importar} disabled={validas.length === 0}
               className="flex items-center gap-2 bg-k-amber hover:bg-k-amber2 disabled:opacity-40 text-black font-bold text-sm px-5 py-2.5 rounded-lg transition-colors">
-              <CheckCircle size={14} /> Importar {nTrabajador} trabajadores{nSupervisor > 0 ? ` + ${nSupervisor} supervisores` : ''}
+              <CheckCircle size={14} /> Importar {nTrabajador + nSupervisor} personas{nSupervisor > 0 ? ` (${nSupervisor} con acceso)` : ''}
             </button>
           </div>
         </div>
