@@ -24,8 +24,8 @@ export interface Reporte {
   id: number; fecha: string; otm_id?: string; actividad_id?: number | null
   supervisor_id?: string; supervisor_nombre?: string; descripcion?: string
   creado_en?: string; fotos: Foto[]
-  // Parte estructurado del supervisor (0032)
-  area?: string | null; turno?: string | null
+  // Parte estructurado del supervisor (0032) + frente (0033)
+  area?: string | null; frente?: string | null; turno?: string | null
   anotaciones?: string[] | null
   restricciones?: { cat: string; detalle: string }[] | null
 }
@@ -1154,6 +1154,7 @@ function ModalReporte({ rep, onClose }: { rep: Reporte; onClose: () => void }) {
           {rep.fecha} · {rep.otm_id} · {rep.supervisor_nombre || rep.supervisor_id}
           {rep.turno ? ` · turno ${rep.turno.toLowerCase()}` : ''}
           {rep.area ? ` · ${rep.area}` : ''}
+          {rep.frente ? ` · frente ${rep.frente}` : ''}
         </p>
         {/* Parte estructurado: viñetas de lo ejecutado + lo que frenó el avance */}
         {rep.anotaciones && rep.anotaciones.length > 0 ? (
