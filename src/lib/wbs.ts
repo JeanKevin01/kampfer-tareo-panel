@@ -1,26 +1,31 @@
 // Helpers compartidos para las vistas jerárquicas WBS (ISP / Partidas / Avances /
 // Configuración / Control Diario) — mismo esquema de niveles y colores en todas.
 
+// Paleta theme-aware (misma que el árbol de Partidas / WBSArbol): el texto y el
+// borde salen de variables var(--nivel-*) que se oscurecen en modo claro (ver
+// index.css); la banda de fondo es un tinte pastel muy tenue que funciona en
+// ambos temas. Así TODAS las vistas jerárquicas (Partidas, Avances,
+// Configuración, ISP) se ven idénticas y legibles en claro y oscuro.
 export const NIVEL_COLOR: Record<number, { text: string; bg: string; border: string; bold: boolean }> = {
-  1: { text:'#FF9B9B', bg:'rgba(255,123,123,0.30)', border:'#FF9B9B', bold:true  }, // Raíz
-  2: { text:'#7FE0D4', bg:'rgba(127,224,212,0.26)', border:'#7FE0D4', bold:true  }, // Sección
-  3: { text:'#D6B3FF', bg:'rgba(214,179,255,0.22)', border:'#D6B3FF', bold:false }, // Sub-sección
-  4: { text:'#FFC98B', bg:'rgba(255,201,139,0.18)', border:'#FFC98B', bold:false }, // Detalle
+  1: { text:'var(--nivel-1)', bg:'rgba(255,123,123,0.16)', border:'var(--nivel-1)', bold:true  }, // Raíz
+  2: { text:'var(--nivel-2)', bg:'rgba(127,224,212,0.15)', border:'var(--nivel-2)', bold:true  }, // Sección
+  3: { text:'var(--nivel-3)', bg:'rgba(214,179,255,0.14)', border:'var(--nivel-3)', bold:false }, // Sub-sección
+  4: { text:'var(--nivel-4)', bg:'rgba(255,201,139,0.13)', border:'var(--nivel-4)', bold:false }, // Detalle
 }
-export const NIVEL_DEFAULT = { text:'#B8C4D9', bg:'rgba(184,196,217,0.12)', border:'#B8C4D9', bold:false }
+export const NIVEL_DEFAULT = { text:'rgb(var(--k-text2))', bg:'rgba(184,196,217,0.10)', border:'rgb(var(--k-text2))', bold:false }
 
 export const NIVEL_LABELS: [number, string, string][] = [
-  [1,'#FF9B9B','Raíz'], [2,'#7FE0D4','Sección'], [3,'#D6B3FF','Sub-sección'], [4,'#FFC98B','Detalle'],
+  [1,'var(--nivel-1)','Raíz'], [2,'var(--nivel-2)','Sección'], [3,'var(--nivel-3)','Sub-sección'], [4,'var(--nivel-4)','Detalle'],
 ]
 
 export const FASE_COLOR: Record<string,string> = {
-  FAB:'#2DD4A8', EST:'#60A5FA', MEC:'#FB923C', ELE:'#FACC15',
-  TUB:'#A78BFA', INS:'#F472B6', CIV:'#94A3B8', AND:'#34D399',
-  APY:'#86EFAC', ING:'#FCD34D', COM:'#C4B5FD', MON:'#E879F9', TRA:'#7FE3A0',
+  FAB:'var(--fase-fab)', EST:'var(--fase-est)', MEC:'var(--fase-mec)', ELE:'var(--fase-ele)',
+  TUB:'var(--fase-tub)', INS:'var(--fase-ins)', CIV:'var(--fase-civ)', AND:'var(--fase-and)',
+  APY:'var(--fase-apy)', ING:'var(--fase-ing)', COM:'var(--fase-com)', MON:'var(--fase-mon)', TRA:'var(--fase-tra)',
 }
 
 export const faseColor = (fase?: string | null) =>
-  FASE_COLOR[(fase ?? '').split('.')[0]] ?? '#94A3B8'
+  FASE_COLOR[(fase ?? '').split('.')[0]] ?? 'rgb(var(--k-text2))'
 
 export interface WbsBase { codigo: string; parent_codigo: string | null; nivel: number }
 export interface WbsNode<T> { item: T; codigo: string; nivel: number; children: WbsNode<T>[] }

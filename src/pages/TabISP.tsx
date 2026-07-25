@@ -7,15 +7,16 @@ import { ChevronDown, ChevronRight, Loader2, AlertTriangle, Plus, Trash2 } from 
 import { api } from '@/lib/api'
 import { FASE_COLOR } from '@/lib/wbs'
 
-// Colores por nivel WBS (igual que WBSArbol) — Raíz/Sección/Sub-sección/Detalle
-// (alphas más suaves que los de lib/wbs.ts a propósito: fondo de tabla densa)
+// Colores por nivel WBS (igual que WBSArbol / lib/wbs) — theme-aware: texto y
+// borde en variables var(--nivel-*) que se oscurecen en claro; banda de fondo
+// pastel tenue que funciona en ambos temas.
 const NIVEL_COLOR: Record<number, { text:string; bg:string; border:string; bold:boolean }> = {
-  1: { text:'#FF9B9B', bg:'rgba(255,123,123,0.16)', border:'#FF9B9B', bold:true  }, // raíz
-  2: { text:'#7FE0D4', bg:'rgba(127,224,212,0.15)', border:'#7FE0D4', bold:true  }, // sección
-  3: { text:'#D6B3FF', bg:'rgba(214,179,255,0.14)', border:'#D6B3FF', bold:false }, // sub-sección
-  4: { text:'#FFC98B', bg:'rgba(255,201,139,0.13)', border:'#FFC98B', bold:false }, // detalle
+  1: { text:'var(--nivel-1)', bg:'rgba(255,123,123,0.16)', border:'var(--nivel-1)', bold:true  }, // raíz
+  2: { text:'var(--nivel-2)', bg:'rgba(127,224,212,0.15)', border:'var(--nivel-2)', bold:true  }, // sección
+  3: { text:'var(--nivel-3)', bg:'rgba(214,179,255,0.14)', border:'var(--nivel-3)', bold:false }, // sub-sección
+  4: { text:'var(--nivel-4)', bg:'rgba(255,201,139,0.13)', border:'var(--nivel-4)', bold:false }, // detalle
 }
-const NIVEL_DEFAULT = { text:'#B8C4D9', bg:'rgba(184,196,217,0.08)', border:'#B8C4D9', bold:false }
+const NIVEL_DEFAULT = { text:'rgb(var(--k-text2))', bg:'rgba(184,196,217,0.08)', border:'rgb(var(--k-text2))', bold:false }
 
 interface SemInfo  { semana:number; label:string; inicio:string; fin:string; label_full:string }
 interface SemDato  { hh_gan_acum:number; hh_gan_sem:number; hh_gast_acum:number; hh_gast_sem:number; pf_acum:number; pf_sem:number; pct_avance:number; cant_acum:number }
@@ -526,7 +527,7 @@ export default function TabISP({ semana, otm }: { semana: number; otm?: string }
       </div>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2 rounded-lg" style={{ background:'rgb(var(--k-surface))', border:'0.5px solid rgb(var(--k-border))' }}>
         <span className="text-[10px]" style={{ color:'rgb(var(--k-text3))' }}>NIVEL:</span>
-        {([[1,'#FF9B9B','Raíz'],[2,'#7FE0D4','Sección'],[3,'#D6B3FF','Sub-sección'],[4,'#FFC98B','Detalle']] as [number,string,string][]).map(([n,c,lbl])=>(
+        {([[1,'var(--nivel-1)','Raíz'],[2,'var(--nivel-2)','Sección'],[3,'var(--nivel-3)','Sub-sección'],[4,'var(--nivel-4)','Detalle']] as [number,string,string][]).map(([n,c,lbl])=>(
           <span key={n} className="flex items-center gap-1 text-[10px]">
             <span style={{ width:10, height:10, borderRadius:2, background:c }}/>
             <span style={{ color:c }}>{n}. {lbl}</span>

@@ -135,7 +135,7 @@ function NivelLeyenda() {
         </span>
       ))}
       <span className="flex items-center gap-1 text-[10px]">
-        <span style={{ width: 10, height: 10, borderRadius: 2, background: '#60A5FA', display: 'inline-block' }} />
+        <span style={{ width: 10, height: 10, borderRadius: 2, background: 'var(--fase-est)', display: 'inline-block' }} />
         <span style={{ color: 'rgb(var(--k-text))' }}>Hoja (actividad)</span>
       </span>
     </div>
@@ -512,6 +512,13 @@ function KpiMini({ label, value }: { label: string; value: string }) {
   )
 }
 
+// Cada ÁREA recibe una banda de color propia (ciclo) para distinguirla de un
+// vistazo; las disciplinas van indentadas bajo su área con un filete del mismo
+// color. Mismas variables theme-aware que el árbol de Partidas.
+const AREA_COLORS = ['var(--nivel-1)', 'var(--nivel-2)', 'var(--nivel-3)', 'var(--nivel-4)',
+  'var(--fase-est)', 'var(--fase-mec)', 'var(--fase-ins)', 'var(--fase-com)']
+const areaTinte = (c: string, pct: number) => `color-mix(in srgb, ${c} ${pct}%, transparent)`
+
 function TabEjecutivo({ semana, otm }: { semana: number; otm?: string }) {
   // Reusa el mismo endpoint/cache que el Resumen (queryKey idéntico).
   const { data: rep, isLoading } = useQuery<Reporte>({
@@ -565,10 +572,13 @@ function TabEjecutivo({ semana, otm }: { semana: number; otm?: string }) {
               </tr>
             </thead>
             <tbody>
-              {m.areas.map(a => (
+              {m.areas.map((a, i) => {
+                const clr = AREA_COLORS[i % AREA_COLORS.length]
+                return (
                 <Fragment key={a.area}>
-                  <tr className="border-b border-k-border" style={{ background: 'rgb(var(--k-surface))' }}>
-                    <td className={`${TD} font-bold text-k-text`}>{a.area}</td>
+                  <tr className="border-b border-k-border"
+                      style={{ background: areaTinte(clr, 16), borderLeft: `3px solid ${clr}` }}>
+                    <td className={`${TD} font-bold`} style={{ color: clr }}>{a.area}</td>
                     <td className={`${numTD} text-k-text`}>{fmt(a.subtotal.hh_contractual, 0)}</td>
                     <td className={`${numTD} text-k-text`}>{fmt(a.subtotal.hh_proyec, 0)}</td>
                     <td className={`${numTD} text-k-green`}>{fmt(a.subtotal.hh_ganadas, 0)}</td>
@@ -578,8 +588,9 @@ function TabEjecutivo({ semana, otm }: { semana: number; otm?: string }) {
                     <td className={`${numTD} text-k-text3`}>{pct(a.subtotal.inc_proyec)}</td>
                   </tr>
                   {a.disciplinas.map(d => (
-                    <tr key={a.area + '|' + d.disciplina} className="border-b border-k-border last:border-0">
-                      <td className={`${TD} pl-6`}>{d.disciplina}</td>
+                    <tr key={a.area + '|' + d.disciplina} className="border-b border-k-border last:border-0"
+                        style={{ borderLeft: `3px solid ${areaTinte(clr, 45)}` }}>
+                      <td className={`${TD} pl-6 text-k-text2`}>{d.disciplina}</td>
                       <td className={numTD}>{fmt(d.hh_contractual, 0)}</td>
                       <td className={numTD}>{fmt(d.hh_proyec, 0)}</td>
                       <td className={`${numTD} text-k-green`}>{fmt(d.hh_ganadas, 0)}</td>
@@ -590,7 +601,8 @@ function TabEjecutivo({ semana, otm }: { semana: number; otm?: string }) {
                     </tr>
                   ))}
                 </Fragment>
-              ))}
+                )
+              })}
               <tr className="border-t-2 border-k-border2">
                 <td className={`${TD} font-bold text-k-text uppercase`}>Total proyecto</td>
                 <td className={`${numTD} font-bold text-k-text`}>{fmt(m.total.hh_contractual, 0)}</td>
@@ -876,7 +888,7 @@ function TabRegistro({ semana, otm }: { semana: number; otm?: string }) {
                     <td className="py-1 px-2 text-center text-k-text3 font-mono" style={{ fontSize: 11 }}>{p.unidad ?? '—'}</td>
                     <td className="py-1 px-2 text-right font-mono text-k-text3" style={{ fontSize: 11 }}>{fmt(mp)}</td>
                     <td className="py-1 px-2" />
-                    <td className="py-1 px-2 text-right"><span className="font-mono font-bold" style={{ fontSize: 12, color: pct >= 1 ? '#2DD4A8' : pct > 0 ? '#3B82F6' : 'rgb(var(--k-text3))' }}>{(pct * 100).toFixed(1)}%</span></td>
+                    <td className="py-1 px-2 text-right"><span className="font-mono font-bold" style={{ fontSize: 12, color: pct >= 1 ? 'var(--pf-good)' : pct > 0 ? 'rgb(var(--k-blue))' : 'rgb(var(--k-text3))' }}>{(pct * 100).toFixed(1)}%</span></td>
                     <td className="py-1 px-2" />
                     <td className="py-1 px-2 text-right font-mono text-k-green" style={{ fontSize: 11 }}>{p.hh_tareo > 0 ? fmt(p.hh_tareo) : '—'}</td>
                     <td className="py-1 px-1" style={{ minWidth: 70 }}>
