@@ -3,12 +3,13 @@
 // usuario la guarda como PDF con el diálogo de impresión del navegador.
 // Importante: imprimir/guardar dentro de los ~15 min de la carga (las URLs de
 // las fotos están firmadas con TTL corto; recargar la página las renueva).
+// Identidad visual compartida vía BrandDoc.
 import { useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Printer } from 'lucide-react'
 import { api, API_BASE } from '@/lib/api'
 import { lunesDe, iso } from '@/lib/semana'
 import { CNC } from '@/lib/catalogos'
+import BrandDoc from '@/components/print/BrandDoc'
 import type { Semana, Reporte } from '@/pages/Programacion'
 
 const PROYECTO_ID = 1
@@ -16,6 +17,8 @@ const DIAS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', '
 
 const fmtLarga = (f: string) =>
   new Date(f + 'T12:00:00').toLocaleDateString('es-PE', { day: 'numeric', month: 'long', year: 'numeric' })
+
+const ESTADO_LBL: Record<string, string> = { NO_CUMPLIDA: 'NO CUMPLIDA' }
 
 export default function ProgramacionPrint() {
   const [params] = useSearchParams()
@@ -26,121 +29,111 @@ export default function ProgramacionPrint() {
     queryFn: () => api(`/ev/programacion/semana?proyecto_id=${PROYECTO_ID}&lunes=${lunes}`),
   })
 
-  if (!sem.data) return <div style={{ padding: 40, fontFamily: 'sans-serif' }}>Cargando reporte…</div>
+  if (!sem.data) return <div style={{ padding: 40, fontFamily: "'Geist Variable', sans-serif", color: '#55606f' }}>Cargando reporte…</div>
   const s = sem.data
   const repsPorId = new Map(s.reportes.map(r => [r.id, r]))
 
+  const comp = s.actividades.filter(a => a.estado !== 'CANCELADO')
+  const cump = comp.filter(a => a.estado === 'EJECUTADO').length
+  const nc = comp.filter(a => a.estado === 'NO_CUMPLIDA')
+  const ppc = comp.length ? Math.round((cump / comp.length) * 100) : null
+
   return (
-    <div style={{ background: '#fff', color: '#111', minHeight: '100vh', fontFamily: 'Georgia, serif' }}>
+    <BrandDoc
+      tipo="Reporte semanal de campo"
+      titulo={`Semana del ${fmtLarga(s.fechas[0])} al ${fmtLarga(s.fechas[6])}`}
+      meta={<>
+        {s.actividades.length} actividades programadas · {s.reportes.length} reportes de campo
+        {ppc != null && <>
+          {' · '}<b style={{ color: '#10151f' }}>PPC {ppc}%</b> ({cump} de {comp.length} compromisos cumplidos)
+          {nc.length > 0 && <>
+            {' · Causas: '}
+            {Object.entries(nc.reduce((m: Record<string, number>, a) => {
+              const k = CNC[a.causa_nc_cat ?? ''] ?? 'Otros'; m[k] = (m[k] || 0) + 1; return m
+            }, {})).map(([k, n]) => `${k} (${n})`).join(', ')}
+          </>}
+        </>}
+      </>}
+      hint="Guarda el PDF antes de purgar las fotos de esta semana."
+    >
       <style>{`
-        @media print { .no-print { display: none !important } }
-        .foto-print { max-width: 100%; width: 46%; border: 1px solid #ccc; border-radius: 4px; margin: 4px 2% 4px 0; }
-        .dia-print { page-break-inside: avoid; }
+        .pr-dia { page-break-inside: avoid; margin-top: 22px; }
+        .pr-dia-h { font-size: 15px; font-weight: 700; border-bottom: 1px solid var(--linea);
+          padding-bottom: 4px; margin-bottom: 4px; }
+        .pr-act { margin: 12px 0 4px; }
+        .pr-act-t { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .pr-chip { font-size: 9.5px; font-weight: 700; letter-spacing: .04em; padding: 2px 9px; border-radius: 999px; }
+        .pr-EJECUTADO { background: #dcf5e4; color: #0a7d4f; }
+        .pr-NO_CUMPLIDA { background: #fbe0e0; color: #b3261e; }
+        .pr-CANCELADO { background: #edeff2; color: #6b7280; }
+        .pr-PROGRAMADO { background: #fdf0d3; color: #8a5a06; }
+        .pr-sub { font-size: 11.5px; color: var(--tinta2); margin-top: 2px; }
+        .pr-desc { font-size: 12px; margin: 4px 0; }
+        .pr-causa { font-size: 12px; margin: 4px 0; color: #b3261e; }
+        .pr-libre { font-size: 13px; font-weight: 600; margin: 12px 0 4px; }
+        .pr-rep { margin: 6px 0 6px 12px; padding-left: 11px; border-left: 3px solid var(--linea); }
+        .pr-rep-d { font-size: 12px; margin-bottom: 4px; }
+        .pr-rep-s { font-size: 11px; color: var(--tinta2); }
+        .pr-foto { width: 46%; border: 1px solid var(--linea); border-radius: 6px; margin: 5px 2% 5px 0; }
+        .pr-foto-p { font-size: 11px; color: var(--tinta3); font-style: italic; }
+        .pr-vacio { color: var(--tinta3); margin-top: 18px; }
       `}</style>
 
-      <div className="no-print" style={{ padding: '12px 40px', background: '#f4f4f4', borderBottom: '1px solid #ddd', display: 'flex', gap: 12, alignItems: 'center' }}>
-        <button onClick={() => window.print()}
-          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', background: '#111', color: '#fff', border: 0, borderRadius: 8, fontWeight: 700, cursor: 'pointer' }}>
-          <Printer size={14} /> Imprimir / Guardar PDF
-        </button>
-        <span style={{ fontSize: 12, color: '#666' }}>Guarda el PDF antes de purgar las fotos de esta semana.</span>
-      </div>
-
-      <div style={{ maxWidth: 860, margin: '0 auto', padding: '32px 40px' }}>
-        <div style={{ borderBottom: '3px solid #111', paddingBottom: 12, marginBottom: 20 }}>
-          <div style={{ fontSize: 11, letterSpacing: 3, fontWeight: 700 }}>KAMPFER · REPORTE SEMANAL DE CAMPO</div>
-          <h1 style={{ margin: '6px 0 2px', fontSize: 26 }}>
-            Semana del {fmtLarga(s.fechas[0])} al {fmtLarga(s.fechas[6])}
-          </h1>
-          <div style={{ fontSize: 12, color: '#555' }}>
-            {s.actividades.length} actividades programadas · {s.reportes.length} reportes de campo ·
-            generado el {new Date().toLocaleDateString('es-PE', { day: 'numeric', month: 'long', year: 'numeric' })}
-          </div>
-          {(() => {
-            const comp = s.actividades.filter(a => a.estado !== 'CANCELADO')
-            const cump = comp.filter(a => a.estado === 'EJECUTADO').length
-            const nc = comp.filter(a => a.estado === 'NO_CUMPLIDA')
-            if (!comp.length) return null
-            return (
-              <div style={{ fontSize: 13, marginTop: 6 }}>
-                <b>PPC de la semana: {Math.round((cump / comp.length) * 100)}%</b>
-                {' '}({cump} de {comp.length} compromisos cumplidos)
-                {nc.length > 0 && (
-                  <span> · Causas: {Object.entries(nc.reduce((m: Record<string, number>, a) => {
-                    const k = CNC[a.causa_nc_cat ?? ''] ?? 'Otros'; m[k] = (m[k] || 0) + 1; return m
-                  }, {})).map(([k, n]) => `${k} (${n})`).join(', ')}</span>
-                )}
-              </div>
-            )
-          })()}
-        </div>
-
-        {s.fechas.map((f, i) => {
-          const acts = s.actividades.filter(a => a.fecha === f)
-          const libres = s.reportes.filter(r => r.fecha === f && !r.actividad_id)
-          if (acts.length === 0 && libres.length === 0) return null
-          return (
-            <div key={f} className="dia-print" style={{ marginBottom: 26 }}>
-              <h2 style={{ fontSize: 16, borderBottom: '1px solid #999', paddingBottom: 4 }}>
-                {DIAS[i]} {fmtLarga(f)}
-              </h2>
-              {acts.map(a => (
-                <div key={a.id} style={{ margin: '10px 0 14px' }}>
-                  <div style={{ fontSize: 14, fontWeight: 700 }}>
-                    {a.otm_id ? `[${a.otm_id}] ` : ''}{a.titulo}
-                    <span style={{
-                      fontSize: 10, fontWeight: 700, marginLeft: 8, padding: '2px 8px', borderRadius: 10,
-                      background: a.estado === 'EJECUTADO' ? '#d8f5dc' : a.estado === 'NO_CUMPLIDA' ? '#fbdcdc' : a.estado === 'CANCELADO' ? '#e8e8e8' : '#fdf0d0',
-                      color: a.estado === 'EJECUTADO' ? '#186a2b' : a.estado === 'NO_CUMPLIDA' ? '#8f1d1d' : a.estado === 'CANCELADO' ? '#666' : '#7c5a10',
-                    }}>{a.estado === 'NO_CUMPLIDA' ? 'NO CUMPLIDA' : a.estado}</span>
+      {s.fechas.map((f, i) => {
+        const acts = s.actividades.filter(a => a.fecha === f)
+        const libres = s.reportes.filter(r => r.fecha === f && !r.actividad_id)
+        if (acts.length === 0 && libres.length === 0) return null
+        return (
+          <div key={f} className="pr-dia">
+            <div className="pr-dia-h">{DIAS[i]} {fmtLarga(f)}</div>
+            {acts.map(a => (
+              <div key={a.id} className="pr-act">
+                <div className="pr-act-t">
+                  <span>{a.otm_id ? `[${a.otm_id}] ` : ''}{a.titulo}</span>
+                  <span className={`pr-chip pr-${a.estado}`}>{ESTADO_LBL[a.estado] ?? a.estado}</span>
+                </div>
+                {(a.supervisor_nombre || a.responsable) && (
+                  <div className="pr-sub">
+                    {a.supervisor_nombre ? `Supervisor: ${a.supervisor_nombre}` : ''}
+                    {a.supervisor_nombre && a.responsable ? ' · ' : ''}
+                    {a.responsable ? `Responsable: ${a.responsable}` : ''}
                   </div>
-                  {(a.supervisor_nombre || a.responsable) && (
-                    <div style={{ fontSize: 12, color: '#555' }}>
-                      {a.supervisor_nombre ? `Supervisor: ${a.supervisor_nombre}` : ''}
-                      {a.supervisor_nombre && a.responsable ? ' · ' : ''}
-                      {a.responsable ? `Responsable: ${a.responsable}` : ''}
-                    </div>
-                  )}
-                  {a.descripcion && <div style={{ fontSize: 12, margin: '4px 0' }}>{a.descripcion}</div>}
-                  {a.estado === 'NO_CUMPLIDA' && (a.causa_nc_cat || a.causa_nc) && (
-                    <div style={{ fontSize: 12, margin: '4px 0', color: '#8f1d1d' }}>
-                      <b>Causa de no cumplimiento:</b> {CNC[a.causa_nc_cat ?? ''] ?? ''}{a.causa_nc ? ` — ${a.causa_nc}` : ''}
-                    </div>
-                  )}
-                  {a.reportes.map(id => { const r = repsPorId.get(id); return r ? <BloqueReporte key={id} rep={r} /> : null })}
-                </div>
-              ))}
-              {libres.map(r => (
-                <div key={r.id} style={{ margin: '10px 0 14px' }}>
-                  <div style={{ fontSize: 13, fontWeight: 700 }}>{r.otm_id ? `[${r.otm_id}] ` : ''}Reporte de campo</div>
-                  <BloqueReporte rep={r} />
-                </div>
-              ))}
-            </div>
-          )
-        })}
+                )}
+                {a.descripcion && <div className="pr-desc">{a.descripcion}</div>}
+                {a.estado === 'NO_CUMPLIDA' && (a.causa_nc_cat || a.causa_nc) && (
+                  <div className="pr-causa">
+                    <b>Causa de no cumplimiento:</b> {CNC[a.causa_nc_cat ?? ''] ?? ''}{a.causa_nc ? ` — ${a.causa_nc}` : ''}
+                  </div>
+                )}
+                {a.reportes.map(id => { const r = repsPorId.get(id); return r ? <BloqueReporte key={id} rep={r} /> : null })}
+              </div>
+            ))}
+            {libres.map(r => (
+              <div key={r.id}>
+                <div className="pr-libre">{r.otm_id ? `[${r.otm_id}] ` : ''}Reporte de campo</div>
+                <BloqueReporte rep={r} />
+              </div>
+            ))}
+          </div>
+        )
+      })}
 
-        {s.actividades.length === 0 && s.reportes.length === 0 && (
-          <p style={{ color: '#777' }}>Semana sin actividades ni reportes.</p>
-        )}
-
-        <div style={{ borderTop: '1px solid #999', marginTop: 30, paddingTop: 8, fontSize: 10, color: '#777' }}>
-          KAMPFER — del tareo al Resultado Operativo sin Excel · reporte generado automáticamente desde los datos de campo
-        </div>
-      </div>
-    </div>
+      {s.actividades.length === 0 && s.reportes.length === 0 && (
+        <p className="pr-vacio">Semana sin actividades ni reportes.</p>
+      )}
+    </BrandDoc>
   )
 }
 
 function BloqueReporte({ rep }: { rep: Reporte }) {
   return (
-    <div style={{ margin: '6px 0 6px 12px', paddingLeft: 10, borderLeft: '3px solid #ccc' }}>
-      {rep.descripcion && <div style={{ fontSize: 12, marginBottom: 4 }}>{rep.descripcion}</div>}
-      <div style={{ fontSize: 11, color: '#666' }}>{rep.supervisor_nombre || rep.supervisor_id}</div>
+    <div className="pr-rep">
+      {rep.descripcion && <div className="pr-rep-d">{rep.descripcion}</div>}
+      <div className="pr-rep-s">{rep.supervisor_nombre || rep.supervisor_id}</div>
       <div>
         {rep.fotos.map(f => f.url
-          ? <img key={f.id} className="foto-print" src={`${API_BASE}${f.url}`} alt="" />
-          : <span key={f.id} style={{ fontSize: 11, color: '#999', fontStyle: 'italic' }}>[foto purgada] </span>)}
+          ? <img key={f.id} className="pr-foto" src={`${API_BASE}${f.url}`} alt="" />
+          : <span key={f.id} className="pr-foto-p">[foto purgada] </span>)}
       </div>
     </div>
   )

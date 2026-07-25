@@ -4,10 +4,12 @@
 // campo en orden cronológico (del más antiguo al más nuevo) con sus fotos.
 // Vive FUERA del Layout: se abre en pestaña nueva y se exporta con
 // «Imprimir → Guardar como PDF» del navegador (sin dependencias nuevas).
+// La identidad visual la aporta BrandDoc (cabecera, tipografía, color, pie).
 import { useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Loader2, Printer } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import { api, API_BASE } from '@/lib/api'
+import BrandDoc from '@/components/print/BrandDoc'
 
 interface Foto { id: number; url: string | null; url_thumb: string | null; purgada: boolean }
 interface ReporteBloque {
@@ -35,6 +37,14 @@ const fechaLarga = (iso: string) =>
 // Las fotos vienen con URL firmada relativa al API
 const mediaUrl = (u: string) => (u.startsWith('http') ? u : `${API_BASE}${u}`)
 
+const CIFRAS: { k: keyof PartidaBloque['partida']; label: string; fuerte?: boolean }[] = [
+  { k: 'metrado_presup', label: 'Metrado presup.' },
+  { k: 'metrado_ejec', label: 'Metrado ejecutado', fuerte: true },
+  { k: 'avance', label: '% avance', fuerte: true },
+  { k: 'hh_presup', label: 'HH presup.' },
+  { k: 'hh_gastadas', label: 'HH gastadas' },
+]
+
 export default function ReportePartidaPrint() {
   const params = new URLSearchParams(window.location.search)
   const partidas = params.get('partidas') ?? ''
@@ -56,126 +66,122 @@ export default function ReportePartidaPrint() {
 
   const bloques = data?.partidas ?? []
   const hayPurgadas = bloques.some(b => b.reportes.some(r => r.fotos.some(f => f.purgada)))
+  const nReportes = bloques.reduce((s, b) => s + b.reportes.length, 0)
+
+  const valorCifra = (p: PartidaBloque['partida'], k: keyof PartidaBloque['partida']) => {
+    if (k === 'avance') return p.avance == null ? '—' : `${(p.avance * 100).toFixed(1)}%`
+    if (k === 'metrado_presup') return `${nf(p.metrado_presup)} ${p.unidad ?? ''}`.trim()
+    if (k === 'metrado_ejec') return `${nf(p.metrado_ejec)} ${p.unidad ?? ''}`.trim()
+    if (k === 'hh_presup') return nf(p.hh_presup, 1)
+    if (k === 'hh_gastadas')
+      return p.hh_rango !== p.hh_gastadas
+        ? `${nf(p.hh_gastadas, 1)}  (${nf(p.hh_rango, 1)} en el periodo)`
+        : nf(p.hh_gastadas, 1)
+    return String(p[k] ?? '')
+  }
 
   return (
-    <div className="bg-white text-black min-h-screen">
-      <style>{`@media print { .no-print { display: none !important } .quiebre { page-break-inside: avoid } }`}</style>
+    <BrandDoc
+      tipo="Sustento de valorización"
+      titulo="Reporte por partida"
+      meta={<>
+        {desde || hasta
+          ? `Periodo: ${desde || 'inicio'} — ${hasta || 'hoy'}`
+          : 'Todo el historial registrado'}
+        {' · '}{bloques.length} partida{bloques.length !== 1 ? 's' : ''}
+        {' · '}{nReportes} reporte{nReportes !== 1 ? 's' : ''} de campo
+      </>}
+      hint="Guarda el PDF antes de que la retención purgue las fotos de campo."
+      aviso={hayPurgadas
+        ? 'Algunas fotos ya fueron purgadas del disco por la política de retención; el texto del parte se conserva. Exporta el sustento antes de que venza la retención.'
+        : undefined}
+    >
+      <style>{`
+        .rp-part { margin-top: 26px; }
+        .rp-part + .rp-part { border-top: 1px solid var(--linea2); padding-top: 22px; }
+        .rp-part-cod { font-size: 17px; font-weight: 700; line-height: 1.2; }
+        .rp-part-otm { font-size: 11.5px; color: var(--tinta2); margin: 2px 0 12px; }
+        .rp-cifras { display: grid; grid-template-columns: repeat(5, 1fr); gap: 1px;
+          background: var(--linea); border: 1px solid var(--linea); border-radius: 9px;
+          overflow: hidden; margin-bottom: 16px; }
+        .rp-cel { background: #fff; padding: 9px 12px; }
+        .rp-cel-l { font-size: 9.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--tinta3); }
+        .rp-cel-v { font-size: 15px; font-weight: 600; margin-top: 3px; font-variant-numeric: tabular-nums; }
+        .rp-cel-v.fuerte { color: #0a7d4f; }
+        .rp-sintareo { font-size: 11.5px; color: #8a5a06; background: #fdf6e6;
+          border: 1px solid #f0d69a; border-radius: 8px; padding: 9px 13px; margin-bottom: 16px; }
+        .rp-rep { page-break-inside: avoid; margin-bottom: 22px; }
+        .rp-rep-h { display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
+          border-bottom: 1px solid var(--linea); padding-bottom: 5px; margin-bottom: 8px; }
+        .rp-rep-fecha { font-size: 13px; font-weight: 600; text-transform: capitalize; }
+        .rp-rep-hh { font-size: 11px; color: var(--tinta2); white-space: nowrap; font-variant-numeric: tabular-nums; }
+        .rp-parte { font-family: 'Geist Mono', ui-monospace, Menlo, monospace;
+          font-size: 11px; line-height: 1.65; white-space: pre-wrap;
+          background: #f8fafc; border: 1px solid var(--linea2); border-radius: 8px; padding: 13px 15px; }
+        .rp-fotos { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+        .rp-fotos img { width: 100%; border-radius: 7px; border: 1px solid var(--linea); }
+        .rp-foto-purgada { height: 150px; border: 1px dashed var(--linea); border-radius: 7px;
+          display: flex; align-items: center; justify-content: center;
+          font-size: 11px; color: var(--tinta3); font-style: italic; }
+        .rp-vacio { font-size: 13px; color: var(--tinta3); font-style: italic; }
+      `}</style>
 
-      <div className="no-print sticky top-0 bg-white border-b border-gray-300 px-8 py-3 flex items-center justify-between">
-        <span className="text-sm text-gray-600">
-          {bloques.length} partida{bloques.length !== 1 ? 's' : ''} ·{' '}
-          {bloques.reduce((s, b) => s + b.reportes.length, 0)} reportes de campo
-        </span>
-        <button onClick={() => window.print()}
-          className="flex items-center gap-2 bg-black text-white text-sm font-bold px-4 py-2 rounded">
-          <Printer size={14} /> Imprimir / Guardar PDF
-        </button>
-      </div>
+      {bloques.map(b => (
+        <section key={b.partida.id} className="rp-part">
+          <div className="rp-part-cod">{b.partida.codigo} — {b.partida.descripcion}</div>
+          <div className="rp-part-otm">
+            {b.partida.otm_id}{b.partida.otm_desc ? ` · ${b.partida.otm_desc}` : ''}
+          </div>
 
-      <div className="px-10 py-8 max-w-[820px] mx-auto" style={{ fontFamily: 'Georgia, serif' }}>
-        <p className="text-[10px] tracking-[0.2em] uppercase text-gray-500 mb-1">
-          Kampfer · Sustento de valorización
-        </p>
-        <h1 className="text-2xl font-bold mb-1">Reporte por partida</h1>
-        <p className="text-sm text-gray-600">
-          {desde || hasta
-            ? `Periodo: ${desde || 'inicio'} — ${hasta || 'hoy'}`
-            : 'Todo el historial registrado'}
-          {' · '}generado el {new Date().toLocaleDateString('es-PE', { day: 'numeric', month: 'long', year: 'numeric' })}
-        </p>
-        {hayPurgadas && (
-          <p className="text-[11px] text-amber-700 border border-amber-300 bg-amber-50 rounded px-3 py-2 mt-3">
-            Algunas fotos ya fueron purgadas del disco por la política de retención; el texto del
-            parte se conserva. Exporta el sustento antes de que venza la retención.
-          </p>
-        )}
-        <hr className="my-6 border-black" />
-
-        {bloques.map(b => (
-          <section key={b.partida.id} className="mb-10">
-            <h2 className="text-lg font-bold leading-tight">
-              {b.partida.codigo} — {b.partida.descripcion}
-            </h2>
-            <p className="text-xs text-gray-600 mb-3">
-              {b.partida.otm_id}{b.partida.otm_desc ? ` · ${b.partida.otm_desc}` : ''}
-            </p>
-
-            {/* Cabecera de cifras: lo que el cliente pregunta al revisar */}
-            <table className="w-full text-xs border-collapse mb-5">
-              <tbody>
-                <tr className="bg-gray-100">
-                  {['Metrado presupuestado', 'Metrado ejecutado', '% avance', 'HH presupuestadas', 'HH gastadas'].map(h => (
-                    <th key={h} className="border border-gray-300 px-2 py-1.5 text-left font-bold">{h}</th>
-                  ))}
-                </tr>
-                <tr>
-                  <td className="border border-gray-300 px-2 py-1.5">
-                    {nf(b.partida.metrado_presup)} {b.partida.unidad ?? ''}
-                  </td>
-                  <td className="border border-gray-300 px-2 py-1.5 font-bold">
-                    {nf(b.partida.metrado_ejec)} {b.partida.unidad ?? ''}
-                  </td>
-                  <td className="border border-gray-300 px-2 py-1.5 font-bold">
-                    {b.partida.avance == null ? '—' : `${(b.partida.avance * 100).toFixed(1)}%`}
-                  </td>
-                  <td className="border border-gray-300 px-2 py-1.5">{nf(b.partida.hh_presup, 1)}</td>
-                  <td className="border border-gray-300 px-2 py-1.5">
-                    {nf(b.partida.hh_gastadas, 1)}
-                    {b.partida.hh_rango !== b.partida.hh_gastadas && (
-                      <span className="text-gray-500"> ({nf(b.partida.hh_rango, 1)} en el periodo)</span>
-                    )}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-
-            {/* Incoherencia visible: hay partes de campo pero el tareo no cargó
-                HH a esta partida. Mejor decirlo que imprimir un 0 sin explicar. */}
-            {b.partida.sin_tareo && (
-              <p className="text-[11px] text-amber-700 border border-amber-300 bg-amber-50 rounded px-3 py-2 mb-5">
-                Hay reportes de campo pero <b>ninguna HH del tareo quedó cargada a esta partida</b>.
-                Revísalo en «Registros y HH» del día: el tareo pudo enviarse sin partida, con 0 HH,
-                o lo reemplazó un envío posterior del mismo supervisor/OTM/día.
-              </p>
-            )}
-
-            {b.reportes.length === 0 ? (
-              <p className="text-sm text-gray-500 italic">Sin reportes de campo en el periodo.</p>
-            ) : b.reportes.map(r => (
-              <div key={r.id} className="quiebre mb-7">
-                <h3 className="text-sm font-bold border-b border-gray-300 pb-1 mb-2 flex justify-between gap-3">
-                  <span>{fechaLarga(r.fecha)}{r.actividad ? ` · ${r.actividad}` : ''}</span>
-                  {r.hh_dia > 0 && (
-                    <span className="font-normal text-xs text-gray-600 whitespace-nowrap">
-                      {nf(r.hh_dia, 1)} HH
-                    </span>
-                  )}
-                </h3>
-                {/* El parte tal como lo envió el supervisor */}
-                <pre className="text-[11px] leading-relaxed whitespace-pre-wrap bg-gray-50 border border-gray-200 rounded p-3"
-                  style={{ fontFamily: 'ui-monospace, Menlo, monospace' }}>{r.texto}</pre>
-                {r.fotos.length > 0 && (
-                  <div className="grid grid-cols-2 gap-3 mt-3">
-                    {r.fotos.map(f => f.url
-                      ? <img key={f.id} src={mediaUrl(f.url)} alt=""
-                          className="w-full rounded border border-gray-300" loading="lazy" />
-                      : <div key={f.id}
-                          className="h-40 rounded border border-dashed border-gray-300 flex items-center justify-center text-[11px] text-gray-400 italic">
-                          foto purgada del disco
-                        </div>)}
-                  </div>
-                )}
+          {/* Cabecera de cifras: lo que el cliente pregunta al revisar */}
+          <div className="rp-cifras">
+            {CIFRAS.map(c => (
+              <div key={c.k} className="rp-cel">
+                <div className="rp-cel-l">{c.label}</div>
+                <div className={`rp-cel-v${c.fuerte ? ' fuerte' : ''}`}>{valorCifra(b.partida, c.k)}</div>
               </div>
             ))}
-          </section>
-        ))}
+          </div>
 
-        {bloques.length === 0 && <p className="text-gray-500">Sin datos para esas partidas.</p>}
-      </div>
-    </div>
+          {/* Incoherencia visible: hay partes de campo pero el tareo no cargó
+              HH a esta partida. Mejor decirlo que imprimir un 0 sin explicar. */}
+          {b.partida.sin_tareo && (
+            <div className="rp-sintareo">
+              Hay reportes de campo pero <b>ninguna HH del tareo quedó cargada a esta partida</b>.
+              Revísalo en «Registros y HH» del día: el tareo pudo enviarse sin partida, con 0 HH,
+              o lo reemplazó un envío posterior del mismo supervisor/OTM/día.
+            </div>
+          )}
+
+          {b.reportes.length === 0 ? (
+            <p className="rp-vacio">Sin reportes de campo en el periodo.</p>
+          ) : b.reportes.map(r => (
+            <div key={r.id} className="rp-rep">
+              <div className="rp-rep-h">
+                <span className="rp-rep-fecha">
+                  {fechaLarga(r.fecha)}{r.actividad ? ` · ${r.actividad}` : ''}
+                </span>
+                {r.hh_dia > 0 && <span className="rp-rep-hh">{nf(r.hh_dia, 1)} HH</span>}
+              </div>
+              <pre className="rp-parte">{r.texto}</pre>
+              {r.fotos.length > 0 && (
+                <div className="rp-fotos">
+                  {r.fotos.map(f => f.url
+                    ? <img key={f.id} src={mediaUrl(f.url)} alt="" loading="lazy" />
+                    : <div key={f.id} className="rp-foto-purgada">foto purgada del disco</div>)}
+                </div>
+              )}
+            </div>
+          ))}
+        </section>
+      ))}
+
+      {bloques.length === 0 && <p className="rp-vacio">Sin datos para esas partidas.</p>}
+    </BrandDoc>
   )
 }
 
 function Aviso({ children }: { children: React.ReactNode }) {
-  return <div className="p-10 text-center text-gray-600 bg-white min-h-screen">{children}</div>
+  return <div style={{ padding: 40, textAlign: 'center', color: '#55606f',
+    background: '#fff', minHeight: '100vh', fontFamily: "'Geist Variable', sans-serif" }}>{children}</div>
 }
