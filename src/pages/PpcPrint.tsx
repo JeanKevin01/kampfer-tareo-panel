@@ -1,43 +1,86 @@
 // Reporte de PPC (Last Planner) — vista imprimible para el cliente / archivo.
-// Espeja el submódulo «PPC · Causas» de Programación: KPIs, PPC semanal,
-// Pareto de causas de no cumplimiento, restricciones reportadas desde campo y
-// PPC por supervisor. Vive FUERA del Layout: se abre en pestaña nueva y se
-// exporta con «Imprimir → Guardar como PDF». Identidad = BrandDoc.
-import { useEffect } from 'react'
+// Página 1 (vertical): resumen del submódulo «PPC · Causas» — KPIs, PPC
+// semanal, Pareto de causas, restricciones y PPC por supervisor (últimas N
+// semanas). Páginas siguientes (horizontal): el DETALLE por semana del rango
+// elegido — la tabla F030b (actividades × días, comprometido vs alcanzado,
+// cumplimiento, causa y restricciones), agrupada por OTM. Vive FUERA del
+// Layout: se exporta con «Imprimir → Guardar como PDF». Identidad = BrandDoc.
+import { useEffect, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
 import { api } from '@/lib/api'
+import { lunesDe, iso } from '@/lib/semana'
 import BrandDoc from '@/components/print/BrandDoc'
 
+interface Restriccion { cat: string; detalle: string; fecha: string }
 interface Resp {
   semanal: { lunes: string; comprometidas: number; cumplidas: number; no_cumplidas: number; ppc: number | null }[]
   cnc: { causa: string; etiqueta: string; n: number }[]
   pareto_restricciones?: { causa: string; etiqueta: string; n: number }[]
   por_supervisor: { supervisor_id: string; nombre?: string; comprometidas: number; cumplidas: number; ppc: number | null }[]
+  restricciones?: Record<string, Restriccion[]>
+  cnc_catalogo?: Record<string, string>
+}
+
+interface ActGrid {
+  id: number; titulo: string; estado: string; fecha: string; fecha_fin: string
+  partida_codigo?: string | null; und?: string | null
+  responsable?: string | null; supervisor_nombre?: string | null
+  causa_nc?: string | null; causa_nc_cat?: string | null
+  causa_nc_planner?: string | null; causa_nc_planner_cat?: string | null
+  prog: Record<string, number>; real: Record<string, number>
+}
+interface GridResp {
+  semanas: { lunes: string; domingo: string; fechas: string[] }[]
+  grupos: { otm_id: string | null; otm_desc: string | null; actividades: ActGrid[] }[]
+  cnc: Record<string, string>
 }
 
 const MESES = ['', 'ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
+const DIAS1 = ['L', 'M', 'M', 'J', 'V', 'S', 'D']
 const fmtDia = (f: string) => `${Number(f.slice(8, 10))} ${MESES[Number(f.slice(5, 7))]}`
 const pct = (v: number | null) => (v == null ? '—' : `${(v * 100).toFixed(0)}%`)
 // Semáforo lean: sano ≥75%, alerta ≥50%, crítico bajo eso.
 const ppcHex = (v: number | null) => (v == null ? '#8a93a1' : v >= 0.75 ? '#0a7d4f' : v >= 0.5 ? '#b7791f' : '#c0392b')
+// Número compacto para las celdas de metrado (vacío si es 0).
+const nc = (v: number) => (!v ? '' : String(Math.round(v * 100) / 100))
+const hoy = () => iso(new Date())
 
 export default function PpcPrint() {
   const params = new URLSearchParams(window.location.search)
   const semanas = Number(params.get('semanas')) || 8
   const proyecto = Number(params.get('proyecto_id')) || 1
+  const desde = params.get('desde') || ''
+  const hasta = params.get('hasta') || ''
 
-  const { data, isLoading, error } = useQuery<Resp>({
+  // Semanas (lunes ISO) que abarca el rango de detalle elegido.
+  const weeks = useMemo(() => {
+    if (!desde) return [] as string[]
+    const out: string[] = []
+    let m = lunesDe(new Date(desde + 'T12:00:00'))
+    const end = iso(lunesDe(new Date((hasta || desde) + 'T12:00:00')))
+    let g = 0
+    while (iso(m) <= end && g < 8) { out.push(iso(m)); m = new Date(m); m.setDate(m.getDate() + 7); g++ }
+    return out
+  }, [desde, hasta])
+
+  const resumen = useQuery<Resp>({
     queryKey: ['ppc-print', proyecto, semanas],
     queryFn: () => api(`/ev/programacion/ppc?proyecto_id=${proyecto}&semanas=${semanas}`),
+  })
+  const grid = useQuery<GridResp>({
+    queryKey: ['ppc-detalle', proyecto, weeks[0], weeks.length],
+    queryFn: () => api(`/ev/programacion/lookahead-grid?proyecto_id=${proyecto}&desde=${weeks[0]}&semanas=${weeks.length}`),
+    enabled: weeks.length > 0,
   })
 
   useEffect(() => { document.title = 'KAMPFER · Reporte de PPC' }, [])
 
-  if (isLoading) return <Aviso><Loader2 className="animate-spin inline mr-2" size={16} />Armando el reporte de PPC…</Aviso>
-  if (error) return <Aviso>No se pudo cargar: {(error as Error).message}</Aviso>
+  if (resumen.isLoading || (weeks.length > 0 && grid.isLoading))
+    return <Aviso><Loader2 className="animate-spin inline mr-2" size={16} />Armando el reporte de PPC…</Aviso>
+  if (resumen.error) return <Aviso>No se pudo cargar: {(resumen.error as Error).message}</Aviso>
 
-  const d = data!
+  const d = resumen.data!
   const totC = d.semanal.reduce((s, w) => s + w.comprometidas, 0)
   const totE = d.semanal.reduce((s, w) => s + w.cumplidas, 0)
   const totNC = d.semanal.reduce((s, w) => s + w.no_cumplidas, 0)
@@ -45,6 +88,8 @@ export default function PpcPrint() {
   const maxCnc = Math.max(1, ...d.cnc.map(c => c.n))
   const rest = d.pareto_restricciones ?? []
   const maxRest = Math.max(1, ...rest.map(c => c.n))
+  const cncCat = d.cnc_catalogo ?? {}
+  const restPorAct = d.restricciones ?? {}
 
   const KPIS: [string, string, string][] = [
     ['PPC del periodo', pct(ppcGlobal), ppcHex(ppcGlobal)],
@@ -53,14 +98,20 @@ export default function PpcPrint() {
     ['No cumplidas', String(totNC), '#c0392b'],
   ]
 
+  const semGrid = grid.data?.semanas ?? []
+  const grupos = grid.data?.grupos ?? []
+  const cncGrid = grid.data?.cnc ?? {}
+
   return (
     <BrandDoc
       tipo="Programación · Last Planner"
       titulo="Reporte de PPC"
-      meta={<>Porcentaje de Plan Cumplido · últimas {semanas} semanas · meta lean ≥ 75%</>}
-      hint="Indicador de confiabilidad de la programación semanal."
+      meta={<>Porcentaje de Plan Cumplido · resumen últimas {semanas} semanas · meta lean ≥ 75%
+        {desde && <> · detalle {fmtDia(weeks[0])} — {fmtDia(iso(new Date(new Date(weeks[weeks.length - 1] + 'T12:00:00').getTime() + 6 * 864e5)))}</>}</>}
+      hint="Resumen + detalle semanal por partidas. Indicador de confiabilidad de la programación."
     >
       <style>{`
+        @page detLand { size: A4 landscape; margin: 10mm; }
         .pp-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 20px 0 8px; }
         .pp-kpi { border: 1px solid var(--linea); border-radius: 10px; padding: 12px 14px; }
         .pp-kpi-v { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; }
@@ -78,9 +129,28 @@ export default function PpcPrint() {
         table.pp-tab td { padding: 6px 8px; border-bottom: 1px solid var(--linea2); }
         table.pp-tab td.num { text-align: right; font-variant-numeric: tabular-nums; }
         .pp-vacio { font-size: 12px; color: var(--tinta3); font-style: italic; }
+
+        /* Detalle semanal (F030b) — página horizontal */
+        .pp-det { page: detLand; break-before: page; }
+        .pp-det-h { font-size: 15px; font-weight: 700; margin: 4px 0 2px; }
+        .pp-det-h small { font-weight: 400; font-size: 11px; color: var(--tinta2); }
+        table.pp-f { width: 100%; border-collapse: collapse; font-size: 7.6px; table-layout: fixed; margin-top: 6px; }
+        table.pp-f th, table.pp-f td { border: 1px solid var(--linea); padding: 2.5px 4px; vertical-align: top; }
+        table.pp-f thead th { background: #f4f6f9; text-transform: uppercase; letter-spacing: .03em;
+          font-size: 6.8px; color: var(--tinta2); text-align: center; }
+        table.pp-f th.act, table.pp-f td.act { text-align: left; }
+        .pp-otm { background: #eef2fb; font-weight: 700; color: #24406b; font-size: 8px;
+          text-transform: none; letter-spacing: 0; }
+        .pp-d { text-align: center; font-variant-numeric: tabular-nums; line-height: 1.25; }
+        .pp-d .p { color: #2563eb; }
+        .pp-d .r { font-weight: 700; }
+        .pp-num { text-align: right; font-variant-numeric: tabular-nums; }
+        .pp-cu { text-align: center; font-weight: 700; }
+        .pp-obs { font-size: 7px; color: var(--tinta2); }
+        .pp-obs b { color: #b45309; }
       `}</style>
 
-      {/* KPIs */}
+      {/* ── Página 1: resumen ── */}
       <div className="pp-kpis">
         {KPIS.map(([l, v, c]) => (
           <div key={l} className="pp-kpi">
@@ -90,7 +160,6 @@ export default function PpcPrint() {
         ))}
       </div>
 
-      {/* PPC semanal */}
       <div className="pp-sec">PPC semanal <small>(comprometido vs alcanzado — sano ≥ 75%)</small></div>
       {d.semanal.length === 0
         ? <p className="pp-vacio">Aún no hay actividades programadas en el periodo.</p>
@@ -103,7 +172,6 @@ export default function PpcPrint() {
           </div>
         ))}
 
-      {/* Pareto de causas de no cumplimiento */}
       <div className="pp-sec">Causas de no cumplimiento <small>(Pareto)</small></div>
       {d.cnc.length === 0
         ? <p className="pp-vacio">Sin no-cumplimientos registrados en el periodo.</p>
@@ -115,7 +183,6 @@ export default function PpcPrint() {
           </div>
         ))}
 
-      {/* Restricciones reportadas desde campo */}
       <div className="pp-sec">Restricciones que bajaron el rendimiento <small>(reportadas por los supervisores — no afectan el PPC)</small></div>
       {rest.length === 0
         ? <p className="pp-vacio">Ningún supervisor reportó restricciones en el periodo.</p>
@@ -127,7 +194,6 @@ export default function PpcPrint() {
           </div>
         ))}
 
-      {/* PPC por supervisor */}
       <div className="pp-sec">PPC por supervisor</div>
       <table className="pp-tab">
         <thead><tr>
@@ -147,7 +213,125 @@ export default function PpcPrint() {
             ))}
         </tbody>
       </table>
+
+      {/* ── Páginas de detalle: una tabla F030b por semana (horizontal) ── */}
+      {semGrid.map(w => (
+        <SemanaDetalle key={w.lunes} semana={w} grupos={grupos}
+          cncGrid={cncGrid} cncCat={cncCat} restPorAct={restPorAct} />
+      ))}
     </BrandDoc>
+  )
+}
+
+// Cumplimiento automático (mismo criterio que EvaluacionSemanal / el motor PPC).
+function cumpl(a: ActGrid, comprom: number, alcanz: number, fechas: string[]): [string, string] {
+  if (a.estado === 'EJECUTADO') return ['SÍ', '#0a7d4f']
+  if (a.estado === 'NO_CUMPLIDA') return ['NO', '#c0392b']
+  if (a.estado === 'CANCELADO') return ['—', '#8a93a1']
+  if (comprom <= 0) return ['…', '#b7791f']
+  if (alcanz >= comprom - 5e-4) return ['SÍ', '#0a7d4f']
+  if (fechas.length && fechas[6] < hoy()) return ['NO', '#c0392b']
+  return ['…', '#b7791f']
+}
+
+function SemanaDetalle({ semana, grupos, cncGrid, cncCat, restPorAct }: {
+  semana: GridResp['semanas'][number]
+  grupos: GridResp['grupos']
+  cncGrid: Record<string, string>
+  cncCat: Record<string, string>
+  restPorAct: Record<string, Restriccion[]>
+}) {
+  const F = semana.fechas
+  // Solo las actividades que se solapan con esta semana.
+  const solapa = (a: ActGrid) => a.fecha <= F[6] && (a.fecha_fin || a.fecha) >= F[0]
+  const gruposSem = grupos
+    .map(g => ({ ...g, actividades: g.actividades.filter(solapa) }))
+    .filter(g => g.actividades.length > 0)
+
+  const causaTxt = (a: ActGrid) => {
+    const cat = a.causa_nc_planner_cat || a.causa_nc_cat
+    const det = a.causa_nc_planner || a.causa_nc
+    if (!cat && !det) return ''
+    return `${cat ? (cncGrid[cat] || cncCat[cat] || cat) : ''}${det ? ` — ${det}` : ''}`
+  }
+  const restTxt = (a: ActGrid) => (restPorAct[String(a.id)] ?? [])
+    .map(r => r.detalle || cncCat[r.cat] || r.cat).join(' · ')
+
+  return (
+    <section className="pp-det">
+      <div className="pp-det-h">Detalle semanal <small>· {fmtDia(F[0])} — {fmtDia(F[6])} {F[6].slice(0, 4)}</small></div>
+      {gruposSem.length === 0 ? (
+        <p className="pp-vacio">Semana sin actividades programadas.</p>
+      ) : (
+        <table className="pp-f">
+          <colgroup>
+            <col style={{ width: '17%' }} /><col style={{ width: '4%' }} /><col style={{ width: '9%' }} />
+            {F.map((f, i) => <col key={i} style={{ width: '5.5%' }} />)}
+            <col style={{ width: '5%' }} /><col style={{ width: '5%' }} /><col style={{ width: '4%' }} />
+            <col style={{ width: '15.5%' }} />
+          </colgroup>
+          <thead>
+            <tr>
+              <th className="act">Actividad</th><th>Und</th><th className="act">Resp.</th>
+              {F.map((f, i) => <th key={f}>{DIAS1[i]}<br />{Number(f.slice(8, 10))}</th>)}
+              <th>Comp.</th><th>Alc.</th><th>Cumpl.</th><th className="act">Causa / restricciones</th>
+            </tr>
+          </thead>
+          <tbody>
+            {gruposSem.map(g => (
+              <FragmentGrupo key={g.otm_id ?? '-'} g={g} F={F}
+                causaTxt={causaTxt} restTxt={restTxt} />
+            ))}
+          </tbody>
+        </table>
+      )}
+    </section>
+  )
+}
+
+function FragmentGrupo({ g, F, causaTxt, restTxt }: {
+  g: GridResp['grupos'][number]; F: string[]
+  causaTxt: (a: ActGrid) => string; restTxt: (a: ActGrid) => string
+}) {
+  return (
+    <>
+      <tr><td className="pp-otm" colSpan={3 + F.length + 4}>{g.otm_id ?? 'Sin OTM'}{g.otm_desc ? ` — ${g.otm_desc}` : ''}</td></tr>
+      {g.actividades.map(a => {
+        const comprom = F.reduce((s, f) => s + (a.prog[f] ?? 0), 0)
+        const alcanz = F.reduce((s, f) => s + (a.real[f] ?? 0), 0)
+        const [cu, cuHex] = cumpl(a, comprom, alcanz, F)
+        const causa = causaTxt(a)
+        const restr = restTxt(a)
+        return (
+          <tr key={a.id}>
+            <td className="act">
+              {a.titulo}
+              {a.partida_codigo && <span style={{ color: '#8a93a1' }}> · {a.partida_codigo}</span>}
+            </td>
+            <td>{a.und ?? ''}</td>
+            <td className="act">{a.supervisor_nombre || a.responsable || ''}</td>
+            {F.map(f => {
+              const p = a.prog[f] ?? 0
+              const r = a.real[f] ?? 0
+              const rHex = !r ? '#c9cfd8' : r > p + 5e-4 ? '#0a7d4f' : r >= p - 5e-4 ? '#b7791f' : '#c0392b'
+              return (
+                <td key={f} className="pp-d">
+                  <div className="p">{nc(p) || '·'}</div>
+                  <div className="r" style={{ color: rHex }}>{nc(r) || (p ? '0' : '')}</div>
+                </td>
+              )
+            })}
+            <td className="pp-num">{nc(comprom) || '—'}</td>
+            <td className="pp-num">{nc(alcanz) || '—'}</td>
+            <td className="pp-cu" style={{ color: cuHex }}>{cu}</td>
+            <td className="pp-obs">
+              {causa && <div><b>NC:</b> {causa}</div>}
+              {restr && <div>⚠ {restr}</div>}
+            </td>
+          </tr>
+        )
+      })}
+    </>
   )
 }
 

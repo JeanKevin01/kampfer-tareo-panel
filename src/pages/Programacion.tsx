@@ -1278,6 +1278,7 @@ function PanelPPC() {
     por_supervisor: { supervisor_id: string; nombre?: string; comprometidas: number; cumplidas: number; ppc: number | null }[]
   }
   const [nSem, setNSem] = useState(8)
+  const [verExport, setVerExport] = useState(false)
   const ppc = useQuery<Resp>({
     queryKey: ['ppc', nSem],
     queryFn: () => api(`/ev/programacion/ppc?proyecto_id=${PROYECTO_ID}&semanas=${nSem}`),
@@ -1303,12 +1304,13 @@ function PanelPPC() {
           {[4, 8, 12, 26].map(n => <option key={n} value={n}>Últimas {n} semanas</option>)}
         </select>
         {ppc.isFetching && <Loader2 size={14} className="animate-spin text-k-text3" />}
-        <button onClick={() => window.open(`/programacion/ppc-imprimir?semanas=${nSem}`, '_blank')}
-          title="Abre el reporte de PPC listo para imprimir o guardar como PDF"
+        <button onClick={() => setVerExport(true)}
+          title="Reporte de PPC (resumen + detalle semanal por partidas) listo para PDF"
           className="ml-auto flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-k-border bg-k-raised text-k-text2 hover:border-k-amber">
           <Printer size={14} /> Reporte PDF
         </button>
       </div>
+      {verExport && <ModalPpcExport nSem={nSem} onClose={() => setVerExport(false)} />}
 
       {/* KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
@@ -1408,6 +1410,85 @@ function PanelPPC() {
             )}
           </tbody>
         </table>
+      </div>
+    </div>
+  )
+}
+
+// Exportar el reporte de PPC: resumen (últimas N semanas) + detalle por semana
+// del rango elegido (páginas horizontales con la tabla F030b por partidas).
+function ModalPpcExport({ nSem, onClose }: { nSem: number; onClose: () => void }) {
+  const [conDetalle, setConDetalle] = useState(true)
+  const [desde, setDesde] = useState(() => iso(lunesDe(new Date())))
+  const [hasta, setHasta] = useState(() => {
+    const d = lunesDe(new Date()); const f = new Date(d); f.setDate(f.getDate() + 6); return iso(f)
+  })
+  const semanas = Math.max(1, Math.round(
+    (new Date(hasta + 'T12:00:00').getTime() - new Date(desde + 'T12:00:00').getTime()) / (7 * 864e5)) + 1)
+
+  const abrir = () => {
+    let url = `/programacion/ppc-imprimir?semanas=${nSem}`
+    if (conDetalle) url += `&desde=${desde}&hasta=${hasta}`
+    window.open(url, '_blank')
+    onClose()
+  }
+
+  // Presets: rango que termina el domingo de ESTA semana y arranca `nWeeks`
+  // semanas atrás (nWeeks=1 → solo esta semana).
+  const rango = (nWeeks: number) => {
+    const dgo = lunesDe(new Date()); dgo.setDate(dgo.getDate() + 6)
+    const lun = lunesDe(new Date()); lun.setDate(lun.getDate() - (nWeeks - 1) * 7)
+    setDesde(iso(lun)); setHasta(iso(dgo))
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-k-surface border border-k-border rounded-xl p-5 w-[480px]" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-1">
+          <h2 className="font-bold text-k-text flex items-center gap-2"><Printer size={16} className="text-k-amber" /> Reporte de PPC</h2>
+          <button onClick={onClose} className="text-k-text3 hover:text-k-text"><X size={18} /></button>
+        </div>
+        <p className="text-xs text-k-text3 mb-4">
+          La <b>hoja 1</b> es el resumen (KPIs, PPC semanal, Pareto) de las últimas {nSem} semanas.
+          Las <b>hojas siguientes</b> (horizontales) muestran el detalle de partidas por semana del
+          rango que elijas: comprometido vs alcanzado, cumplimiento y causas.
+        </p>
+
+        <label className="flex items-center gap-2 text-sm text-k-text2 mb-3 cursor-pointer">
+          <input type="checkbox" checked={conDetalle} onChange={e => setConDetalle(e.target.checked)} className="accent-k-amber" />
+          Incluir detalle semanal por partidas
+        </label>
+
+        {conDetalle && (
+          <>
+            <div className="flex gap-1.5 mb-2 flex-wrap">
+              {([['Esta semana', 1], ['Últimas 2', 2], ['Últimas 4', 4], ['Últimas 8', 8]] as const).map(([l, n]) => (
+                <button key={l} onClick={() => rango(n)}
+                  className="text-[11px] px-2.5 py-1 rounded-lg border border-k-border text-k-text3 hover:border-k-amber">{l}</button>
+              ))}
+            </div>
+            <div className="flex gap-3 mb-1">
+              <div className="flex-1">
+                <label className="block text-[10px] uppercase tracking-wider text-k-text3 mb-1">Desde</label>
+                <input type="date" value={desde} onChange={e => setDesde(e.target.value)}
+                  className="w-full bg-k-void border border-k-border rounded-lg px-3 py-2 text-sm text-k-text" />
+              </div>
+              <div className="flex-1">
+                <label className="block text-[10px] uppercase tracking-wider text-k-text3 mb-1">Hasta</label>
+                <input type="date" value={hasta} min={desde} onChange={e => setHasta(e.target.value)}
+                  className="w-full bg-k-void border border-k-border rounded-lg px-3 py-2 text-sm text-k-text" />
+              </div>
+            </div>
+            <p className="text-[10px] text-k-text3 mb-4">
+              {semanas > 8 ? 'Máximo 8 semanas de detalle: se recortará el rango.' : `${semanas} semana${semanas !== 1 ? 's' : ''} de detalle (una hoja horizontal por semana).`}
+            </p>
+          </>
+        )}
+
+        <button onClick={abrir}
+          className="w-full flex items-center justify-center gap-2 bg-k-amber text-k-void font-bold rounded-lg py-2.5 text-sm">
+          <Printer size={15} /> Abrir reporte
+        </button>
       </div>
     </div>
   )
