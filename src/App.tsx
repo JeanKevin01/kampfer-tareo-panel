@@ -26,6 +26,7 @@ import Programacion from '@/pages/Programacion'
 import ProgramacionPrint from '@/pages/ProgramacionPrint'
 import LookaheadPrint from '@/pages/LookaheadPrint'
 import ReportePartidaPrint from '@/pages/ReportePartidaPrint'
+import PpcPrint from '@/pages/PpcPrint'
 import MatrizHistorica from '@/pages/MatrizHistorica'
 import { currentUser } from '@/lib/auth'
 
@@ -50,6 +51,7 @@ export default function App() {
           <Route path="/programacion/imprimir" element={<ProgramacionPrint />} />
           <Route path="/programacion/lookahead-imprimir" element={<LookaheadPrint />} />
           <Route path="/programacion/reporte-partida" element={<ReportePartidaPrint />} />
+          <Route path="/programacion/ppc-imprimir" element={<PpcPrint />} />
           <Route path="/" element={<Layout />}>
             <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="dashboard"    element={<Dashboard />} />

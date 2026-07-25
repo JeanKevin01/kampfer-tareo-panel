@@ -3,8 +3,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   ChevronLeft, ChevronRight, Plus, X, Loader2, Printer, HardDrive,
   Camera, User, Trash2, Ban, CheckCircle2, CalendarDays, ClipboardList, Copy, Check, FileText,
+  FolderArchive,
 } from 'lucide-react'
-import { api, API_BASE } from '@/lib/api'
+import { api, apiBlob, descargarBlob, API_BASE } from '@/lib/api'
 import { CNC, TIPOS_RESTRICCION } from '@/lib/catalogos'
 import { lunesDe, iso } from '@/lib/semana'
 import { LookaheadGrid, EvaluacionSemanal, type ActGrid } from '@/components/LookaheadGrid'
@@ -67,11 +68,27 @@ const desdeGrid = (a: ActGrid): Actividad =>
 const mediaUrl = (u: string | null) => (u ? `${API_BASE}${u}` : '')
 const fmtMB = (b: number) => `${(b / 1024 / 1024).toFixed(1)} MB`
 
+// Agrupa las actividades + reportes libres de un día por supervisor (el planner
+// asigna cada actividad a uno). «Sin asignar» va al final; el resto alfabético.
+const supLabel = (x: { supervisor_nombre?: string | null; responsable?: string | null }) =>
+  x.supervisor_nombre || x.responsable || 'Sin asignar'
+
+function agrupaPorSup(acts: Actividad[], libres: Reporte[]) {
+  const m = new Map<string, { acts: Actividad[]; libres: Reporte[] }>()
+  const get = (k: string) => { if (!m.has(k)) m.set(k, { acts: [], libres: [] }); return m.get(k)! }
+  acts.forEach(a => get(supLabel(a)).acts.push(a))
+  libres.forEach(r => get(supLabel(r)).libres.push(r))
+  return [...m.entries()]
+    .sort((a, b) => (a[0] === 'Sin asignar' ? 1 : b[0] === 'Sin asignar' ? -1 : a[0].localeCompare(b[0])))
+    .map(([sup, v]) => ({ sup, ...v }))
+}
+
 export default function Programacion() {
   const qc = useQueryClient()
   const [vista, setVista] = useState<'semana' | 'lookahead' | 'histograma' | 'ppc'>('semana')
   const [laModo, setLaModo] = useState<'tabla' | 'tarjetas'>('tabla')
   const [planModo, setPlanModo] = useState<'semana' | 'mes'>('semana')
+  const [agruparSup, setAgruparSup] = useState(false)   // plan semanal separado por supervisor
   const [lunes, setLunes] = useState(() => iso(lunesDe(new Date())))
   const [modalAct, setModalAct] = useState<{ modo: 'crear'; fecha: string } | { modo: 'editar'; act: Actividad } | null>(null)
   const [modalLote, setModalLote] = useState<string | null>(null)   // fecha base del wizard por partidas
@@ -177,7 +194,7 @@ export default function Programacion() {
       {vista === 'ppc' && <PanelPPC />}
 
       {vista === 'semana' && (
-        <div className="flex gap-1.5">
+        <div className="flex gap-1.5 items-center">
           {([['semana', 'Semana'], ['mes', 'Mes (calendario)']] as const).map(([k, l]) => (
             <button key={k} onClick={() => setPlanModo(k)}
               className={`text-[11px] px-2.5 py-1.5 rounded-lg border ${
@@ -185,6 +202,14 @@ export default function Programacion() {
               {l}
             </button>
           ))}
+          {planModo === 'semana' && (
+            <button onClick={() => setAgruparSup(v => !v)}
+              title="Separa las tarjetas de cada día por supervisor"
+              className={`ml-auto flex items-center gap-1.5 text-[11px] px-2.5 py-1.5 rounded-lg border ${
+                agruparSup ? 'border-k-amber text-k-amber bg-amber-500/10' : 'border-k-border text-k-text3 hover:bg-k-raised'}`}>
+              <User size={12} /> Agrupar por supervisor
+            </button>
+          )}
         </div>
       )}
       {vista === 'semana' && planModo === 'mes' && (
@@ -223,13 +248,30 @@ export default function Programacion() {
                   className="p-1 rounded-lg text-k-text3 hover:text-k-amber hover:bg-k-raised"><Plus size={15} /></button>
               </div>
               <div className="p-1.5 space-y-1.5 flex-1">
-                {acts.map(a => (
-                  <TarjetaActividad key={a.id} act={a} reps={a.reportes.map(id => repsPorId.get(id)!).filter(Boolean)}
-                    onClick={() => setModalAct({ modo: 'editar', act: a })} />
-                ))}
-                {libres.map(r => (
-                  <TarjetaReporte key={r.id} rep={r} onClick={() => setRepVer(r)} />
-                ))}
+                {agruparSup ? agrupaPorSup(acts, libres).map(g => (
+                  <div key={g.sup} className="space-y-1.5">
+                    <div className="flex items-center gap-1 px-1 pt-0.5 border-b border-k-border/50 pb-0.5">
+                      <User size={9} className={g.sup === 'Sin asignar' ? 'text-k-text3' : 'text-k-amber'} />
+                      <span className="text-[9px] font-bold uppercase tracking-wide text-k-text2 truncate flex-1">{g.sup}</span>
+                      <span className="text-[9px] text-k-text3">{g.acts.length + g.libres.length}</span>
+                    </div>
+                    {g.acts.map(a => (
+                      <TarjetaActividad key={a.id} act={a} reps={a.reportes.map(id => repsPorId.get(id)!).filter(Boolean)}
+                        onClick={() => setModalAct({ modo: 'editar', act: a })} />
+                    ))}
+                    {g.libres.map(r => (
+                      <TarjetaReporte key={r.id} rep={r} onClick={() => setRepVer(r)} />
+                    ))}
+                  </div>
+                )) : <>
+                  {acts.map(a => (
+                    <TarjetaActividad key={a.id} act={a} reps={a.reportes.map(id => repsPorId.get(id)!).filter(Boolean)}
+                      onClick={() => setModalAct({ modo: 'editar', act: a })} />
+                  ))}
+                  {libres.map(r => (
+                    <TarjetaReporte key={r.id} rep={r} onClick={() => setRepVer(r)} />
+                  ))}
+                </>}
                 {acts.length === 0 && libres.length === 0 && (
                   <p className="text-[10px] text-k-text3 text-center pt-6">—</p>
                 )}
@@ -929,11 +971,36 @@ function ModalReportePartida({ onClose }: { onClose: () => void }) {
     return n
   })
 
-  const abrir = () => {
+  const [zipCargando, setZipCargando] = useState(false)
+  const [zipError, setZipError] = useState('')
+
+  const qs = () => {
     const ids = [...sel].join(',')
-    window.open(`/programacion/reporte-partida?partidas=${ids}`
-      + `${desde ? `&desde=${desde}` : ''}${hasta ? `&hasta=${hasta}` : ''}`, '_blank')
+    return `partidas=${ids}${desde ? `&desde=${desde}` : ''}${hasta ? `&hasta=${hasta}` : ''}`
+  }
+
+  // Combinado: abre la vista imprimible (un solo PDF con «Imprimir → Guardar»).
+  const abrir = () => {
+    window.open(`/programacion/reporte-partida?${qs()}`, '_blank')
     onClose()
+  }
+
+  // ZIP: un PDF por partida (para adjuntar a cada línea de la valorización).
+  // Lo arma el API (fpdf2) con las fotos embebidas desde el disco del VPS.
+  const descargarZip = async () => {
+    setZipError(''); setZipCargando(true)
+    try {
+      const blob = await apiBlob(`/ev/programacion/reporte-partida.zip?${qs()}`)
+      const nombre = desde || hasta
+        ? `sustento_${desde || 'inicio'}_${hasta || 'hoy'}.zip`
+        : 'sustento_valorizacion.zip'
+      descargarBlob(blob, nombre)
+      onClose()
+    } catch (e) {
+      setZipError((e as Error).message || 'No se pudo generar el ZIP')
+    } finally {
+      setZipCargando(false)
+    }
   }
 
   return (
@@ -947,7 +1014,8 @@ function ModalReportePartida({ onClose }: { onClose: () => void }) {
         </div>
         <p className="text-xs text-k-text3 mb-4">
           Sustento de valorización: cifras de la partida + los partes de campo con sus fotos,
-          del más antiguo al más nuevo.
+          del más antiguo al más nuevo. Descárgalo como <b>ZIP con un PDF por partida</b> (ideal
+          para adjuntar a cada línea de la valorización) o como un solo documento combinado.
         </p>
 
         <label className="block text-[10px] uppercase tracking-wider text-k-text3 mb-1">Proyecto</label>
@@ -1000,10 +1068,21 @@ function ModalReportePartida({ onClose }: { onClose: () => void }) {
           </>
         )}
 
-        <button onClick={abrir} disabled={sel.size === 0}
-          className="w-full flex items-center justify-center gap-2 bg-k-amber text-k-void font-bold rounded-lg py-2.5 text-sm disabled:opacity-40">
-          <Printer size={15} /> Generar sustento ({sel.size} partida{sel.size !== 1 ? 's' : ''})
-        </button>
+        {zipError && <p className="text-k-red text-xs mb-2">{zipError}</p>}
+        <div className="flex gap-2">
+          <button onClick={descargarZip} disabled={sel.size === 0 || zipCargando}
+            title="Descarga un ZIP con un PDF por partida"
+            className="flex-1 flex items-center justify-center gap-2 bg-k-amber text-k-void font-bold rounded-lg py-2.5 text-sm disabled:opacity-40">
+            {zipCargando
+              ? <><Loader2 size={15} className="animate-spin" /> Generando PDFs…</>
+              : <><FolderArchive size={15} /> Descargar ZIP ({sel.size} PDF{sel.size !== 1 ? 's' : ''})</>}
+          </button>
+          <button onClick={abrir} disabled={sel.size === 0 || zipCargando}
+            title="Abre un solo documento combinado para imprimir o guardar como PDF"
+            className="flex items-center justify-center gap-2 border border-k-border bg-k-raised text-k-text2 hover:border-k-amber rounded-lg py-2.5 px-3 text-sm disabled:opacity-40">
+            <Printer size={15} /> Combinado
+          </button>
+        </div>
       </div>
     </div>
   )
@@ -1224,6 +1303,11 @@ function PanelPPC() {
           {[4, 8, 12, 26].map(n => <option key={n} value={n}>Últimas {n} semanas</option>)}
         </select>
         {ppc.isFetching && <Loader2 size={14} className="animate-spin text-k-text3" />}
+        <button onClick={() => window.open(`/programacion/ppc-imprimir?semanas=${nSem}`, '_blank')}
+          title="Abre el reporte de PPC listo para imprimir o guardar como PDF"
+          className="ml-auto flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-k-border bg-k-raised text-k-text2 hover:border-k-amber">
+          <Printer size={14} /> Reporte PDF
+        </button>
       </div>
 
       {/* KPIs */}
