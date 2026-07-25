@@ -6,10 +6,11 @@
 // Identidad visual compartida vía BrandDoc.
 import { useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { api, API_BASE } from '@/lib/api'
+import { api } from '@/lib/api'
 import { lunesDe, iso } from '@/lib/semana'
 import { CNC } from '@/lib/catalogos'
 import BrandDoc from '@/components/print/BrandDoc'
+import GaleriaFotos from '@/components/print/GaleriaFotos'
 import type { Semana, Reporte } from '@/pages/Programacion'
 
 const PROYECTO_ID = 1
@@ -73,9 +74,7 @@ export default function ProgramacionPrint() {
         .pr-libre { font-size: 13px; font-weight: 600; margin: 12px 0 4px; }
         .pr-rep { margin: 6px 0 6px 12px; padding-left: 11px; border-left: 3px solid var(--linea); }
         .pr-rep-d { font-size: 12px; margin-bottom: 4px; }
-        .pr-rep-s { font-size: 11px; color: var(--tinta2); }
-        .pr-foto { width: 46%; border: 1px solid var(--linea); border-radius: 6px; margin: 5px 2% 5px 0; }
-        .pr-foto-p { font-size: 11px; color: var(--tinta3); font-style: italic; }
+        .pr-rep-s { font-size: 11px; color: var(--tinta2); margin-bottom: 6px; }
         .pr-vacio { color: var(--tinta3); margin-top: 18px; }
       `}</style>
 
@@ -130,11 +129,7 @@ function BloqueReporte({ rep }: { rep: Reporte }) {
     <div className="pr-rep">
       {rep.descripcion && <div className="pr-rep-d">{rep.descripcion}</div>}
       <div className="pr-rep-s">{rep.supervisor_nombre || rep.supervisor_id}</div>
-      <div>
-        {rep.fotos.map(f => f.url
-          ? <img key={f.id} className="pr-foto" src={`${API_BASE}${f.url}`} alt="" />
-          : <span key={f.id} className="pr-foto-p">[foto purgada] </span>)}
-      </div>
+      <GaleriaFotos fotos={rep.fotos} alturaMm={52} />
     </div>
   )
 }

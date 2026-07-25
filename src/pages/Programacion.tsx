@@ -18,7 +18,7 @@ const DIAS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', '
 const MESES = ['', 'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
 const inputCls = 'bg-k-raised border border-k-border rounded-lg px-2.5 py-2 text-sm text-k-text outline-none focus:border-k-amber w-full'
 
-export interface Foto { id: number; url: string | null; url_thumb: string | null; purgada: boolean; bytes: number }
+export interface Foto { id: number; url: string | null; url_thumb: string | null; purgada: boolean; bytes: number; ancho?: number | null; alto?: number | null }
 export interface Reporte {
   id: number; fecha: string; otm_id?: string; actividad_id?: number | null
   supervisor_id?: string; supervisor_nombre?: string; descripcion?: string

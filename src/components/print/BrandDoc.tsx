@@ -117,6 +117,23 @@ export default function BrandDoc({
           font-size: 10px; color: var(--tinta3); letter-spacing: .02em;
           display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap;
         }
+
+        /* Galería de fotos: filas de altura uniforme, sin recorte (GaleriaFotos) */
+        .gf {
+          display: flex; flex-wrap: wrap; gap: 10px;
+          justify-content: center; align-items: flex-start; margin-top: 10px;
+        }
+        .gf-it {
+          height: var(--gf-h, 62mm); border-radius: 7px; overflow: hidden;
+          border: 1px solid var(--linea); background: #f1f3f6;
+        }
+        .gf-it img { display: block; height: 100%; width: auto; max-width: 100%; }
+        .gf-purgada {
+          height: var(--gf-h, 62mm); aspect-ratio: var(--gf-ar, 1.33);
+          display: flex; align-items: center; justify-content: center; text-align: center;
+          padding: 0 12px; border: 1px dashed var(--linea); border-radius: 7px;
+          background: #fafbfc; color: var(--tinta3); font-style: italic; font-size: 11px;
+        }
       `}</style>
 
       <div className="kd-bar kd-noprint">

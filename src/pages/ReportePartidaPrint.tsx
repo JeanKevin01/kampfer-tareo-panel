@@ -8,10 +8,14 @@
 import { useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
-import { api, API_BASE } from '@/lib/api'
+import { api } from '@/lib/api'
 import BrandDoc from '@/components/print/BrandDoc'
+import GaleriaFotos from '@/components/print/GaleriaFotos'
 
-interface Foto { id: number; url: string | null; url_thumb: string | null; purgada: boolean }
+interface Foto {
+  id: number; url: string | null; url_thumb: string | null; purgada: boolean
+  ancho?: number | null; alto?: number | null
+}
 interface ReporteBloque {
   id: number; fecha: string; area: string | null; turno: string | null
   actividad: string | null; supervisor: string; texto: string
@@ -33,9 +37,6 @@ const nf = (v: number, d = 2) =>
 const fechaLarga = (iso: string) =>
   new Date(iso + 'T12:00:00').toLocaleDateString('es-PE',
     { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
-
-// Las fotos vienen con URL firmada relativa al API
-const mediaUrl = (u: string) => (u.startsWith('http') ? u : `${API_BASE}${u}`)
 
 const CIFRAS: { k: keyof PartidaBloque['partida']; label: string; fuerte?: boolean }[] = [
   { k: 'metrado_presup', label: 'Metrado presup.' },
@@ -118,11 +119,6 @@ export default function ReportePartidaPrint() {
         .rp-parte { font-family: 'Geist Mono', ui-monospace, Menlo, monospace;
           font-size: 11px; line-height: 1.65; white-space: pre-wrap;
           background: #f8fafc; border: 1px solid var(--linea2); border-radius: 8px; padding: 13px 15px; }
-        .rp-fotos { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
-        .rp-fotos img { width: 100%; border-radius: 7px; border: 1px solid var(--linea); }
-        .rp-foto-purgada { height: 150px; border: 1px dashed var(--linea); border-radius: 7px;
-          display: flex; align-items: center; justify-content: center;
-          font-size: 11px; color: var(--tinta3); font-style: italic; }
         .rp-vacio { font-size: 13px; color: var(--tinta3); font-style: italic; }
       `}</style>
 
@@ -164,13 +160,7 @@ export default function ReportePartidaPrint() {
                 {r.hh_dia > 0 && <span className="rp-rep-hh">{nf(r.hh_dia, 1)} HH</span>}
               </div>
               <pre className="rp-parte">{r.texto}</pre>
-              {r.fotos.length > 0 && (
-                <div className="rp-fotos">
-                  {r.fotos.map(f => f.url
-                    ? <img key={f.id} src={mediaUrl(f.url)} alt="" loading="lazy" />
-                    : <div key={f.id} className="rp-foto-purgada">foto purgada del disco</div>)}
-                </div>
-              )}
+              <GaleriaFotos fotos={r.fotos} />
             </div>
           ))}
         </section>
