@@ -34,7 +34,7 @@ interface NodoISP extends PartidaISP {
 }
 
 function pfColor(pf:number, gast:number) {
-  if (gast <= 0) return { color:'#4e5a72', text:'—' }
+  if (gast <= 0) return { color:'rgb(var(--k-text3))', text:'—' }
   const c = pf >= 1 ? '#2DD4A8' : pf >= 0.85 ? '#FACC15' : '#FF6B6B'
   return { color: c, text: pf.toFixed(2) }
 }
@@ -81,11 +81,11 @@ function buildTreeISP(partidas: PartidaISP[], semanas: SemInfo[]): NodoISP[] {
 function LeafWeekDetail({ p, semanas, semanaActual }: { p:NodoISP; semanas:SemInfo[]; semanaActual:number }) {
   const semPrev = (s:number) => p.semanas[s-1]
   const filas = [
-    { key:'cant',   label:`Cant Ejecutada (${p.unidad ?? '—'})`, color:'#94A3B8', fn:(d:SemDato,s:number)=>({ per: d.cant_acum-(semPrev(s)?.cant_acum??0), acum:d.cant_acum }) },
-    { key:'hhgast', label:'HH Gastadas',  color:'#FF6B6B', fn:(d:SemDato)=>({ per:d.hh_gast_sem, acum:d.hh_gast_acum }) },
-    { key:'hhgan',  label:'HH Ganadas',   color:'#2DD4A8', fn:(d:SemDato)=>({ per:d.hh_gan_sem,  acum:d.hh_gan_acum  }) },
+    { key:'cant',   label:`Cant Ejecutada (${p.unidad ?? '—'})`, color:'rgb(var(--k-text2))', fn:(d:SemDato,s:number)=>({ per: d.cant_acum-(semPrev(s)?.cant_acum??0), acum:d.cant_acum }) },
+    { key:'hhgast', label:'HH Gastadas',  color:'var(--pf-bad)', fn:(d:SemDato)=>({ per:d.hh_gast_sem, acum:d.hh_gast_acum }) },
+    { key:'hhgan',  label:'HH Ganadas',   color:'var(--pf-good)', fn:(d:SemDato)=>({ per:d.hh_gan_sem,  acum:d.hh_gan_acum  }) },
     { key:'pf',     label:'P.F.',         color:'',        fn:(d:SemDato)=>({ per:d.pf_sem, acum:d.pf_acum }) },
-    { key:'pct',    label:'% Avance',     color:'#60A5FA', fn:(d:SemDato,s:number)=>({ per:d.pct_avance-(semPrev(s)?.pct_avance??0), acum:d.pct_avance }) },
+    { key:'pct',    label:'% Avance',     color:'var(--fase-est)', fn:(d:SemDato,s:number)=>({ per:d.pct_avance-(semPrev(s)?.pct_avance??0), acum:d.pct_avance }) },
   ]
   const fmt = (v:number, key:string) => {
     if (!isFinite(v) || isNaN(v)) return '—'
@@ -95,47 +95,47 @@ function LeafWeekDetail({ p, semanas, semanaActual }: { p:NodoISP; semanas:SemIn
   }
   return (
     <tr>
-      <td colSpan={9} style={{ padding:0, background:'#0d1220' }}>
-        <div style={{ overflowX:'auto', borderTop:'0.5px solid #1c2436' }}>
+      <td colSpan={9} style={{ padding:0, background:'rgb(var(--k-void))' }}>
+        <div style={{ overflowX:'auto', borderTop:'0.5px solid rgb(var(--k-raised))' }}>
           <table style={{ width:'100%', borderCollapse:'collapse', fontSize:11 }}>
             <thead>
-              <tr style={{ background:'#141926', borderBottom:'0.5px solid #252f45' }}>
-                <th style={{ padding:'6px 12px', textAlign:'left', color:'#4e5a72', fontWeight:600, fontSize:10, whiteSpace:'nowrap', minWidth:160 }}>Métrica</th>
+              <tr style={{ background:'rgb(var(--k-surface))', borderBottom:'0.5px solid rgb(var(--k-border))' }}>
+                <th style={{ padding:'6px 12px', textAlign:'left', color:'rgb(var(--k-text3))', fontWeight:600, fontSize:10, whiteSpace:'nowrap', minWidth:160 }}>Métrica</th>
                 {semanas.map(s => (
-                  <th key={s.semana} colSpan={2} style={{ padding:'6px 8px', textAlign:'center', color: s.semana===semanaActual?'#f59e0b':'#4e5a72', fontWeight:600, fontSize:10, borderLeft:'0.5px solid #1c2436', minWidth:120 }}>
+                  <th key={s.semana} colSpan={2} style={{ padding:'6px 8px', textAlign:'center', color: s.semana===semanaActual?'#f59e0b':'rgb(var(--k-text3))', fontWeight:600, fontSize:10, borderLeft:'0.5px solid rgb(var(--k-raised))', minWidth:120 }}>
                     {s.label}{s.semana===semanaActual && <span style={{ fontSize:8, display:'block', color:'#f59e0b99' }}>Actual</span>}
                   </th>
                 ))}
               </tr>
-              <tr style={{ background:'#0d1220', borderBottom:'0.5px solid #1c2436' }}>
+              <tr style={{ background:'rgb(var(--k-void))', borderBottom:'0.5px solid rgb(var(--k-raised))' }}>
                 <th style={{ padding:'3px 12px' }}/>
                 {semanas.map(s => (
                   <Frag key={s.semana}>
-                    <th style={{ padding:'3px 6px', textAlign:'right', color:'#4e5a72', fontSize:9, fontWeight:500, borderLeft:'0.5px solid #1c2436' }}>Período</th>
-                    <th style={{ padding:'3px 6px', textAlign:'right', color:'#4e5a72', fontSize:9, fontWeight:500 }}>Acumul.</th>
+                    <th style={{ padding:'3px 6px', textAlign:'right', color:'rgb(var(--k-text3))', fontSize:9, fontWeight:500, borderLeft:'0.5px solid rgb(var(--k-raised))' }}>Período</th>
+                    <th style={{ padding:'3px 6px', textAlign:'right', color:'rgb(var(--k-text3))', fontSize:9, fontWeight:500 }}>Acumul.</th>
                   </Frag>
                 ))}
               </tr>
             </thead>
             <tbody>
               {filas.map(fila => (
-                <tr key={fila.key} style={{ borderBottom:'0.5px solid #141926' }}>
-                  <td style={{ padding:'5px 12px', color: fila.color || '#8a96ad', fontSize:11, fontWeight:500, whiteSpace:'nowrap' }}>{fila.label}</td>
+                <tr key={fila.key} style={{ borderBottom:'0.5px solid rgb(var(--k-surface))' }}>
+                  <td style={{ padding:'5px 12px', color: fila.color || 'rgb(var(--k-text2))', fontSize:11, fontWeight:500, whiteSpace:'nowrap' }}>{fila.label}</td>
                   {semanas.map(s => {
                     const d = p.semanas[s.semana]
                     if (!d) return (
                       <Frag key={s.semana}>
-                        <td style={{ padding:'5px 6px', textAlign:'right', color:'#252f45', borderLeft:'0.5px solid #1c2436' }}>—</td>
-                        <td style={{ padding:'5px 6px', textAlign:'right', color:'#252f45' }}>—</td>
+                        <td style={{ padding:'5px 6px', textAlign:'right', color:'rgb(var(--k-border))', borderLeft:'0.5px solid rgb(var(--k-raised))' }}>—</td>
+                        <td style={{ padding:'5px 6px', textAlign:'right', color:'rgb(var(--k-border))' }}>—</td>
                       </Frag>
                     )
                     const { per, acum } = fila.fn(d, s.semana)
-                    const color = fila.key==='pf' ? pfColor(acum,1).color : (fila.color || '#8a96ad')
-                    const bg = s.semana===semanaActual ? '#1c2436' : 'transparent'
+                    const color = fila.key==='pf' ? pfColor(acum,1).color : (fila.color || 'rgb(var(--k-text2))')
+                    const bg = s.semana===semanaActual ? 'rgb(var(--k-raised))' : 'transparent'
                     return (
                       <Frag key={s.semana}>
-                        <td style={{ padding:'5px 6px', textAlign:'right', fontFamily:'var(--mono)', color: acum>0?color:'#4e5a72', borderLeft:'0.5px solid #1c2436', background:bg }}>{fmt(per, fila.key)}</td>
-                        <td style={{ padding:'5px 6px', textAlign:'right', fontFamily:'var(--mono)', color: acum>0?color:'#4e5a72', fontWeight: acum>0?600:400, background:bg }}>{fmt(acum, fila.key)}</td>
+                        <td style={{ padding:'5px 6px', textAlign:'right', fontFamily:'var(--mono)', color: acum>0?color:'rgb(var(--k-text3))', borderLeft:'0.5px solid rgb(var(--k-raised))', background:bg }}>{fmt(per, fila.key)}</td>
+                        <td style={{ padding:'5px 6px', textAlign:'right', fontFamily:'var(--mono)', color: acum>0?color:'rgb(var(--k-text3))', fontWeight: acum>0?600:400, background:bg }}>{fmt(acum, fila.key)}</td>
                       </Frag>
                     )
                   })}
@@ -169,7 +169,7 @@ function ISPRow({ node, semanas, semanaActual, collapsed, openDetail, onToggle, 
 
   return (
     <>
-      <tr style={{ background: nv.bg, borderBottom:'0.5px solid #1c2436', borderLeft:`3px solid ${nv.border}`, cursor:'pointer' }}
+      <tr style={{ background: nv.bg, borderBottom:'0.5px solid rgb(var(--k-raised))', borderLeft:`3px solid ${nv.border}`, cursor:'pointer' }}
           onClick={() => isLeaf ? onDetail(node.codigo) : onToggle(node.codigo)}>
         {/* chevron */}
         <td style={{ padding:'7px 4px', width:24 }}>
@@ -186,34 +186,34 @@ function ISPRow({ node, semanas, semanaActual, collapsed, openDetail, onToggle, 
         {/* descripción */}
         <td style={{ padding:'7px 8px' }}>
           <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-            <span style={{ fontSize: node.nivel<=2?12.5:12, fontWeight: nv.bold?600:400, color: isLeaf?'#e8edf5':nv.text,
+            <span style={{ fontSize: node.nivel<=2?12.5:12, fontWeight: nv.bold?600:400, color: isLeaf?'rgb(var(--k-text))':nv.text,
               fontStyle: !isLeaf && node.nivel>=2?'italic':'normal', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}
               title={node.descripcion}>
               {node.descripcion || 'sin descripción'}
             </span>
-            {isLeaf && node.unidad && <span style={{ fontSize:10, color:'#4e5a72', fontFamily:'var(--mono)', flexShrink:0 }}>{node.unidad}</span>}
+            {isLeaf && node.unidad && <span style={{ fontSize:10, color:'rgb(var(--k-text3))', fontFamily:'var(--mono)', flexShrink:0 }}>{node.unidad}</span>}
             {isLeaf && node.factor_conv > 0 && (
-              <span style={{ fontSize:9, color:'#4e5a72', background:'#1c2436', border:'0.5px solid #252f45', padding:'1px 5px', borderRadius:4, flexShrink:0 }}>
+              <span style={{ fontSize:9, color:'rgb(var(--k-text3))', background:'rgb(var(--k-raised))', border:'0.5px solid rgb(var(--k-border))', padding:'1px 5px', borderRadius:4, flexShrink:0 }}>
                 FC {node.factor_conv.toFixed(3)}
               </span>
             )}
           </div>
         </td>
         {/* Met. Presup */}
-        <td style={{ padding:'7px 12px 7px 8px', textAlign:'right', fontFamily:'var(--mono)', fontSize:11, color: isLeaf?'#94A3B8':'#4e5a72', width:90 }}>
+        <td style={{ padding:'7px 12px 7px 8px', textAlign:'right', fontFamily:'var(--mono)', fontSize:11, color: isLeaf?'#94A3B8':'rgb(var(--k-text3))', width:90 }}>
           {isLeaf && node.metrado_presup > 0 ? node.metrado_presup.toLocaleString('es-PE',{maximumFractionDigits:2}) : '—'}
         </td>
         {/* HH Presup (rollup) */}
-        <td style={{ padding:'7px 12px 7px 8px', textAlign:'right', fontFamily:'var(--mono)', fontSize:11, color: isLeaf?'#8a96ad':'#e8edf5', fontWeight: isLeaf?400:500, width:90 }}>
+        <td style={{ padding:'7px 12px 7px 8px', textAlign:'right', fontFamily:'var(--mono)', fontSize:11, color: isLeaf?'rgb(var(--k-text2))':'rgb(var(--k-text))', fontWeight: isLeaf?400:500, width:90 }}>
           {node.rHHPresup > 0 ? node.rHHPresup.toLocaleString('es-PE',{maximumFractionDigits:1}) : '—'}
         </td>
         {/* HH Gan Acum */}
-        <td style={{ padding:'7px 12px 7px 8px', textAlign:'right', fontFamily:'var(--mono)', fontSize:11, color:'#2DD4A8', width:90 }}>
-          {d && d.hh_gan_acum>0 ? d.hh_gan_acum.toLocaleString('es-PE',{maximumFractionDigits:1}) : <span style={{ color:'#4e5a72' }}>—</span>}
+        <td style={{ padding:'7px 12px 7px 8px', textAlign:'right', fontFamily:'var(--mono)', fontSize:11, color:'var(--pf-good)', width:90 }}>
+          {d && d.hh_gan_acum>0 ? d.hh_gan_acum.toLocaleString('es-PE',{maximumFractionDigits:1}) : <span style={{ color:'rgb(var(--k-text3))' }}>—</span>}
         </td>
         {/* HH Gast Acum */}
-        <td style={{ padding:'7px 12px 7px 8px', textAlign:'right', fontFamily:'var(--mono)', fontSize:11, color:'#FF6B6B', width:90 }}>
-          {d && d.hh_gast_acum>0 ? d.hh_gast_acum.toLocaleString('es-PE',{maximumFractionDigits:1}) : <span style={{ color:'#4e5a72' }}>—</span>}
+        <td style={{ padding:'7px 12px 7px 8px', textAlign:'right', fontFamily:'var(--mono)', fontSize:11, color:'var(--pf-bad)', width:90 }}>
+          {d && d.hh_gast_acum>0 ? d.hh_gast_acum.toLocaleString('es-PE',{maximumFractionDigits:1}) : <span style={{ color:'rgb(var(--k-text3))' }}>—</span>}
         </td>
         {/* PF Acum */}
         <td style={{ padding:'7px 10px', textAlign:'center', fontFamily:'var(--mono)', fontSize:12, fontWeight:700, color: pf.color, width:70 }}>
@@ -221,11 +221,11 @@ function ISPRow({ node, semanas, semanaActual, collapsed, openDetail, onToggle, 
         </td>
         {/* % Avance */}
         <td style={{ padding:'7px 10px', width:90 }}>
-          <div style={{ position:'relative', height:16, background:'#1c2436', borderRadius:8, overflow:'hidden', minWidth:60 }}>
+          <div style={{ position:'relative', height:16, background:'rgb(var(--k-raised))', borderRadius:8, overflow:'hidden', minWidth:60 }}>
             {(d?.pct_avance ?? 0) > 0 && <div style={{ position:'absolute', left:0, top:0, bottom:0, borderRadius:8,
               background:(d!.pct_avance>=1?'#2DD4A8':'#3B82F6'), width:`${Math.min(d!.pct_avance*100,100)}%`, transition:'width .4s' }}/>}
             <span style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center',
-              fontSize:9, fontWeight:700, color:(d?.pct_avance ?? 0)>0.5?'#0f1117':'#8a96ad' }}>
+              fontSize:9, fontWeight:700, color:(d?.pct_avance ?? 0)>0.5?'#0f1117':'rgb(var(--k-text2))' }}>
               {((d?.pct_avance ?? 0)*100).toFixed(1)}%
             </span>
           </div>
@@ -449,9 +449,9 @@ export default function TabISP({ semana, otm }: { semana: number; otm?: string }
       {/* KPIs ejecutivos */}
       <div className="grid grid-cols-4 gap-3">
         {[
-          { label:'HH Plan', value: totalPlan.toLocaleString('es-PE',{maximumFractionDigits:0}), unit:'HH', color:'#94A3B8' },
-          { label:'HH Ganadas', value: totalGan.toLocaleString('es-PE',{maximumFractionDigits:0}), unit:'HH', color:'#2DD4A8' },
-          { label:'HH Gastadas', value: totalGast.toLocaleString('es-PE',{maximumFractionDigits:0}), unit:'HH', color:'#FF6B6B' },
+          { label:'HH Plan', value: totalPlan.toLocaleString('es-PE',{maximumFractionDigits:0}), unit:'HH', color:'rgb(var(--k-text2))' },
+          { label:'HH Ganadas', value: totalGan.toLocaleString('es-PE',{maximumFractionDigits:0}), unit:'HH', color:'var(--pf-good)' },
+          { label:'HH Gastadas', value: totalGast.toLocaleString('es-PE',{maximumFractionDigits:0}), unit:'HH', color:'var(--pf-bad)' },
           { label:'PF Proyecto', value: pfProyecto > 0 ? pfProyecto.toFixed(3) : '—', unit:'', color: pfProyecto>=1?'#2DD4A8':pfProyecto>=0.85?'#FACC15':'#FF6B6B' },
         ].map(k => (
           <div key={k.label} className="bg-k-surface border border-k-border rounded-xl p-4">
@@ -518,14 +518,14 @@ export default function TabISP({ semana, otm }: { semana: number; otm?: string }
           return (
             <button key={f} onClick={()=>setGrupFase(grupFase===f?null:f)}
               className="text-[11px] px-3 py-1 rounded-lg border transition-colors"
-              style={{ background: grupFase===f?c+'22':'#1c2436', borderColor: grupFase===f?c:'#252f45', color: grupFase===f?c:'#8a96ad', fontWeight: grupFase===f?700:400 }}>
+              style={{ background: grupFase===f?c+'22':'rgb(var(--k-raised))', borderColor: grupFase===f?c:'rgb(var(--k-border))', color: grupFase===f?c:'rgb(var(--k-text2))', fontWeight: grupFase===f?700:400 }}>
               {f}
             </button>
           )
         })}
       </div>
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2 rounded-lg" style={{ background:'#141926', border:'0.5px solid #252f45' }}>
-        <span className="text-[10px]" style={{ color:'#4e5a72' }}>NIVEL:</span>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2 rounded-lg" style={{ background:'rgb(var(--k-surface))', border:'0.5px solid rgb(var(--k-border))' }}>
+        <span className="text-[10px]" style={{ color:'rgb(var(--k-text3))' }}>NIVEL:</span>
         {([[1,'#FF9B9B','Raíz'],[2,'#7FE0D4','Sección'],[3,'#D6B3FF','Sub-sección'],[4,'#FFC98B','Detalle']] as [number,string,string][]).map(([n,c,lbl])=>(
           <span key={n} className="flex items-center gap-1 text-[10px]">
             <span style={{ width:10, height:10, borderRadius:2, background:c }}/>
@@ -534,7 +534,7 @@ export default function TabISP({ semana, otm }: { semana: number; otm?: string }
         ))}
         <span className="flex items-center gap-1 text-[10px]">
           <span style={{ width:10, height:10, borderRadius:2, background:'#60A5FA' }}/>
-          <span style={{ color:'#c8d0e0' }}>Hoja (clic → detalle semanal)</span>
+          <span style={{ color:'rgb(var(--k-text))' }}>Hoja (clic → detalle semanal)</span>
         </span>
       </div>
 

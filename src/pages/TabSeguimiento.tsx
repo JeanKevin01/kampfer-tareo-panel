@@ -12,7 +12,7 @@ interface PartidaISP { fase: string | null; es_hoja: boolean; semanas: Record<nu
 
 const fmt0 = (n: number) => isFinite(n) ? n.toLocaleString('es-PE', { maximumFractionDigits: 0 }) : '—'
 function pfColor(pf: number) {
-  if (!isFinite(pf) || pf <= 0) return '#4e5a72'
+  if (!isFinite(pf) || pf <= 0) return 'rgb(var(--k-text3))'
   return pf >= 1 ? '#2DD4A8' : pf >= 0.85 ? '#FACC15' : '#FF6B6B'
 }
 

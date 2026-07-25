@@ -126,8 +126,8 @@ const TD = 'py-2 px-3 text-sm text-k-text2'
 // Leyenda de niveles WBS (compartida por Configuración y Avances)
 function NivelLeyenda() {
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2 rounded-lg" style={{ background: '#141926', border: '0.5px solid #252f45' }}>
-      <span className="text-[10px]" style={{ color: '#4e5a72' }}>NIVEL:</span>
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2 rounded-lg" style={{ background: 'rgb(var(--k-surface))', border: '0.5px solid rgb(var(--k-border))' }}>
+      <span className="text-[10px]" style={{ color: 'rgb(var(--k-text3))' }}>NIVEL:</span>
       {NIVEL_LABELS.map(([n, c, lbl]) => (
         <span key={n} className="flex items-center gap-1 text-[10px]">
           <span style={{ width: 10, height: 10, borderRadius: 2, background: c, display: 'inline-block' }} />
@@ -136,7 +136,7 @@ function NivelLeyenda() {
       ))}
       <span className="flex items-center gap-1 text-[10px]">
         <span style={{ width: 10, height: 10, borderRadius: 2, background: '#60A5FA', display: 'inline-block' }} />
-        <span style={{ color: '#c8d0e0' }}>Hoja (actividad)</span>
+        <span style={{ color: 'rgb(var(--k-text))' }}>Hoja (actividad)</span>
       </span>
     </div>
   )
@@ -275,7 +275,7 @@ export default function ValorGanado() {
               className="bg-k-raised border border-k-border rounded-lg px-3 py-2 text-sm text-k-text outline-none focus:border-k-amber transition-colors min-w-[240px]"
             >
               {semanasAuto.map(s => (
-                <option key={s.semana} value={s.semana} style={{ color: s.activa ? undefined : '#4e5a72' }}>
+                <option key={s.semana} value={s.semana} style={{ color: s.activa ? undefined : 'rgb(var(--k-text3))' }}>
                   {s.label}
                 </option>
               ))}
@@ -415,9 +415,9 @@ function TabResumen({ semana, otm }: { semana: number; otm?: string }) {
           <div className="h-72">
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={curva}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#252f45" />
-                <XAxis dataKey="semana" tick={{ fill: '#8a96ad', fontSize: 11 }} tickFormatter={s => `S${s}`} />
-                <YAxis tick={{ fill: '#8a96ad', fontSize: 11 }} />
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(130,140,160,0.2)" />
+                <XAxis dataKey="semana" tick={{ fill: '#8b95ab', fontSize: 11 }} tickFormatter={s => `S${s}`} />
+                <YAxis tick={{ fill: '#8b95ab', fontSize: 11 }} />
                 <Tooltip content={<CustomTooltip />} />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
                 <Area type="monotone" dataKey="hh_ganadas_acum" name="HH Ganadas (EV)"
@@ -436,16 +436,16 @@ function TabResumen({ semana, otm }: { semana: number; otm?: string }) {
           <div className="h-72">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={curva}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#252f45" />
-                <XAxis dataKey="semana" tick={{ fill: '#8a96ad', fontSize: 11 }} tickFormatter={s => `S${s}`} />
-                <YAxis tick={{ fill: '#8a96ad', fontSize: 11 }} domain={[0, 'auto']} />
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(130,140,160,0.2)" />
+                <XAxis dataKey="semana" tick={{ fill: '#8b95ab', fontSize: 11 }} tickFormatter={s => `S${s}`} />
+                <YAxis tick={{ fill: '#8b95ab', fontSize: 11 }} domain={[0, 'auto']} />
                 <Tooltip content={<CustomTooltip />} />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
                 <ReferenceLine y={1} stroke="#f59e0b" strokeDasharray="5 5" />
                 <Line type="monotone" dataKey="pf_acum" name="PF Acumulado"
                       stroke="#3b82f6" strokeWidth={2} connectNulls />
                 <Line type="monotone" dataKey="pf_sem" name="PF Semanal"
-                      stroke="#4e5a72" strokeDasharray="4 4" connectNulls />
+                      stroke="#8b95ab" strokeDasharray="4 4" connectNulls />
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -567,7 +567,7 @@ function TabEjecutivo({ semana, otm }: { semana: number; otm?: string }) {
             <tbody>
               {m.areas.map(a => (
                 <Fragment key={a.area}>
-                  <tr className="border-b border-k-border" style={{ background: '#141926' }}>
+                  <tr className="border-b border-k-border" style={{ background: 'rgb(var(--k-surface))' }}>
                     <td className={`${TD} font-bold text-k-text`}>{a.area}</td>
                     <td className={`${numTD} text-k-text`}>{fmt(a.subtotal.hh_contractual, 0)}</td>
                     <td className={`${numTD} text-k-text`}>{fmt(a.subtotal.hh_proyec, 0)}</td>
@@ -654,12 +654,12 @@ function CurvasFase({ semana }: { semana: number }) {
       <div className="h-80">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={serie} margin={{ top: 4, right: 16, bottom: 0, left: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#252f45" />
-            <XAxis dataKey="semana" tick={{ fill: '#8a96ad', fontSize: 11 }} tickFormatter={s => `S${s}`} />
-            <YAxis tick={{ fill: '#8a96ad', fontSize: 11 }} domain={[0, 'auto']}
+            <CartesianGrid strokeDasharray="3 3" stroke="rgba(130,140,160,0.2)" />
+            <XAxis dataKey="semana" tick={{ fill: '#8b95ab', fontSize: 11 }} tickFormatter={s => `S${s}`} />
+            <YAxis tick={{ fill: '#8b95ab', fontSize: 11 }} domain={[0, 'auto']}
                    tickFormatter={v => v.toFixed(2)} />
             <Tooltip
-              contentStyle={{ background: '#1c2436', border: '1px solid #252f45', borderRadius: 8, fontSize: 12 }}
+              contentStyle={{ background: 'rgb(var(--k-raised))', border: '1px solid rgb(var(--k-border))', borderRadius: 8, fontSize: 12 }}
               formatter={(v: unknown, name: unknown) => [Number(v).toFixed(3), String(name).replace('pf_', '')]}
               labelFormatter={l => `Semana ${l}`}
             />
@@ -840,7 +840,7 @@ function TabRegistro({ semana, otm }: { semana: number; otm?: string }) {
               if (!isLeaf) {
                 const hhN = hhRollup.get(p.codigo) ?? 0
                 return (
-                  <tr key={`n-${p.partida_id}`} style={{ background: st.bg, borderLeft: `3px solid ${st.border}`, borderBottom: '0.5px solid #1c2436' }}>
+                  <tr key={`n-${p.partida_id}`} style={{ background: st.bg, borderLeft: `3px solid ${st.border}`, borderBottom: '0.5px solid rgb(var(--k-raised))' }}>
                     <td />
                     <td className="py-1.5 px-2" colSpan={2}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingLeft: indent }}>
@@ -876,7 +876,7 @@ function TabRegistro({ semana, otm }: { semana: number; otm?: string }) {
                     <td className="py-1 px-2 text-center text-k-text3 font-mono" style={{ fontSize: 11 }}>{p.unidad ?? '—'}</td>
                     <td className="py-1 px-2 text-right font-mono text-k-text3" style={{ fontSize: 11 }}>{fmt(mp)}</td>
                     <td className="py-1 px-2" />
-                    <td className="py-1 px-2 text-right"><span className="font-mono font-bold" style={{ fontSize: 12, color: pct >= 1 ? '#2DD4A8' : pct > 0 ? '#3B82F6' : '#4e5a72' }}>{(pct * 100).toFixed(1)}%</span></td>
+                    <td className="py-1 px-2 text-right"><span className="font-mono font-bold" style={{ fontSize: 12, color: pct >= 1 ? '#2DD4A8' : pct > 0 ? '#3B82F6' : 'rgb(var(--k-text3))' }}>{(pct * 100).toFixed(1)}%</span></td>
                     <td className="py-1 px-2" />
                     <td className="py-1 px-2 text-right font-mono text-k-green" style={{ fontSize: 11 }}>{p.hh_tareo > 0 ? fmt(p.hh_tareo) : '—'}</td>
                     <td className="py-1 px-1" style={{ minWidth: 70 }}>
@@ -1195,7 +1195,7 @@ function TabConfig({ otm }: { otm?: string }) {
                 return (
                   <tr key={p.id} className="border-b border-k-border last:border-0"
                       style={{ background: st.bg, borderLeft: `3px solid ${st.border}` }}>
-                    <td className={`${TD} text-[11px]`} style={{ color: '#8a96ad' }}>{p.otm_id ?? '—'}</td>
+                    <td className={`${TD} text-[11px]`} style={{ color: 'rgb(var(--k-text2))' }}>{p.otm_id ?? '—'}</td>
                     <td className={`${TD} font-mono text-[11px]`} style={{ whiteSpace: 'nowrap' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 4, paddingLeft: indent }}>
                         {!isLeaf
@@ -1207,7 +1207,7 @@ function TabConfig({ otm }: { otm?: string }) {
                       </div>
                     </td>
                     <td className={`${TD} max-w-[280px] truncate`} title={p.descripcion}
-                        style={{ color: isLeaf ? '#e8edf5' : st.text, fontWeight: st.bold ? 600 : 400, fontStyle: !isLeaf ? 'italic' : 'normal' }}>
+                        style={{ color: isLeaf ? 'rgb(var(--k-text))' : st.text, fontWeight: st.bold ? 600 : 400, fontStyle: !isLeaf ? 'italic' : 'normal' }}>
                       {p.descripcion}
                     </td>
                     <td className={TD}>{p.unidad || '—'}</td>

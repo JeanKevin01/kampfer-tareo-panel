@@ -126,14 +126,14 @@ export default function TabRendimientos({ semana, selectedOtm, trabajadores }: P
               </div>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
-                  <tr style={{ background: '#1c2436' }}>
+                  <tr style={{ background: 'rgb(var(--k-raised))' }}>
                     {['Fase','Código','Descripción','HH Gastadas','Cant. Acum.','HH Ganadas','PF','Workers','Días']
                       .map(h => (
                         <th key={h} style={{
                           padding: '7px 12px', textAlign: h==='Descripción'?'left':'center',
-                          fontSize: 10, color: '#4e5a72', fontWeight: 700,
+                          fontSize: 10, color: 'rgb(var(--k-text3))', fontWeight: 700,
                           textTransform: 'uppercase', letterSpacing: 1,
-                          borderBottom: '1px solid #252f45',
+                          borderBottom: '1px solid rgb(var(--k-border))',
                         }}>{h}</th>
                       ))}
                   </tr>
@@ -143,7 +143,7 @@ export default function TabRendimientos({ semana, selectedOtm, trabajadores }: P
                     const color = FASE_COLORS[p.fase] || '#94a3b8'
                     return (
                       <tr key={p.partida_id}
-                          style={{ borderBottom: i < sup.partidas.length - 1 ? '1px solid #1c2436' : 'none' }}>
+                          style={{ borderBottom: i < sup.partidas.length - 1 ? '1px solid rgb(var(--k-raised))' : 'none' }}>
                         <td style={{ padding: '8px 12px', textAlign: 'center' }}>
                           <span style={{
                             padding:'2px 6px',borderRadius:4,fontSize:9,fontWeight:800,
@@ -151,26 +151,26 @@ export default function TabRendimientos({ semana, selectedOtm, trabajadores }: P
                           }}>{p.fase}</span>
                         </td>
                         <td style={{ padding:'8px 12px',textAlign:'center',fontFamily:'monospace',
-                          fontSize:11,color:'#f59e0b' }}>{p.codigo}</td>
-                        <td style={{ padding:'8px 12px',fontSize:12,color:'#e8edf5',maxWidth:200,
+                          fontSize:11,color:'rgb(var(--k-amber))' }}>{p.codigo}</td>
+                        <td style={{ padding:'8px 12px',fontSize:12,color:'rgb(var(--k-text))',maxWidth:200,
                           overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>
                           {p.descripcion}
                         </td>
                         <td style={{padding:'8px 12px',textAlign:'center',fontFamily:'monospace',
-                          fontSize:12,color:'#f59e0b',fontWeight:600}}>{p.hh_total.toFixed(1)}</td>
+                          fontSize:12,color:'rgb(var(--k-amber))',fontWeight:600}}>{p.hh_total.toFixed(1)}</td>
                         <td style={{padding:'8px 12px',textAlign:'center',fontFamily:'monospace',
-                          fontSize:12,color:'#8a96ad'}}>{p.cant_acum > 0 ? p.cant_acum.toFixed(2) : '—'}</td>
+                          fontSize:12,color:'rgb(var(--k-text2))'}}>{p.cant_acum > 0 ? p.cant_acum.toFixed(2) : '—'}</td>
                         <td style={{padding:'8px 12px',textAlign:'center',fontFamily:'monospace',
-                          fontSize:12,color:'#10b981'}}>
+                          fontSize:12,color:'rgb(var(--k-green))'}}>
                           {p.hh_ganadas != null ? p.hh_ganadas.toFixed(1) : '—'}
                         </td>
                         <td style={{padding:'8px 12px',textAlign:'center'}}>
                           {pfChip(p.pf ?? null)}
                         </td>
                         <td style={{padding:'8px 12px',textAlign:'center',fontFamily:'monospace',
-                          fontSize:11,color:'#8a96ad'}}>{p.n_trabajadores ?? '—'}</td>
+                          fontSize:11,color:'rgb(var(--k-text2))'}}>{p.n_trabajadores ?? '—'}</td>
                         <td style={{padding:'8px 12px',textAlign:'center',fontFamily:'monospace',
-                          fontSize:11,color:'#4e5a72'}}>{p.dias ?? '—'}</td>
+                          fontSize:11,color:'rgb(var(--k-text3))'}}>{p.dias ?? '—'}</td>
                       </tr>
                     )
                   })}
@@ -240,13 +240,13 @@ export default function TabRendimientos({ semana, selectedOtm, trabajadores }: P
               </div>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
-                  <tr style={{ background: '#1c2436' }}>
+                  <tr style={{ background: 'rgb(var(--k-raised))' }}>
                     {['Fase','Código','Descripción','HH Total','Cant. Acum.','HH Ganadas','PF Prom.','Días'].map(h => (
                       <th key={h} style={{
                         padding: '7px 12px', textAlign: h==='Descripción'?'left':'center',
-                        fontSize: 10, color: '#4e5a72', fontWeight: 700,
+                        fontSize: 10, color: 'rgb(var(--k-text3))', fontWeight: 700,
                         textTransform: 'uppercase', letterSpacing: 1,
-                        borderBottom: '1px solid #252f45',
+                        borderBottom: '1px solid rgb(var(--k-border))',
                       }}>{h}</th>
                     ))}
                   </tr>
@@ -256,7 +256,7 @@ export default function TabRendimientos({ semana, selectedOtm, trabajadores }: P
                     const color = FASE_COLORS[p.fase] || '#94a3b8'
                     return (
                       <tr key={p.partida_id}
-                          style={{ borderBottom: i < trabQuery.data!.partidas.length-1 ? '1px solid #1c2436':'none' }}>
+                          style={{ borderBottom: i < trabQuery.data!.partidas.length-1 ? '1px solid rgb(var(--k-raised))':'none' }}>
                         <td style={{ padding:'8px 12px',textAlign:'center' }}>
                           <span style={{ padding:'2px 6px',borderRadius:4,fontSize:9,fontWeight:800,
                             background:color+'20',border:`1px solid ${color}40`,color }}>
@@ -264,28 +264,28 @@ export default function TabRendimientos({ semana, selectedOtm, trabajadores }: P
                           </span>
                         </td>
                         <td style={{padding:'8px 12px',textAlign:'center',fontFamily:'monospace',
-                          fontSize:11,color:'#f59e0b'}}>{p.codigo}</td>
-                        <td style={{padding:'8px 12px',fontSize:12,color:'#e8edf5',maxWidth:180,
+                          fontSize:11,color:'rgb(var(--k-amber))'}}>{p.codigo}</td>
+                        <td style={{padding:'8px 12px',fontSize:12,color:'rgb(var(--k-text))',maxWidth:180,
                           overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
                           {p.descripcion}
                         </td>
                         <td style={{padding:'8px 12px',textAlign:'center',fontFamily:'monospace',
-                          fontSize:12,color:'#f59e0b',fontWeight:600}}>
+                          fontSize:12,color:'rgb(var(--k-amber))',fontWeight:600}}>
                           {p.hh_total.toFixed(1)}
                         </td>
                         <td style={{padding:'8px 12px',textAlign:'center',fontFamily:'monospace',
-                          fontSize:12,color:'#8a96ad'}}>
+                          fontSize:12,color:'rgb(var(--k-text2))'}}>
                           {p.cant_acum > 0 ? p.cant_acum.toFixed(2) : '—'}
                         </td>
                         <td style={{padding:'8px 12px',textAlign:'center',fontFamily:'monospace',
-                          fontSize:12,color:'#10b981'}}>
+                          fontSize:12,color:'rgb(var(--k-green))'}}>
                           {p.hh_ganadas != null ? p.hh_ganadas.toFixed(1) : '—'}
                         </td>
                         <td style={{padding:'8px 12px',textAlign:'center'}}>
                           {pfChip(p.pf_promedio ?? null)}
                         </td>
                         <td style={{padding:'8px 12px',textAlign:'center',fontFamily:'monospace',
-                          fontSize:11,color:'#4e5a72'}}>
+                          fontSize:11,color:'rgb(var(--k-text3))'}}>
                           {p.dias_trabajados ?? '—'}
                         </td>
                       </tr>

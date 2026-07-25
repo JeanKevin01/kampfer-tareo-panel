@@ -124,9 +124,9 @@ export default function Reportes() {
             ? <div className="flex items-center justify-center h-40 text-k-text3 text-sm">Sin datos</div>
             : <ResponsiveContainer width="100%" height={200}>
                 <BarChart data={hhPorOTM} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#252f45" />
-                  <XAxis dataKey="otm" tick={{ fill: '#4e5a72', fontSize: 10 }} />
-                  <YAxis tick={{ fill: '#4e5a72', fontSize: 10 }} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(130,140,160,0.2)" />
+                  <XAxis dataKey="otm" tick={{ fill: '#8b95ab', fontSize: 10 }} />
+                  <YAxis tick={{ fill: '#8b95ab', fontSize: 10 }} />
                   <Tooltip content={<CustomTooltip />} />
                   <Bar dataKey="hh" name="HH" fill="#f59e0b" radius={[4,4,0,0]} />
                 </BarChart>
@@ -143,9 +143,9 @@ export default function Reportes() {
             ? <div className="flex items-center justify-center h-40 text-k-text3 text-sm">Sin datos</div>
             : <ResponsiveContainer width="100%" height={200}>
                 <BarChart data={regPorSup} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#252f45" />
-                  <XAxis dataKey="sup" tick={{ fill: '#4e5a72', fontSize: 10 }} />
-                  <YAxis tick={{ fill: '#4e5a72', fontSize: 10 }} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(130,140,160,0.2)" />
+                  <XAxis dataKey="sup" tick={{ fill: '#8b95ab', fontSize: 10 }} />
+                  <YAxis tick={{ fill: '#8b95ab', fontSize: 10 }} />
                   <Tooltip content={<CustomTooltip />} />
                   <Bar dataKey="registros" name="registros" fill="#10b981" radius={[4,4,0,0]} />
                 </BarChart>
@@ -170,7 +170,7 @@ export default function Reportes() {
                     dataKey="value" nameKey="name" label={({ name, percent }) =>
                       `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
                     labelLine={false}
-                    style={{ fontSize: 9, fill: '#8a96ad' }}>
+                    style={{ fontSize: 9, fill: '#8b95ab' }}>
                     {pieData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                   </Pie>
                   <Tooltip content={<CustomTooltip />} />

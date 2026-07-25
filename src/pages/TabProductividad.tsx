@@ -19,7 +19,7 @@ const fmt = (n: number, d = 2) =>
 
 // Menor HH/unidad = mejor. Se compara contra el rendimiento presupuestado.
 function rendColor(prod: number, presup: number): string {
-  if (!isFinite(prod) || prod <= 0 || presup <= 0) return '#4e5a72'
+  if (!isFinite(prod) || prod <= 0 || presup <= 0) return 'rgb(var(--k-text3))'
   const r = prod / presup
   if (r <= 1.0) return '#2DD4A8'   // igual o mejor que lo presupuestado
   if (r <= 1.15) return '#FACC15'  // hasta 15% peor
@@ -96,7 +96,7 @@ export default function TabProductividad({ semana, otm }: { semana: number; otm?
             <tbody>
               {porFase.map(([fase, parts]) => (
                 <Fragment key={fase}>
-                  <tr style={{ background: '#141926' }}>
+                  <tr style={{ background: 'rgb(var(--k-surface))' }}>
                     <td colSpan={3 + semanas.length} className="py-1.5 px-3 text-[11px] font-bold text-k-text uppercase">{fase}</td>
                   </tr>
                   {parts.map(p => {

@@ -73,11 +73,11 @@ export default function HistogramaMO() {
         ) : (
           <ResponsiveContainer width="100%" height={260}>
             <BarChart data={grafica} barGap={1}>
-              <CartesianGrid stroke="#252f45" strokeDasharray="3 3" />
+              <CartesianGrid stroke="rgba(130,140,160,0.2)" strokeDasharray="3 3" />
               <XAxis dataKey="dia" tick={{ fontSize: 10, fill: '#8b95ab' }} />
               <YAxis yAxisId="hh" tick={{ fontSize: 10, fill: '#8b95ab' }} />
               <YAxis yAxisId="tr" orientation="right" domain={[0, Math.ceil(maxTrab * 1.3)]} tick={{ fontSize: 10, fill: '#8b95ab' }} />
-              <Tooltip contentStyle={{ background: '#1c2436', border: '1px solid #252f45', borderRadius: 8, fontSize: 12 }}
+              <Tooltip contentStyle={{ background: 'rgb(var(--k-raised))', border: '1px solid rgb(var(--k-border))', borderRadius: 8, fontSize: 12 }}
                 formatter={(v: unknown, name: unknown) => [num(Number(v)), name === 'hh' ? 'HH' : 'Trabajadores']} />
               <Bar yAxisId="hh" dataKey="hh" fill="#f59e0b" radius={[3, 3, 0, 0]} name="hh" />
               <Bar yAxisId="tr" dataKey="trabajadores" fill="#3b82f6" radius={[3, 3, 0, 0]} name="trabajadores" />

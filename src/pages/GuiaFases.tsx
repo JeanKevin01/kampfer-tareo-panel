@@ -71,7 +71,7 @@ function BarDisciplina({ fase, hh, total, partidas, otms, active, onClick }: {
     <div className={`rounded-xl border transition-all cursor-pointer ${
       active ? 'border-2' : 'border'
     }`}
-      style={{ borderColor: active ? f.color : '#252f45', background: active ? f.light+'44' : '#141926' }}
+      style={{ borderColor: active ? f.color : 'rgb(var(--k-border))', background: active ? f.light+'44' : 'rgb(var(--k-surface))' }}
       onClick={onClick}
     >
       <div className="px-4 py-3 flex items-center gap-3">

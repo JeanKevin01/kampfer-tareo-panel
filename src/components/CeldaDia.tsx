@@ -18,7 +18,7 @@ export default function CeldaDia({ prog, real, editable, esSalto, esMedio, labor
 }) {
   if (esSalto) {
     return <td title="Salto intencional de la actividad (edítalo en el modal)"
-      className="border border-k-border/60 px-0.5 py-0.5 text-center text-[10px] bg-zinc-600/30 text-k-text3">∅</td>
+      className="border border-k-border/60 px-0.5 py-0.5 text-center text-[10px] bg-k-border/40 text-k-text2">∅</td>
   }
   const registrada = real != null
   const nivel = nivelDe(real, prog, laborable)

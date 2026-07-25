@@ -23,6 +23,16 @@
     --k-text: 232 237 245; --k-text2: 138 150 173;  --k-text3: 78 90 114;
     --k-amber: 245 158 11; --k-amber2: 251 191 36;
     --k-green: 16 185 129; --k-red: 239 68 68;      --k-blue: 59 130 246;
+
+    /* Paleta semántica de los módulos EV (árbol WBS, ISP, rendimientos).
+       DEFAULT = tonos pastel optimizados para fondo OSCURO; en :root.claro se
+       oscurecen para ser legibles sobre blanco (mismo hue, más contraste). */
+    --nivel-1: #ff9b9b; --nivel-2: #7fe0d4; --nivel-3: #d6b3ff; --nivel-4: #ffc98b;
+    --pf-good: #2dd4a8; --pf-mid: #facc15;  --pf-bad: #ff6b6b;
+    /* Colores por fase/disciplina (código y badges del árbol WBS) */
+    --fase-fab: #6ee7c0; --fase-est: #7fb2ff; --fase-mec: #ffb37a; --fase-ele: #ffe08a;
+    --fase-tub: #c7a8ff; --fase-ins: #ffa6c9; --fase-civ: #aeb9cc; --fase-and: #7fe3a0;
+    --fase-apy: #a8f0bf; --fase-ing: #ffd97d; --fase-com: #d8c2ff;
     --background: oklch(1 0 0);
     --foreground: oklch(0.145 0 0);
     --card: oklch(1 0 0);
@@ -98,6 +108,12 @@
     --k-text: 21 27 39;    --k-text2: 88 98 116;    --k-text3: 135 145 162;
     --k-amber: 168 109 8;  --k-amber2: 184 119 12;
     --k-green: 5 150 105;  --k-red: 220 38 38;      --k-blue: 37 99 235;
+    /* Paleta EV oscurecida para fondo claro (mismo hue, contraste AA) */
+    --nivel-1: #c0392b; --nivel-2: #0f766e; --nivel-3: #6d28d9; --nivel-4: #b45309;
+    --pf-good: #0d9488; --pf-mid: #a16207;  --pf-bad: #dc2626;
+    --fase-fab: #0f766e; --fase-est: #1d4ed8; --fase-mec: #c2410c; --fase-ele: #a16207;
+    --fase-tub: #6d28d9; --fase-ins: #be185d; --fase-civ: #475569; --fase-and: #15803d;
+    --fase-apy: #4d7c0f; --fase-ing: #b45309; --fase-com: #7c3aed;
   }
   * {
     @apply border-border outline-ring/50;

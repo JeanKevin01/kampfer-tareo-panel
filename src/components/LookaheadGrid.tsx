@@ -255,8 +255,8 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
                 <th key={f} title={feriados.has(f) ? 'Feriado / día no laborable' : !laborable(f) ? 'Día no laborable (calendario)' : ''}
                   className={`border border-k-border/60 px-0.5 py-0.5 text-[9px] font-bold min-w-[44px] ${
                   f === hoy ? 'bg-green-500/20 text-k-green'
-                    : !laborable(f) ? 'bg-zinc-700/50 text-k-text3 line-through'
-                    : 'bg-k-raised text-k-text3'}`}>
+                    : !laborable(f) ? 'bg-k-border/60 text-k-text2 line-through'
+                    : 'bg-k-raised text-k-text2'}`}>
                   {DIAS_1[i % 7]}<br />{fmtCorta(f)}
                 </th>
               ))}

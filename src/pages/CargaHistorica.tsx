@@ -180,18 +180,18 @@ export default function CargaHistorica({ semana, selectedOtm }: Props) {
             {isOpen && (
               <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12 }}>
                 <thead>
-                  <tr style={{ borderBottom:'1px solid #252f45', background:'#1c2436' }}>
+                  <tr style={{ borderBottom:'1px solid rgb(var(--k-border))', background:'rgb(var(--k-raised))' }}>
                     {['Código','Descripción','Unidad','M. Presup','HH Presup'].map(h => (
                       <th key={h} style={{ textAlign: h==='Descripción'?'left':'center',
-                        padding:'8px 10px', color:'#4e5a72', fontWeight:700, fontSize:10,
+                        padding:'8px 10px', color:'rgb(var(--k-text3))', fontWeight:700, fontSize:10,
                         textTransform:'uppercase', letterSpacing:1 }}>{h}</th>
                     ))}
-                    <th style={{ textAlign:'right', padding:'8px 10px', color:'#f59e0b',
+                    <th style={{ textAlign:'right', padding:'8px 10px', color:'rgb(var(--k-amber))',
                       fontWeight:700, fontSize:10, textTransform:'uppercase', letterSpacing:1,
                       background:'rgba(245,158,11,.05)' }}>
                       HH Gastadas Acum
                     </th>
-                    <th style={{ textAlign:'right', padding:'8px 10px', color:'#10b981',
+                    <th style={{ textAlign:'right', padding:'8px 10px', color:'rgb(var(--k-green))',
                       fontWeight:700, fontSize:10, textTransform:'uppercase', letterSpacing:1,
                       background:'rgba(16,185,129,.05)' }}>
                       Cant Ejecutada Acum
@@ -204,35 +204,35 @@ export default function CargaHistorica({ semana, selectedOtm }: Props) {
                     return (
                       <tr key={p.id} style={{ borderBottom:'1px solid #1a2133' }}>
                         <td style={{ padding:'9px 10px', fontFamily:'monospace', fontSize:11,
-                          fontWeight:600, color:'#f59e0b' }}>{p.codigo}</td>
-                        <td style={{ padding:'9px 10px', color:'#e8edf5' }}>{p.descripcion}</td>
-                        <td style={{ textAlign:'center', padding:'9px 10px', color:'#4e5a72' }}>{p.unidad}</td>
-                        <td style={{ textAlign:'center', padding:'9px 10px', fontFamily:'monospace', color:'#8a96ad' }}>
+                          fontWeight:600, color:'rgb(var(--k-amber))' }}>{p.codigo}</td>
+                        <td style={{ padding:'9px 10px', color:'rgb(var(--k-text))' }}>{p.descripcion}</td>
+                        <td style={{ textAlign:'center', padding:'9px 10px', color:'rgb(var(--k-text3))' }}>{p.unidad}</td>
+                        <td style={{ textAlign:'center', padding:'9px 10px', fontFamily:'monospace', color:'rgb(var(--k-text2))' }}>
                           {p.metrado_presup?.toLocaleString('es-PE') ?? '—'}
                         </td>
-                        <td style={{ textAlign:'center', padding:'9px 10px', fontFamily:'monospace', color:'#8a96ad' }}>
+                        <td style={{ textAlign:'center', padding:'9px 10px', fontFamily:'monospace', color:'rgb(var(--k-text2))' }}>
                           {p.hh_presup?.toLocaleString('es-PE') ?? '—'}
                         </td>
                         <td style={{ padding:'5px 8px', background:'rgba(245,158,11,.03)' }}>
                           <input type="number" step="0.5" min="0" placeholder="0"
                             value={f.hh} onChange={e => set(p.id, 'hh', e.target.value)}
                             style={{ width:'100%', padding:'6px 8px', textAlign:'right',
-                              background:'#1c2436', color:'#e8edf5',
-                              border:'1px solid #252f45', borderRadius:6,
+                              background:'rgb(var(--k-raised))', color:'rgb(var(--k-text))',
+                              border:'1px solid rgb(var(--k-border))', borderRadius:6,
                               fontSize:12, outline:'none', fontFamily:'monospace' }}
                             onFocus={e => (e.currentTarget.style.borderColor = '#f59e0b')}
-                            onBlur={e  => (e.currentTarget.style.borderColor = '#252f45')}
+                            onBlur={e  => (e.currentTarget.style.borderColor = 'rgb(var(--k-border))')}
                           />
                         </td>
                         <td style={{ padding:'5px 8px', background:'rgba(16,185,129,.03)' }}>
                           <input type="number" step="0.01" min="0" placeholder="0"
                             value={f.cant} onChange={e => set(p.id, 'cant', e.target.value)}
                             style={{ width:'100%', padding:'6px 8px', textAlign:'right',
-                              background:'#1c2436', color:'#e8edf5',
-                              border:'1px solid #252f45', borderRadius:6,
+                              background:'rgb(var(--k-raised))', color:'rgb(var(--k-text))',
+                              border:'1px solid rgb(var(--k-border))', borderRadius:6,
                               fontSize:12, outline:'none', fontFamily:'monospace' }}
                             onFocus={e => (e.currentTarget.style.borderColor = '#10b981')}
-                            onBlur={e  => (e.currentTarget.style.borderColor = '#252f45')}
+                            onBlur={e  => (e.currentTarget.style.borderColor = 'rgb(var(--k-border))')}
                           />
                         </td>
                       </tr>
