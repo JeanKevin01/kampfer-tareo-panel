@@ -13,6 +13,16 @@
   :root {
     /* Fuente monoespaciada usada en todo el panel via var(--mono) (cifras, códigos, PF) */
     --mono: 'Geist Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+
+    /* Paleta k-* como canales RGB (tailwind.config las envuelve en rgb(var()/α)).
+       DEFAULT = oscuro (idéntico a los hex previos). El tema claro las redefine
+       en :root.claro; nada más cambia porque los ~3.100 usos pasan por estos
+       tokens. */
+    --k-void: 6 8 16;      --k-surface: 20 25 38;   --k-raised: 28 36 54;
+    --k-border: 37 47 69;  --k-border2: 46 58 82;
+    --k-text: 232 237 245; --k-text2: 138 150 173;  --k-text3: 78 90 114;
+    --k-amber: 245 158 11; --k-amber2: 251 191 36;
+    --k-green: 16 185 129; --k-red: 239 68 68;      --k-blue: 59 130 246;
     --background: oklch(1 0 0);
     --foreground: oklch(0.145 0 0);
     --card: oklch(1 0 0);
@@ -79,13 +89,44 @@
     --sidebar-border: oklch(1 0 0 / 10%);
     --sidebar-ring: oklch(0.556 0 0)
   }
+  /* Tema claro opcional (toggle en el Sidebar; se recuerda en localStorage
+     kp_tema y se aplica en index.html antes de pintar). Solo redefine los
+     canales k-*; el ámbar se oscurece un punto para ser legible sobre blanco. */
+  :root.claro {
+    --k-void: 238 241 246; --k-surface: 255 255 255; --k-raised: 242 245 250;
+    --k-border: 224 229 238; --k-border2: 204 212 224;
+    --k-text: 21 27 39;    --k-text2: 88 98 116;    --k-text3: 135 145 162;
+    --k-amber: 168 109 8;  --k-amber2: 184 119 12;
+    --k-green: 5 150 105;  --k-red: 220 38 38;      --k-blue: 37 99 235;
+  }
   * {
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    /* El panel usa la paleta k-* (no los tokens shadcn); alinear el body evita
+       el flash blanco antes de montar React y hace que el tema se note desde el
+       primer instante. */
+    @apply bg-k-void text-k-text;
   }
   html {
     @apply font-sans;
   }
 }
+
+/* ── Tema claro: textos de tono claro (300/400) → oscuros ──
+   Estos colores semánticos (estado/aviso) se eligieron para contrastar sobre
+   fondo OSCURO; sobre blanco quedan ilegibles. Aquí se oscurecen SOLO en modo
+   claro, sin tocar ningún .tsx. Fuera de @layer para ganar a las utilidades por
+   especificidad. Los tintes de fondo/borde 500 con opacidad quedan igual: se
+   leen bien en ambos temas. */
+:root.claro .text-amber-300,
+:root.claro .text-amber-400 { color: rgb(180 83 9 / var(--tw-text-opacity, 1)) }
+:root.claro .text-sky-300   { color: rgb(3 105 161 / var(--tw-text-opacity, 1)) }
+:root.claro .text-violet-300 { color: rgb(109 40 217 / var(--tw-text-opacity, 1)) }
+:root.claro .text-purple-400 { color: rgb(126 34 206 / var(--tw-text-opacity, 1)) }
+:root.claro .text-red-200,
+:root.claro .text-red-300,
+:root.claro .text-red-400   { color: rgb(185 28 28 / var(--tw-text-opacity, 1)) }
+:root.claro .text-green-300,
+:root.claro .text-green-400 { color: rgb(21 128 61 / var(--tw-text-opacity, 1)) }
+:root.claro .text-emerald-400 { color: rgb(4 120 87 / var(--tw-text-opacity, 1)) }

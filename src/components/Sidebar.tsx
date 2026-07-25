@@ -7,6 +7,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { currentUser, logout } from '@/lib/auth'
+import ThemeToggle from '@/components/ThemeToggle'
 
 interface NavItem  { path: string; label: string; icon: LucideIcon; adminOnly?: boolean }
 interface NavGroup { label: string; items: NavItem[] }
@@ -136,6 +137,7 @@ export default function Sidebar({ collapsed = false, onToggle }: { collapsed?: b
             >
               {(currentUser()?.nombre || currentUser()?.username || '?').charAt(0).toUpperCase()}
             </div>
+            <ThemeToggle />
             <button onClick={logout} title="Cerrar sesión"
               className="text-k-text3 hover:text-k-red transition-colors p-1.5 rounded-lg hover:bg-k-raised">
               <LogOut size={15} />
@@ -150,6 +152,7 @@ export default function Sidebar({ collapsed = false, onToggle }: { collapsed?: b
               <div className="text-[11px] font-bold text-k-text truncate">{currentUser()?.nombre || currentUser()?.username}</div>
               <div className="text-[9px] text-k-text3 uppercase tracking-wider">{currentUser()?.rol}</div>
             </div>
+            <ThemeToggle />
             <button onClick={logout} title="Cerrar sesión"
               className="text-k-text3 hover:text-k-red transition-colors p-1.5 rounded-lg hover:bg-k-raised">
               <LogOut size={15} />

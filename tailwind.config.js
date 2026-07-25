@@ -21,12 +21,24 @@ export default {
         muted: { DEFAULT: "hsl(var(--muted))", foreground: "hsl(var(--muted-foreground))" },
         accent: { DEFAULT: "hsl(var(--accent))", foreground: "hsl(var(--accent-foreground))" },
         card: { DEFAULT: "hsl(var(--card))", foreground: "hsl(var(--card-foreground))" },
+        // Paleta k-*: los valores viven en src/index.css como canales RGB
+        // (`--k-*`) para soportar el tema claro sin tocar los ~3.100 usos. El
+        // formato `rgb(var() / <alpha-value>)` conserva los modificadores de
+        // opacidad de Tailwind (bg-k-raised/50, border-k-amber/30, …).
         k: {
-          void: '#060810', surface: '#141926', raised: '#1c2436',
-          border: '#252f45', border2: '#2e3a52',
-          text: '#e8edf5', text2: '#8a96ad', text3: '#4e5a72',
-          amber: '#f59e0b', amber2: '#fbbf24',
-          green: '#10b981', red: '#ef4444', blue: '#3b82f6',
+          void: 'rgb(var(--k-void) / <alpha-value>)',
+          surface: 'rgb(var(--k-surface) / <alpha-value>)',
+          raised: 'rgb(var(--k-raised) / <alpha-value>)',
+          border: 'rgb(var(--k-border) / <alpha-value>)',
+          border2: 'rgb(var(--k-border2) / <alpha-value>)',
+          text: 'rgb(var(--k-text) / <alpha-value>)',
+          text2: 'rgb(var(--k-text2) / <alpha-value>)',
+          text3: 'rgb(var(--k-text3) / <alpha-value>)',
+          amber: 'rgb(var(--k-amber) / <alpha-value>)',
+          amber2: 'rgb(var(--k-amber2) / <alpha-value>)',
+          green: 'rgb(var(--k-green) / <alpha-value>)',
+          red: 'rgb(var(--k-red) / <alpha-value>)',
+          blue: 'rgb(var(--k-blue) / <alpha-value>)',
         }
       },
       borderRadius: {
