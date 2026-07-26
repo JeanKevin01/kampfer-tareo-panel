@@ -38,6 +38,7 @@ interface Hito {
 }
 interface Partida {
   id: number; codigo: string; otm_id: string | null; fase: string | null; sub_fase: string | null
+  hh_actualizado?: number | null
   descripcion: string; unidad: string; sistema: string | null
   metrado_presup: number; metrado_proyec: number | null; hh_presup: number
   nivel: number; parent_codigo: string | null
@@ -47,6 +48,7 @@ interface PartidaInput {
   codigo: string; otm_id: string | null; fase: string; sub_fase: string | null
   descripcion: string; unidad: string; sistema: string | null
   metrado_presup: number; metrado_proyec: number | null; hh_presup: number
+  hh_actualizado: number | null      // presupuesto vigente = BAC (manda si se fija)
   hitos: Omit<Hito, 'id'>[]
 }
 interface CapturaHito {
@@ -964,6 +966,7 @@ function TabRegistro({ semana, otm }: { semana: number; otm?: string }) {
 const PARTIDA_VACIA: PartidaInput = {
   codigo: '', otm_id: null, fase: '', sub_fase: null, descripcion: '', unidad: '',
   sistema: null, metrado_presup: 0, metrado_proyec: null, hh_presup: 0,
+  hh_actualizado: null,
   hitos: [{ numero: 1, descripcion: '', peso: 1, es_principal: true }],
 }
 
@@ -1118,11 +1121,18 @@ function TabConfig({ otm }: { otm?: string }) {
   const toggle = (c: string) => setCollapsed(prev => { const n = new Set(prev); if (n.has(c)) n.delete(c); else n.add(c); return n })
   const padres = useMemo(() => new Set(partidas.filter(p => partidas.some(c => c.parent_codigo === p.codigo)).map(p => p.codigo)), [partidas])
 
+  // Catálogo de fases (disciplinas) para el desplegable del formulario.
+  const { data: fases } = useQuery<{ codigo: string; nombre: string }[]>({
+    queryKey: ['ev-fases'],
+    queryFn: () => req('/ev/fases?proyecto_id=1'),
+  })
+
   const invalidar = () => {
     qc.invalidateQueries({ queryKey: ['ev-partidas'] })
     qc.invalidateQueries({ queryKey: ['ev-reporte'] })
     qc.invalidateQueries({ queryKey: ['ev-captura'] })
     qc.invalidateQueries({ queryKey: ['ev-curva'] })
+    qc.invalidateQueries({ queryKey: ['ev-fases'] })   // el API puede dar de alta fases nuevas
   }
 
   const guardar = useMutation({
@@ -1148,6 +1158,7 @@ function TabConfig({ otm }: { otm?: string }) {
       metrado_presup: Number(p.metrado_presup),
       metrado_proyec: p.metrado_proyec !== null ? Number(p.metrado_proyec) : null,
       hh_presup: Number(p.hh_presup),
+      hh_actualizado: p.hh_actualizado != null ? Number(p.hh_actualizado) : null,
       hitos: p.hitos.map(h => ({
         numero: h.numero, descripcion: h.descripcion,
         peso: Number(h.peso), es_principal: h.es_principal,
@@ -1274,13 +1285,14 @@ function TabConfig({ otm }: { otm?: string }) {
           guardando={guardar.isPending}
           onGuardar={() => guardar.mutate(form)}
           onCerrar={() => { setForm(null); setErrMsg('') }}
+          fases={fases}
         />
       )}
     </div>
   )
 }
 
-function ModalPartida({ form, setForm, editando, errMsg, guardando, onGuardar, onCerrar }: {
+function ModalPartida({ form, setForm, editando, errMsg, guardando, onGuardar, onCerrar, fases }: {
   form: PartidaInput
   setForm: (f: PartidaInput) => void
   editando: number | null
@@ -1288,6 +1300,7 @@ function ModalPartida({ form, setForm, editando, errMsg, guardando, onGuardar, o
   guardando: boolean
   onGuardar: () => void
   onCerrar: () => void
+  fases?: { codigo: string; nombre: string }[]
 }) {
   const sumaPesos = form.hitos.reduce((s, h) => s + (Number(h.peso) || 0), 0)
   const pesosOk = Math.abs(sumaPesos - 1) < 0.0001
@@ -1330,9 +1343,18 @@ function ModalPartida({ form, setForm, editando, errMsg, guardando, onGuardar, o
               onChange={e => setForm({ ...form, codigo: e.target.value })} className={INPUT} />
           </div>
           <div>
-            <label className={LABEL}>Fase *</label>
-            <input type="text" placeholder="40" value={form.fase}
-              onChange={e => setForm({ ...form, fase: e.target.value })} className={INPUT} />
+            <label className={LABEL}>Fase / disciplina *</label>
+            {/* Catálogo de fases (como un Activity Code de P6): el string de la
+                fase cruza costo↔meta en el RO, así que no puede tener variantes.
+                Se escribe libre solo si es una disciplina nueva — el API la
+                normaliza en MAYÚSCULAS y la da de alta en el catálogo. */}
+            <input type="text" list="lista-fases" placeholder="EST" value={form.fase}
+              onChange={e => setForm({ ...form, fase: e.target.value.toUpperCase() })} className={INPUT} />
+            <datalist id="lista-fases">
+              {(fases ?? []).map(f => (
+                <option key={f.codigo} value={f.codigo}>{f.nombre}</option>
+              ))}
+            </datalist>
           </div>
           <div>
             <label className={LABEL}>Sub fase</label>
@@ -1368,11 +1390,26 @@ function ModalPartida({ form, setForm, editando, errMsg, guardando, onGuardar, o
               })} className={INPUT} />
           </div>
           <div>
-            <label className={LABEL}>HH presupuestadas</label>
+            <label className={LABEL}>HH presupuestadas (contractual)</label>
             <input type="number" step="0.01" value={form.hh_presup}
               onChange={e => setForm({ ...form, hh_presup: Number(e.target.value) })} className={INPUT} />
           </div>
+          <div>
+            <label className={LABEL} title="Presupuesto vigente con adicionales aprobados. Si lo llenas, MANDA sobre el metrado proyectado como BAC.">
+              HH actualizadas <span className="text-k-amber">(BAC)</span>
+            </label>
+            <input type="number" step="0.01" placeholder="vacío = usa el metrado proyectado"
+              value={form.hh_actualizado ?? ''}
+              onChange={e => setForm({
+                ...form,
+                hh_actualizado: e.target.value === '' ? null : Number(e.target.value),
+              })} className={INPUT} />
+          </div>
         </div>
+        <p className="text-[10px] text-k-text3 mt-2">
+          <b>BAC</b> = presupuesto contra el que se mide avance, desvío y VAC. Precedencia:
+          <b> HH actualizadas</b> (si las fijas) → <b>metrado proyectado × estándar</b> → contractual.
+        </p>
 
         <div className="mt-6 space-y-3">
           <div className="flex items-center justify-between">
