@@ -266,7 +266,7 @@ function SemanaDetalle({ semana, grupos, cncGrid, cncCat, restPorAct }: {
         <table className="pp-f">
           <colgroup>
             <col style={{ width: '17%' }} /><col style={{ width: '4%' }} /><col style={{ width: '9%' }} />
-            {F.map((f, i) => <col key={i} style={{ width: '5.5%' }} />)}
+            {F.map((_, i) => <col key={i} style={{ width: '5.5%' }} />)}
             <col style={{ width: '5%' }} /><col style={{ width: '5%' }} /><col style={{ width: '4%' }} />
             <col style={{ width: '15.5%' }} />
           </colgroup>

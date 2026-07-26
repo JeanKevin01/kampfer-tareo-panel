@@ -6,6 +6,7 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { lunesDe, iso } from '@/lib/semana'
 import BrandDoc from '@/components/print/BrandDoc'
+import { fmtDeps } from '@/lib/lookahead'
 import type { GridResp } from '@/components/LookaheadGrid'
 
 const PROYECTO_ID = 1
@@ -56,8 +57,10 @@ export default function LookaheadPrint() {
             <th style={{ ...td, background: TINTA, color: '#fff' }} rowSpan={2}>RESP</th>
             <th style={{ ...td, background: TINTA, color: '#fff' }} rowSpan={2}>METRADO</th>
             <th style={{ ...td, background: TINTA, color: '#fff' }} rowSpan={2}>UND</th>
+            <th style={{ ...td, background: TINTA, color: '#fff' }} rowSpan={2}>PLAZO</th>
             <th style={{ ...td, background: TINTA, color: '#fff' }} rowSpan={2}>F. Inic</th>
             <th style={{ ...td, background: TINTA, color: '#fff' }} rowSpan={2}>F. Fin</th>
+            <th style={{ ...td, background: TINTA, color: '#fff' }} rowSpan={2}>DESPUÉS DE</th>
             {d.semanas.map((s, i) => (
               <th key={s.lunes} colSpan={7}
                 style={{ ...td, background: i === 0 ? TINTA : '#3a4152', color: '#fff', letterSpacing: '.03em' }}>
@@ -78,7 +81,7 @@ export default function LookaheadPrint() {
             <GrupoPrint key={g.otm_id ?? '-'} grupo={g} fechas={d.fechas} />
           ))}
           {nActs === 0 && (
-            <tr><td colSpan={6 + d.fechas.length} style={{ ...tdC, padding: 20, color: '#8a93a1' }}>Sin actividades en el rango.</td></tr>
+            <tr><td colSpan={8 + d.fechas.length} style={{ ...tdC, padding: 20, color: '#8a93a1' }}>Sin actividades en el rango.</td></tr>
           )}
         </tbody>
       </table>
@@ -90,7 +93,7 @@ function GrupoPrint({ grupo, fechas }: { grupo: GridResp['grupos'][number]; fech
   return (
     <>
       <tr>
-        <td colSpan={6 + fechas.length} style={{ ...td, background: '#dbe6f4', fontWeight: 700 }}>
+        <td colSpan={8 + fechas.length} style={{ ...td, background: '#dbe6f4', fontWeight: 700 }}>
           {grupo.otm_id ?? 'Sin OTM'}{grupo.otm_desc ? ` — ${grupo.otm_desc}` : ''}
         </td>
       </tr>
@@ -107,8 +110,10 @@ function GrupoPrint({ grupo, fechas }: { grupo: GridResp['grupos'][number]; fech
             {a.metrado_base != null && <div style={{ fontSize: 8, color: '#666' }}>base {num(a.metrado_base)}</div>}
           </td>
           <td style={tdC}>{a.und ?? ''}</td>
+          <td style={tdC}>{a.plazo_dias != null ? num(a.plazo_dias) : ''}</td>
           <td style={tdC}>{fmtCorta(a.fecha)}</td>
           <td style={tdC}>{fmtCorta(a.fecha_fin)}</td>
+          <td style={{ ...tdC, fontFamily: 'monospace', fontSize: 8 }}>{fmtDeps(a.predecesoras)}</td>
           {fechas.map(f => {
             const p = a.prog[f]; const r = a.real[f]
             const esSalto = (a.dias_salto ?? []).includes(f)

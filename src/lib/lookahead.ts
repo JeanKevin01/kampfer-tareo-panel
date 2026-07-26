@@ -42,3 +42,34 @@ export const nivelDe = (real: number | undefined, prog: number | undefined, labo
   real != null
     ? (real > (prog ?? 0) + 0.0005 ? 'verde' : real >= (prog ?? 0) - 0.0005 ? 'ambar' : 'rojo')
     : (prog ?? 0) > 0 ? 'celeste' : !laborable ? 'gris' : ''
+
+// ── Vínculos escritos a mano, como en MS Project ─────────────
+// El planner teclea «12», «12FS+2», «8;12SS-1» en la columna DESPUÉS DE en vez
+// de encadenar clics. Se renderiza igual que se escribe, así que va y viene.
+export type TipoDep = 'FS' | 'SS' | 'FF'
+export interface DepEdit { pred: number; tipo: TipoDep; lag: number }
+export interface DepVista { id: number; lag_dias: number; tipo?: string }
+
+/** Devuelve null si algo no parsea: no se adivina, se le avisa al planner. */
+export function parseDeps(txt: string): DepEdit[] | null {
+  const out: DepEdit[] = []
+  for (const trozo of txt.split(/[;,]/)) {
+    const t = trozo.trim().toUpperCase().replace(/\s+/g, '')
+    if (!t) continue
+    const m = /^#?(\d+)(FS|SS|FF)?([+-]\d+)?D?$/.exec(t)
+    if (!m) return null
+    const pred = Number(m[1])
+    if (!pred || out.some(d => d.pred === pred)) return null
+    out.push({ pred, tipo: (m[2] as TipoDep) ?? 'FS', lag: Number(m[3] ?? 0) })
+  }
+  return out
+}
+
+/** El inverso: FS con lag 0 se escribe solo con el número (como en Project). */
+export function fmtDeps(preds: DepVista[] | undefined): string {
+  return (preds ?? []).map(p => {
+    const lag = p.lag_dias ? (p.lag_dias > 0 ? `+${p.lag_dias}` : String(p.lag_dias)) : ''
+    const tipo = p.tipo && p.tipo !== 'FS' ? p.tipo : (lag ? 'FS' : '')
+    return `${p.id}${tipo}${lag}`
+  }).join(';')
+}

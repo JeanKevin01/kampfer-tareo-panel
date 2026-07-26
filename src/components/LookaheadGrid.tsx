@@ -11,7 +11,8 @@ import { ChevronLeft, ChevronRight, Loader2, Printer } from 'lucide-react'
 import { api } from '@/lib/api'
 import { CNC } from '@/lib/catalogos'
 import { lunesDe, iso } from '@/lib/semana'
-import { DIAS_1, fmtDia, fmtCorta, num, isoDow, clrReal } from '@/lib/lookahead'
+import { DIAS_1, fmtDia, fmtCorta, num, isoDow, clrReal, parseDeps, fmtDeps } from '@/lib/lookahead'
+import type { TipoDep } from '@/lib/lookahead'
 import CeldaDia from '@/components/CeldaDia'
 
 export interface ActGrid {
@@ -27,7 +28,9 @@ export interface ActGrid {
   metrado_base?: number | null; acum_real?: number | null; saldo?: number | null
   hito_id?: number | null; hito_desc?: string | null; hito_peso?: number | null
   dias_salto?: string[]; dias_medio?: string[]
-  predecesoras?: { id: number; dep_id: number; titulo: string; fecha_fin: string; lag_dias: number }[]
+  plazo_dias?: number | null; modo_fecha?: string | null
+  predecesoras?: { id: number; dep_id: number; titulo: string; fecha_fin: string
+                   lag_dias: number; tipo?: string }[]
   sucesoras?: number[]; dep_total?: number
   prog: Record<string, number>; real: Record<string, number>
   prog_manual?: string[]
@@ -49,6 +52,27 @@ const PROYECTO_ID = 1
 const thBase = 'border border-k-border px-1 py-1 text-[10px] font-bold text-k-text2 bg-k-raised'
 const tdFijo = 'border border-k-border px-2 py-1 text-[11px] bg-k-surface'
 
+// ── Inmovilizar paneles (pedido del planner: la fila de fechas SIEMPRE visible)
+// El ancho de cada columna de la izquierda es fijo para poder calcular el
+// desplazamiento acumulado del `sticky left`. El orden es el de la cabecera.
+const ANCHOS = [42, 240, 80, 72, 40, 58, 58, 58, 120] as const   // # · ACT · RESP · METRADO · UND · PLAZO · F.Inic · F.Fin · DESPUÉS DE
+const IZQ = ANCHOS.map((_, i) => ANCHOS.slice(0, i).reduce((s, w) => s + w, 0))
+const N_FIJAS = ANCHOS.length
+/** Columnas siempre congeladas: el # y el nombre (sin ellos no se sabe qué fila
+ *  se está leyendo). El resto se congela solo con «⇥ Fijar columnas», porque
+ *  las 9 juntas se comen media pantalla. */
+const stick = (i: number, fijar: boolean): React.CSSProperties | undefined =>
+  (i > 1 && !fijar) ? undefined
+    : { position: 'sticky', left: IZQ[i], zIndex: 10, minWidth: ANCHOS[i], width: ANCHOS[i] }
+/** Alto de la 1ª fila de cabecera (SEMANA); la 2ª (días) se pega debajo. */
+const H_SEM = 22
+// El borde de una celda `sticky` se va con el scroll cuando la tabla usa
+// border-collapse; el inset box-shadow lo reemplaza y no se despega.
+const thSticky = (top: number, z = 30): React.CSSProperties => ({
+  position: 'sticky', top, zIndex: z,
+  boxShadow: 'inset 0 -1px 0 rgb(var(--k-border)), inset -1px 0 0 rgb(var(--k-border))',
+})
+
 export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) {
   const qc = useQueryClient()
   const [nSemanas, setNSemanas] = useState(4)
@@ -64,6 +88,12 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
   // resalta su cadena (azul = antecesoras, verde = sucesoras) sin hacer clic.
   const [mostrarRel, setMostrarRel] = useState(true)
   const [hoverDe, setHoverDe] = useState<number | null>(null)
+  // Inmovilizar el bloque de columnas de la izquierda (la fila de fechas queda
+  // fija siempre; esto congela además RESP…DESPUÉS DE al desplazarse a la derecha).
+  const [fijarCols, setFijarCols] = useState(false)
+  // Selección múltiple para encadenar de un golpe (el Ctrl+F2 de Project).
+  const [sel, setSel] = useState<number[]>([])
+  const toggleSel = (id: number) => setSel(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id])
 
   const grid = useQuery<GridResp>({
     queryKey: ['lookahead-grid', desde, nSemanas],
@@ -108,6 +138,46 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
       setToast({ msg: `✓ Actividad actualizada${m?.length ? ` · la cascada movió ${m.length} actividad(es)` : ''}` })
       invalidar()
     },
+    onError: (e: Error) => setToast({ msg: e.message, error: true }),
+  })
+  // Encadenar una secuencia ORDENADA de un solo POST (las etapas de una
+  // partida son el caso masivo: habilitado → encofrado → vaciado → desencofrado).
+  const encadenar = useMutation({
+    mutationFn: ({ ids, tipo, lag }: { ids: number[]; tipo?: TipoDep; lag?: number }) =>
+      api('/ev/programacion/dependencias/encadenar', {
+        method: 'POST', body: JSON.stringify({ ids, tipo: tipo ?? 'FS', lag_dias: lag ?? 0 }),
+      }),
+    onSuccess: (j: unknown) => {
+      const r = j as { vinculos?: number; omitidos?: unknown[]; movidas?: number[] }
+      const om = r.omitidos?.length ? ` · ${r.omitidos.length} omitido(s) por ciclo` : ''
+      setToast({ msg: `⛓ ${r.vinculos ?? 0} vínculo(s) creados${om}${r.movidas?.length ? ` · la cascada movió ${r.movidas.length}` : ''}` })
+      setSel([]); invalidar()
+    },
+    onError: (e: Error) => setToast({ msg: e.message, error: true }),
+  })
+  // Columna DESPUÉS DE escrita a mano: se calcula el diff contra lo que había
+  // (altas/cambios por upsert, bajas por DELETE) y se manda todo junto.
+  const guardarDeps = useMutation({
+    mutationFn: async ({ a, txt }: { a: ActGrid; txt: string }) => {
+      const nuevas = parseDeps(txt)
+      if (nuevas === null) throw new Error('No se entiende: usa 12 · 12FS+2 · 8;12SS-1 (sin repetir el mismo número)')
+      if (nuevas.some(dep => dep.pred === a.id)) throw new Error('Una actividad no puede depender de sí misma')
+      const antes = a.predecesoras ?? []
+      const quitar = antes.filter(p => !nuevas.some(dep => dep.pred === p.id))
+      const poner = nuevas.filter(dep => {
+        const y = antes.find(p => p.id === dep.pred)
+        return !y || (y.tipo ?? 'FS') !== dep.tipo || (y.lag_dias ?? 0) !== dep.lag
+      })
+      for (const p of quitar) await api(`/ev/programacion/dependencias/${p.dep_id}`, { method: 'DELETE' })
+      for (const dep of poner) {
+        await api(`/ev/programacion/actividades/${a.id}/dependencias`, {
+          method: 'POST',
+          body: JSON.stringify({ predecesora_id: dep.pred, tipo: dep.tipo, lag_dias: dep.lag }),
+        })
+      }
+      return { n: poner.length, q: quitar.length }
+    },
+    onSuccess: (r) => { setToast({ msg: `✓ Vínculos: ${r.n} guardado(s), ${r.q} quitado(s)` }); invalidar() },
     onError: (e: Error) => setToast({ msg: e.message, error: true }),
   })
   // Clic-clic: el 2º clic crea el FS y esa actividad pasa a ser la nueva
@@ -156,7 +226,7 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
   }
   const hoy = iso(new Date())
   const d = grid.data
-  const nCols = 7 + (d ? d.fechas.length : nSemanas * 7)
+  const nCols = N_FIJAS + (d ? d.fechas.length : nSemanas * 7)
   const diasSemana = new Set(d?.dias_semana ?? [1, 2, 3, 4, 5, 6, 7])
   const feriados = new Set(d?.feriados ?? [])
   const laborable = (f: string) => diasSemana.has(isoDow(f)) && !feriados.has(f)
@@ -206,6 +276,12 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
             vincular.on ? 'border-amber-500/60 bg-amber-500/15 text-k-amber' : 'border-k-border bg-k-raised text-k-text2 hover:bg-k-border'}`}>
           🔗 Vincular
         </button>
+        <button onClick={() => setFijarCols(v => !v)}
+          title="Inmovilizar también RESP…DESPUÉS DE al desplazarse a la derecha (la fila de fechas queda fija siempre)"
+          className={`flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border font-bold ${
+            fijarCols ? 'border-amber-500/60 bg-amber-500/15 text-k-amber' : 'border-k-border bg-k-raised text-k-text2 hover:bg-k-border'}`}>
+          ⇥ Fijar columnas
+        </button>
         <label className="flex items-center gap-1.5 text-xs text-k-text2 px-2.5 py-2 rounded-lg border border-k-border bg-k-raised cursor-pointer select-none"
           title="Al pasar el mouse por una actividad vinculada se resalta su cadena: azul = antecesoras, verde = sucesoras">
           <input type="checkbox" checked={mostrarRel} onChange={e => setMostrarRel(e.target.checked)}
@@ -231,20 +307,46 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
         </div>
       )}
 
-      <div className="overflow-x-auto rounded-xl border border-k-border">
+      {sel.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap text-[11px] font-bold text-k-blue bg-blue-500/10 border border-blue-500/30 rounded-lg px-3 py-2">
+          ☑ {sel.length} seleccionada(s) — se encadenan en el orden en que las marcaste:
+          <span className="font-mono text-k-text2">{sel.map(i => `#${i}`).join(' → ')}</span>
+          {(['FS', 'SS', 'FF'] as TipoDep[]).map(t => (
+            <button key={t} disabled={sel.length < 2 || encadenar.isPending}
+              onClick={() => encadenar.mutate({ ids: sel, tipo: t })}
+              title={t === 'FS' ? 'Fin → Inicio: cada una arranca al terminar la anterior'
+                : t === 'SS' ? 'Inicio → Inicio: arrancan juntas'
+                : 'Fin → Fin: terminan juntas'}
+              className="px-2 py-0.5 rounded border border-blue-500/40 hover:bg-blue-500/15 disabled:opacity-40">
+              ⛓ {t}
+            </button>
+          ))}
+          <button onClick={() => setSel([])}
+            className="ml-auto text-[11px] px-2 py-0.5 rounded border border-k-border text-k-text3 hover:bg-k-raised">Limpiar</button>
+        </div>
+      )}
+
+      <div className="overflow-auto rounded-xl border border-k-border"
+        style={{ maxHeight: 'calc(100vh - 250px)' }}>
         <table className="border-collapse w-max min-w-full">
           <thead>
-            <tr>
-              <th className={`${thBase} text-left sticky left-0 z-10 min-w-[240px]`} rowSpan={2}>ACTIVIDADES</th>
-              <th className={`${thBase} min-w-[80px]`} rowSpan={2}>RESP</th>
-              <th className={`${thBase} min-w-[70px]`} rowSpan={2}>METRADO</th>
-              <th className={thBase} rowSpan={2}>UND</th>
-              <th className={thBase} rowSpan={2}>F. Inic</th>
-              <th className={thBase} rowSpan={2}>F. Fin</th>
-              <th className={`${thBase} min-w-[110px]`} rowSpan={2}
-                title="Después de qué actividad(es) puede empezar (FS = Fin→Inicio). Clic en un chip abre el panel de vínculos; usa el botón 🔗 Vincular para crear nuevos con dos clics">DESPUÉS DE</th>
+            <tr style={{ height: H_SEM }}>
+              <th className={`${thBase} text-center`} rowSpan={2}
+                style={{ ...stick(0, true), ...thSticky(0, 40) }}
+                title="Número de la actividad — es el que se teclea en DESPUÉS DE para vincular">#</th>
+              <th className={`${thBase} text-left`} rowSpan={2}
+                style={{ ...stick(1, true), ...thSticky(0, 40) }}>ACTIVIDADES</th>
+              <th className={thBase} rowSpan={2} style={{ ...stick(2, fijarCols), ...thSticky(0, 40) }}>RESP</th>
+              <th className={thBase} rowSpan={2} style={{ ...stick(3, fijarCols), ...thSticky(0, 40) }}>METRADO</th>
+              <th className={thBase} rowSpan={2} style={{ ...stick(4, fijarCols), ...thSticky(0, 40) }}>UND</th>
+              <th className={thBase} rowSpan={2} style={{ ...stick(5, fijarCols), ...thSticky(0, 40) }}
+                title="Duración en días hábiles (medio día = 0.5). Al escribirla se recalcula la F.Fin conservando el inicio.">PLAZO</th>
+              <th className={thBase} rowSpan={2} style={{ ...stick(6, fijarCols), ...thSticky(0, 40) }}>F. Inic</th>
+              <th className={thBase} rowSpan={2} style={{ ...stick(7, fijarCols), ...thSticky(0, 40) }}>F. Fin</th>
+              <th className={thBase} rowSpan={2} style={{ ...stick(8, fijarCols), ...thSticky(0, 40) }}
+                title="Antecesoras, como en Project: 12 · 12FS+2 · 8;12SS-1. Doble clic para escribirlas.">DESPUÉS DE</th>
               {(d?.semanas ?? []).map((s, i) => (
-                <th key={s.lunes} colSpan={7}
+                <th key={s.lunes} colSpan={7} style={thSticky(0, 20)}
                   className="border border-k-border px-1 py-1 text-[10px] font-bold uppercase bg-red-900/30 text-red-200">
                   {i === 0 ? 'Esta semana' : `Semana +${i}`} · {fmtDia(s.lunes)} — {fmtDia(s.domingo)}
                 </th>
@@ -252,7 +354,8 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
             </tr>
             <tr>
               {(d?.fechas ?? []).map((f, i) => (
-                <th key={f} title={feriados.has(f) ? 'Feriado / día no laborable' : !laborable(f) ? 'Día no laborable (calendario)' : ''}
+                <th key={f} style={thSticky(H_SEM, 20)}
+                  title={feriados.has(f) ? 'Feriado / día no laborable' : !laborable(f) ? 'Día no laborable (calendario)' : ''}
                   className={`border border-k-border/60 px-0.5 py-0.5 text-[9px] font-bold min-w-[44px] ${
                   f === hoy ? 'bg-green-500/20 text-k-green'
                     : !laborable(f) ? 'bg-k-border/60 text-k-text2 line-through'
@@ -266,6 +369,10 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
             {(d?.grupos ?? []).map(g => (
               <GrupoOTM key={g.otm_id ?? '-'} grupo={g} fechas={d!.fechas} hoy={hoy}
                 laborable={laborable} onEditar={onEditar} cadena={cadena}
+                fijar={fijarCols} sel={sel} onSel={toggleSel}
+                onEncadenar={ids => encadenar.mutate({ ids })}
+                onDeps={(a, txt) => guardarDeps.mutate({ a, txt })}
+                onCampo={(id, patch) => editarAct.mutate({ id, patch })}
                 onCadena={id => { setCadenaDe(v => (v === id ? null : id)); setPanelDe(v => (v === id ? null : id)) }}
                 vincular={vincular} onPick={pick}
                 onPanel={id => { setPanelDe(id); setCadenaDe(id) }}
@@ -295,9 +402,24 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
         cambia abriendo la actividad. El real alimenta el avance diario de <b>Valor Ganado</b> (un solo dato).
         Una partida <b>desplegada por etapas</b> se agrupa bajo una cabecera con su color de cadena:
         clic en la cabecera para <b>compactarla en una sola fila</b> (suma el programado y el real de sus
-        etapas, solo lectura) y clic de nuevo para desplegarla y editar. Para vincular actividades usa el
-        botón <b>🔗 Vincular</b> (dos clics: primero la que va antes, luego la que sigue) — la columna
-        DESPUÉS DE muestra los vínculos y el chip abre el panel para editarlos.
+        etapas, solo lectura) y clic de nuevo para desplegarla y editar.
+      </p>
+      <p className="text-[11px] text-k-text3">
+        <b>Editar sin abrir nada</b>: doble clic en METRADO, PLAZO, F.Inic, F.Fin o DESPUÉS DE.
+        El <b>PLAZO</b> es la duración en días hábiles (medio día = <b>0.5</b>, un salto ∅ = 0): al
+        escribirlo se recalcula la F.Fin conservando el inicio, y al mover la F.Inic la barra se
+        <b> desplaza sin estirarse</b>. Escribir la F.Fin a mano recalcula el plazo.
+      </p>
+      <p className="text-[11px] text-k-text3">
+        <b>Vincular</b> — tres formas, de la más rápida a la más visual: (1) escribir las antecesoras
+        en <b>DESPUÉS DE</b> como en Project — <code className="text-k-blue">12</code>,{' '}
+        <code className="text-k-blue">12FS+2</code>, <code className="text-k-blue">8;12SS-1</code> —
+        usando el <b>#</b> de la primera columna; (2) marcar filas con clic en el <b>#</b> y pulsar
+        <b> ⛓ FS/SS/FF</b>, o el botón <b>⛓ Encadenar etapas</b> de la cabecera de una partida;
+        (3) el botón <b>🔗 Vincular</b> de siempre (dos clics). Tipos: <b>FS</b> la sucesora arranca al
+        terminar la antecesora · <b>SS</b> arrancan juntas · <b>FF</b> terminan juntas; el número tras
+        el tipo es el <b>lag</b> en días hábiles (negativo = traslape). Mover una antecesora empuja a
+        sus sucesoras <b>conservando el plazo</b> de cada una, y nunca las adelanta.
       </p>
 
       {toast && (
@@ -340,6 +462,43 @@ interface DepSel {
 interface Nodo { id: number; titulo: string; a?: ActGrid; dep: Omit<DepSel, 'nodoId'> | null }
 
 // Campo editable con commit al salir (mismo patrón no-controlado de CeldaDia).
+/** Celda de la cuadrícula editable in-situ: doble clic (o Enter) escribe,
+ *  Enter guarda, Esc cancela. Es lo que el planner pidió para no tener que
+ *  abrir un panel por cada dato. */
+function CeldaEdit({ valor, texto, tipo, onCommit, titulo, clase, placeholder }: {
+  /** valor CRUDO que se edita (ISO para fechas) */
+  valor: string
+  /** cómo se ve cuando no se está editando (por defecto, el propio valor) */
+  texto?: string
+  tipo: 'text' | 'date'
+  onCommit: (v: string) => void
+  titulo?: string; clase?: string; placeholder?: string
+}) {
+  const [edit, setEdit] = useState(false)
+  const visible = texto ?? valor
+  if (!edit) {
+    return (
+      <div onDoubleClick={() => setEdit(true)} title={titulo ?? 'Doble clic para editar'}
+        className={`cursor-text hover:bg-k-raised/70 rounded px-0.5 min-h-[15px] ${clase ?? ''}`}>
+        {visible || <span className="text-k-text3">{placeholder ?? '—'}</span>}
+      </div>
+    )
+  }
+  return (
+    <input autoFocus type={tipo} defaultValue={valor}
+      onKeyDown={e => {
+        if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+        if (e.key === 'Escape') { setEdit(false) }
+      }}
+      onBlur={e => {
+        setEdit(false)
+        const v = e.target.value.trim()
+        if (v !== valor) onCommit(v)
+      }}
+      className="w-full bg-k-void border border-k-amber rounded px-1 py-0.5 text-[11px] text-k-text outline-none" />
+  )
+}
+
 function CampoAct({ etiqueta, tipo, valor, onCommit }: {
   etiqueta: string; tipo: 'text' | 'date'; valor: string
   onCommit: (v: string) => void
@@ -631,7 +790,15 @@ function agruparPorPartida(acts: ActGrid[]): ItemGrid[] {
 
 interface Vincular { on: boolean; primera: number | null }
 
-function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, onReal, onProg, vincular, onPick, onPanel, onHover }: {
+interface PropsFila {
+  fijar: boolean
+  sel: number[]; onSel: (id: number) => void
+  onEncadenar: (ids: number[]) => void
+  onDeps: (a: ActGrid, txt: string) => void
+  onCampo: (id: number, patch: Record<string, unknown>) => void
+}
+
+function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, onReal, onProg, vincular, onPick, onPanel, onHover, ...fp }: {
   grupo: GridResp['grupos'][number]; fechas: string[]; hoy: string
   laborable: (f: string) => boolean
   cadena: { focal: number; azules: Set<number>; verdes: Set<number> } | null
@@ -641,7 +808,7 @@ function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, o
   onProg: (actId: number, fecha: string, v: number | null) => void
   vincular: Vincular; onPick: (id: number) => void; onPanel: (id: number) => void
   onHover: (id: number | null) => void
-}) {
+} & PropsFila) {
   // Partidas compactadas (▸): sus etapas se muestran en UNA sola fila agregada.
   const [compactas, setCompactas] = useState<Set<number>>(new Set())
   const toggle = (pid: number) => setCompactas(prev => {
@@ -653,8 +820,9 @@ function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, o
   return (
     <>
       <tr>
-        <td colSpan={7 + fechas.length}
-          className="border border-k-border px-2 py-1 text-[11px] font-bold bg-blue-500/15 text-k-blue sticky left-0">
+        <td colSpan={N_FIJAS + fechas.length}
+          className="border border-k-border px-2 py-1 text-[11px] font-bold bg-blue-500/15 text-k-blue"
+          style={{ position: 'sticky', left: 0, zIndex: 5 }}>
           {grupo.otm_id ?? 'Sin OTM'}{grupo.otm_desc ? ` — ${grupo.otm_desc}` : ''}
         </td>
       </tr>
@@ -663,33 +831,45 @@ function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, o
           return <FilaActividad key={it.a.id} a={it.a} fechas={fechas} hoy={hoy}
             laborable={laborable} cadena={cadena} onCadena={onCadena}
             onEditar={onEditar} onReal={onReal} onProg={onProg}
-            vincular={vincular} onPick={onPick} onPanel={onPanel} onHover={onHover} />
+            vincular={vincular} onPick={onPick} onPanel={onPanel} onHover={onHover} {...fp} />
         }
         const color = PALETA_CADENA[(idxCadena.get(it.pid) ?? 0) % PALETA_CADENA.length]
         const compacta = compactas.has(it.pid)
         const a0 = it.acts[0]
         if (compacta) {
           return <FilaPartidaCompacta key={`p${it.pid}`} acts={it.acts} color={color}
-            fechas={fechas} laborable={laborable} onToggle={() => toggle(it.pid)} />
+            fechas={fechas} laborable={laborable} onToggle={() => toggle(it.pid)} fijar={fp.fijar} />
         }
         return (
           <Fragment key={`p${it.pid}`}>
             <tr>
-              <td colSpan={7 + fechas.length} onClick={() => toggle(it.pid)}
-                title="Partida desplegada por etapas (hitos) — clic para compactarla en una sola fila"
-                className="border border-k-border px-2 py-1 text-[10px] font-bold sticky left-0 cursor-pointer hover:bg-k-raised/60"
-                style={{ borderLeft: `3px solid ${color}`, background: `${color}14` }}>
-                <span className="text-k-text2">▾</span>{' '}
-                <span style={{ color }}>●</span>{' '}
-                <span className="text-k-text">{a0.partida_codigo} — {a0.partida_desc}</span>{' '}
-                <span className="text-k-text3 font-normal">· {it.acts.length} etapas · clic para compactar</span>
+              <td colSpan={N_FIJAS + fechas.length}
+                className="border border-k-border px-2 py-1 text-[10px] font-bold"
+                style={{ position: 'sticky', left: 0, zIndex: 5,
+                         borderLeft: `3px solid ${color}`, background: `${color}14` }}>
+                <span onClick={() => toggle(it.pid)} className="cursor-pointer hover:opacity-70"
+                  title="Partida desplegada por etapas (hitos) — clic para compactarla en una sola fila">
+                  <span className="text-k-text2">▾</span>{' '}
+                  <span style={{ color }}>●</span>{' '}
+                  <span className="text-k-text">{a0.partida_codigo} — {a0.partida_desc}</span>{' '}
+                  <span className="text-k-text3 font-normal">· {it.acts.length} etapas</span>
+                </span>
+                {/* Un clic encadena las etapas en su orden constructivo: es el
+                    80% de los vínculos que crea el planner. */}
+                {it.acts.length > 1 && (
+                  <button onClick={() => fp.onEncadenar(it.acts.map(a => a.id))}
+                    title={`Encadenar las ${it.acts.length} etapas en secuencia FS: ${it.acts.map(a => `#${a.id}`).join(' → ')}`}
+                    className="ml-2 text-[10px] font-bold px-1.5 py-0.5 rounded border border-k-border bg-k-surface text-k-text2 hover:bg-k-raised">
+                    ⛓ Encadenar las {it.acts.length} etapas
+                  </button>
+                )}
               </td>
             </tr>
             {it.acts.map(a => (
               <FilaActividad key={a.id} a={a} fechas={fechas} hoy={hoy}
                 laborable={laborable} cadena={cadena} onCadena={onCadena}
                 onEditar={onEditar} onReal={onReal} onProg={onProg} color={color}
-                vincular={vincular} onPick={onPick} onPanel={onPanel} onHover={onHover} />
+                vincular={vincular} onPick={onPick} onPanel={onPanel} onHover={onHover} {...fp} />
             ))}
           </Fragment>
         )
@@ -700,9 +880,9 @@ function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, o
 
 // Fila única de una partida COMPACTADA: agrega el programado y el real de
 // todas sus etapas por día (solo lectura — para editar, despliega con ▸).
-function FilaPartidaCompacta({ acts, color, fechas, laborable, onToggle }: {
+function FilaPartidaCompacta({ acts, color, fechas, laborable, onToggle, fijar }: {
   acts: ActGrid[]; color: string; fechas: string[]
-  laborable: (f: string) => boolean; onToggle: () => void
+  laborable: (f: string) => boolean; onToggle: () => void; fijar: boolean
 }) {
   const a0 = acts[0]
   const progAgg: Record<string, number> = {}
@@ -717,11 +897,13 @@ function FilaPartidaCompacta({ acts, color, fechas, laborable, onToggle }: {
   const fIni = acts.reduce((m, a) => (a.fecha < m ? a.fecha : m), acts[0].fecha)
   const fFin = acts.reduce((m, a) => (a.fecha_fin > m ? a.fecha_fin : m), acts[0].fecha_fin)
   const conFS = acts.some(a => (a.predecesoras ?? []).length > 0)
+  const plazoTot = acts.reduce((s, a) => s + (a.plazo_dias ?? 0), 0)
   return (
     <tr>
+      <td className={`${tdFijo} text-center font-mono text-[9px] text-k-text3`} style={stick(0, true)}>—</td>
       <td onClick={onToggle}
-        className={`${tdFijo} sticky left-0 z-10 cursor-pointer hover:bg-k-raised align-top`}
-        style={{ borderLeft: `3px solid ${color}` }}
+        className={`${tdFijo} cursor-pointer hover:bg-k-raised align-top`}
+        style={{ ...stick(1, true), borderLeft: `3px solid ${color}` }}
         title={'Partida compactada: la fila suma el programado y el real de todas sus etapas.\nClic para desplegar las etapas (y poder editar los avances).'}>
         <div className="flex items-center gap-1.5">
           <span className="text-k-text2">▸</span>
@@ -732,22 +914,26 @@ function FilaPartidaCompacta({ acts, color, fechas, laborable, onToggle }: {
           ◆ {acts.length} etapas compactadas · {ejecutadas}/{acts.length} ✓
         </div>
       </td>
-      <td className={`${tdFijo} text-center text-k-text2`}>
+      <td className={`${tdFijo} text-center text-k-text2`} style={stick(2, fijar)}>
         {a0.supervisor_nombre?.split(' ')[0] || a0.responsable || '—'}
       </td>
-      <td className={`${tdFijo} text-center align-middle`}
+      <td className={`${tdFijo} text-center align-middle`} style={stick(3, fijar)}
         title="Σ metrado meta de las etapas · Σ real anotado">
         <div className="font-mono font-bold text-k-text">{totalMeta > 0 ? num(totalMeta) : '—'}</div>
         {totalMeta > 0 && (
           <div className="text-[9px] text-k-text3">Σ etapas · saldo {num(Math.max(totalMeta - totalReal, 0))}</div>
         )}
       </td>
-      <td className={`${tdFijo} text-center text-k-text2`}>{a0.und ?? '—'}</td>
-      <td className={`${tdFijo} text-center font-mono text-[10px] text-k-text2`}>{fmtCorta(fIni)}</td>
-      <td className={`${tdFijo} text-center font-mono text-[10px] text-k-text2`}>{fmtCorta(fFin)}</td>
-      <td className={`${tdFijo} text-center font-mono text-[9px] text-k-text2`}
-        title={conFS ? 'Las etapas están encadenadas FS (despliega para verlas)' : 'Sin antecesoras'}>
-        {conFS ? '⛓ FS' : '—'}
+      <td className={`${tdFijo} text-center text-k-text2`} style={stick(4, fijar)}>{a0.und ?? '—'}</td>
+      <td className={`${tdFijo} text-center font-mono text-[10px] text-k-text2`} style={stick(5, fijar)}
+        title="Σ del plazo de las etapas (no es la duración de la partida si se traslapan)">
+        {plazoTot > 0 ? `Σ ${num(plazoTot)}` : '—'}
+      </td>
+      <td className={`${tdFijo} text-center font-mono text-[10px] text-k-text2`} style={stick(6, fijar)}>{fmtCorta(fIni)}</td>
+      <td className={`${tdFijo} text-center font-mono text-[10px] text-k-text2`} style={stick(7, fijar)}>{fmtCorta(fFin)}</td>
+      <td className={`${tdFijo} text-center font-mono text-[9px] text-k-text2`} style={stick(8, fijar)}
+        title={conFS ? 'Las etapas están encadenadas (despliega para verlas)' : 'Sin antecesoras'}>
+        {conFS ? '⛓' : '—'}
       </td>
       {fechas.map(f => (
         <CeldaDia key={f} prog={progAgg[f]} real={realAgg[f]}
@@ -758,7 +944,7 @@ function FilaPartidaCompacta({ acts, color, fechas, laborable, onToggle }: {
   )
 }
 
-function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, onReal, onProg, color, vincular, onPick, onPanel, onHover }: {
+function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, onReal, onProg, color, vincular, onPick, onPanel, onHover, fijar, sel, onSel, onDeps, onCampo }: {
   a: ActGrid; fechas: string[]; hoy: string
   laborable: (f: string) => boolean
   cadena: { focal: number; azules: Set<number>; verdes: Set<number> } | null
@@ -769,7 +955,7 @@ function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, 
   color?: string
   vincular: Vincular; onPick: (id: number) => void; onPanel: (id: number) => void
   onHover: (id: number | null) => void
-}) {
+} & Omit<PropsFila, 'onEncadenar'>) {
         const editable = a.estado !== 'CANCELADO'
         const saltos = new Set(a.dias_salto ?? [])
         const medios = new Set(a.dias_medio ?? [])
@@ -781,13 +967,27 @@ function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, 
           : cadena.verdes.has(a.id) ? 'bg-green-500/10'
           : 'opacity-30'
         const esPrimera = vincular.on && vincular.primera === a.id
+        const iSel = sel.indexOf(a.id)
         return (
           <tr key={a.id} className={`${a.estado === 'CANCELADO' ? 'opacity-50' : ''} ${claseCadena} ${esPrimera ? 'bg-amber-500/15' : ''}`}
             onMouseEnter={() => onHover((a.dep_total ?? 0) > 0 ? a.id : null)}
             onMouseLeave={() => onHover(null)}>
+            {/* # — el identificador que se teclea en DESPUÉS DE. El clic lo
+                marca para encadenar en bloque (el orden de marcado es el de
+                la secuencia). */}
+            <td className={`${tdFijo} text-center align-middle cursor-pointer select-none hover:bg-k-raised ${
+                  iSel >= 0 ? 'bg-blue-500/20' : ''}`}
+              style={stick(0, true)} onClick={() => onSel(a.id)}
+              title={iSel >= 0
+                ? `Marcada en la posición ${iSel + 1} de la secuencia — clic para desmarcar`
+                : 'Clic para marcarla y encadenarla con otras'}>
+              <span className={`font-mono text-[10px] font-bold ${iSel >= 0 ? 'text-k-blue' : 'text-k-text3'}`}>
+                {iSel >= 0 ? `${iSel + 1}·` : ''}{a.id}
+              </span>
+            </td>
             <td onClick={() => (vincular.on ? onPick(a.id) : onEditar(a))}
-              className={`${tdFijo} sticky left-0 z-10 cursor-pointer hover:bg-k-raised align-top`}
-              style={color ? { borderLeft: `3px solid ${color}` } : undefined}
+              className={`${tdFijo} cursor-pointer hover:bg-k-raised align-top`}
+              style={{ ...stick(1, true), ...(color ? { borderLeft: `3px solid ${color}` } : {}) }}
               title={vincular.on
                 ? (vincular.primera == null ? 'Clic: esta actividad va PRIMERO'
                   : esPrimera ? 'Elegida como la que va primero'
@@ -795,7 +995,6 @@ function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, 
                 : `${a.titulo}${a.partida_desc ? `\n📌 ${a.partida_codigo} — ${a.partida_desc}` : ''}\n(clic para editar: meta, fechas, saltos, antecesoras, restricciones)`}>
               <div className={`flex items-center gap-1.5${color ? ' pl-2' : ''}`}>
                 <span className={`w-2 h-2 rounded-full flex-shrink-0 ${ESTADO_DOT[a.estado] ?? 'bg-zinc-500'}`} />
-                <span className="text-[8px] font-mono text-k-text3 flex-shrink-0">#{a.id}</span>
                 <span className="text-k-text leading-tight">{a.titulo}</span>
                 {(a.rest_pend ?? 0) > 0 && <span className="text-[9px] font-bold text-k-red flex-shrink-0">⛔{a.rest_pend}</span>}
                 {(a.dep_total ?? 0) > 0 && (
@@ -824,35 +1023,54 @@ function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, 
                 </div>
               )}
             </td>
-            <td className={`${tdFijo} text-center text-k-text2`}>
+            <td className={`${tdFijo} text-center text-k-text2`} style={stick(2, fijar)}>
               {a.supervisor_nombre?.split(' ')[0] || a.responsable || '—'}
             </td>
-            <td className={`${tdFijo} text-center align-middle`}
-              title="Metrado META — solo se cambia abriendo la actividad">
-              <div className="font-mono font-bold text-k-text">{a.metrado_prog != null ? num(a.metrado_prog) : '—'}</div>
+            {/* Metrado, plazo y fechas: editables in-situ (doble clic) para no
+                tener que abrir un panel por cada dato. */}
+            <td className={`${tdFijo} text-center align-middle`} style={stick(3, fijar)}>
+              <CeldaEdit tipo="text" clase="font-mono font-bold text-k-text text-center"
+                valor={a.metrado_prog != null ? String(a.metrado_prog) : ''}
+                titulo="Metrado META de la actividad — doble clic para cambiarlo"
+                onCommit={v => onCampo(a.id, { metrado_prog: v === '' ? null : Number(v) })} />
               {a.metrado_base != null && (
                 <div className="text-[9px] text-k-text3" title="Metrado presupuestado de la partida · saldo por ejecutar">
                   base {num(a.metrado_base)}{a.saldo != null ? ` · saldo ${num(a.saldo)}` : ''}
                 </div>
               )}
             </td>
-            <td className={`${tdFijo} text-center text-k-text2`}>{a.und ?? '—'}</td>
-            <td className={`${tdFijo} text-center font-mono text-[10px] text-k-text2`}>{fmtCorta(a.fecha)}</td>
-            <td className={`${tdFijo} text-center font-mono text-[10px] text-k-text2`}>{fmtCorta(a.fecha_fin)}</td>
-            <td className={`${tdFijo} align-middle`}>
-              <div className="flex flex-col gap-0.5 items-stretch">
-                {(a.predecesoras ?? []).map(p => (
-                  <button key={p.dep_id} onClick={() => onPanel(a.id)}
-                    title={`Después de: ${p.titulo} (termina ${fmtCorta(p.fecha_fin)}${p.lag_dias ? `, lag ${p.lag_dias}d` : ''}) — clic para editar el vínculo`}
-                    className="text-left text-[9px] px-1.5 py-0.5 rounded bg-blue-500/10 text-k-blue truncate max-w-[110px] hover:bg-blue-500/20">
-                    ↳ {p.titulo.slice(0, 15)}{p.lag_dias ? ` +${p.lag_dias}d` : ''}
-                  </button>
-                ))}
-                {(a.predecesoras ?? []).length === 0 && (
-                  <button onClick={() => onPanel(a.id)} title="Sin antecesoras — clic para vincular desde el panel"
-                    className="text-[9px] text-k-text3 hover:text-k-text text-center">—</button>
-                )}
-              </div>
+            <td className={`${tdFijo} text-center text-k-text2`} style={stick(4, fijar)}>{a.und ?? '—'}</td>
+            <td className={`${tdFijo} text-center align-middle`} style={stick(5, fijar)}>
+              <CeldaEdit tipo="text" clase="font-mono text-[11px] text-k-text text-center"
+                valor={a.plazo_dias != null ? String(a.plazo_dias) : ''}
+                texto={a.plazo_dias != null ? `${num(a.plazo_dias)} d` : ''}
+                titulo={'Plazo en días hábiles (0.5 = medio día).\nAl cambiarlo se recalcula la F.Fin conservando el inicio.'}
+                onCommit={v => onCampo(a.id, { plazo_dias: Number(v.replace(',', '.')) })} />
+            </td>
+            <td className={`${tdFijo} text-center align-middle`} style={stick(6, fijar)}>
+              <CeldaEdit tipo="date" clase="font-mono text-[10px] text-k-text2 text-center"
+                valor={a.fecha} texto={fmtCorta(a.fecha)}
+                titulo="F. Inicio — al moverla la barra se desplaza conservando el plazo"
+                onCommit={v => v && onCampo(a.id, { fecha: v })} />
+            </td>
+            <td className={`${tdFijo} text-center align-middle`} style={stick(7, fijar)}>
+              <CeldaEdit tipo="date" clase="font-mono text-[10px] text-k-text2 text-center"
+                valor={a.fecha_fin} texto={fmtCorta(a.fecha_fin)}
+                titulo="F. Fin — al escribirla se recalcula el plazo"
+                onCommit={v => v && onCampo(a.id, { fecha_fin: v })} />
+            </td>
+            {/* DESPUÉS DE, como en Project: se teclea «12», «12FS+2», «8;12SS-1» */}
+            <td className={`${tdFijo} align-middle`} style={stick(8, fijar)}>
+              <CeldaEdit tipo="text" clase="font-mono text-[10px] text-k-blue text-center"
+                valor={fmtDeps(a.predecesoras)} placeholder="—"
+                titulo={(a.predecesoras ?? []).length
+                  ? `Después de:\n${(a.predecesoras ?? []).map(p => `• ${p.titulo} (${p.tipo ?? 'FS'}${p.lag_dias ? (p.lag_dias > 0 ? `+${p.lag_dias}` : p.lag_dias) : ''}) termina ${fmtCorta(p.fecha_fin)}`).join('\n')}\n\nDoble clic para escribirlas: 12 · 12FS+2 · 8;12SS-1`
+                  : 'Sin antecesoras — doble clic y escribe el # de la que va antes (12 · 12FS+2 · 8;12SS-1)'}
+                onCommit={v => onDeps(a, v)} />
+              {(a.predecesoras ?? []).length > 0 && (
+                <button onClick={() => onPanel(a.id)} title="Ver la cadena completa en el panel"
+                  className="w-full text-[8px] text-k-text3 hover:text-k-text">ver cadena ⤢</button>
+              )}
             </td>
             {fechas.map(f => (
               <CeldaDia key={f} prog={a.prog[f]} real={a.real[f]}
