@@ -7,7 +7,7 @@
 // alcanzado de la semana, con cumplimiento SI/NO y causa).
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ChevronLeft, ChevronRight, Loader2, Printer } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Loader2, Printer, Search } from 'lucide-react'
 import { api } from '@/lib/api'
 import { CNC } from '@/lib/catalogos'
 import { lunesDe, iso } from '@/lib/semana'
@@ -94,6 +94,28 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
   // Selección múltiple para encadenar de un golpe (el Ctrl+F2 de Project).
   const [sel, setSel] = useState<number[]>([])
   const toggleSel = (id: number) => setSel(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id])
+  // Encontrar entre muchas: con 100 partidas la cuadrícula deja de ser
+  // navegable a ojo. Buscador + filtros + contraer, todo en cliente sobre lo
+  // que ya trae el grid (que solo carga lo que cruza la ventana de fechas).
+  const [busca, setBusca] = useState('')
+  const [fSup, setFSup] = useState('')
+  const [fEstado, setFEstado] = useState('')
+  const [soloRest, setSoloRest] = useState(false)
+  const [compacto, setCompacto] = useState(false)
+  // Partidas compactadas y proyectos contraídos: viven aquí (no en el grupo)
+  // para que «Contraer todo» pueda actuar sobre todos de una vez.
+  const [compactas, setCompactas] = useState<Set<number>>(new Set())
+  const [contraidos, setContraidos] = useState<Set<string>>(new Set())
+  const toggleCompacta = (pid: number) => setCompactas(prev => {
+    const s = new Set(prev)
+    if (s.has(pid)) s.delete(pid); else s.add(pid)
+    return s
+  })
+  const toggleContraido = (k: string) => setContraidos(prev => {
+    const s = new Set(prev)
+    if (s.has(k)) s.delete(k); else s.add(k)
+    return s
+  })
 
   const grid = useQuery<GridResp>({
     queryKey: ['lookahead-grid', desde, nSemanas],
@@ -239,6 +261,51 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
   const feriados = new Set(d?.feriados ?? [])
   const laborable = (f: string) => diasSemana.has(isoDow(f)) && !feriados.has(f)
 
+  // ── Buscador y filtros ───────────────────────────────────
+  // Se normalizan tildes para que «liberacion» encuentre «Liberación».
+  const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  const q = norm(busca.trim())
+  const hayFiltro = !!(q || fSup || fEstado || soloRest)
+  const supervisores = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const g of d?.grupos ?? []) {
+      for (const a of g.actividades) {
+        if (a.supervisor_id) m.set(a.supervisor_id, a.supervisor_nombre || a.supervisor_id)
+      }
+    }
+    return [...m].sort((x, y) => x[1].localeCompare(y[1]))
+  }, [d])
+  const grupos = useMemo(() => {
+    const todos = d?.grupos ?? []
+    if (!hayFiltro) return todos
+    return todos
+      .map(g => ({ ...g, actividades: g.actividades.filter(a => {
+        if (fSup && (a.supervisor_id ?? '') !== fSup) return false
+        if (fEstado && a.estado !== fEstado) return false
+        if (soloRest && !(a.rest_pend ?? 0)) return false
+        if (!q) return true
+        return norm([a.titulo, a.partida_codigo, a.partida_desc, a.hito_desc,
+                     a.supervisor_nombre, a.responsable, `#${a.id}`]
+          .filter(Boolean).join(' ')).includes(q)
+      }) }))
+      .filter(g => g.actividades.length > 0)
+  }, [d, q, fSup, fEstado, soloRest, hayFiltro])
+  const nTotal = (d?.grupos ?? []).reduce((s, g) => s + g.actividades.length, 0)
+  const nVisible = grupos.reduce((s, g) => s + g.actividades.length, 0)
+  const limpiarFiltros = () => { setBusca(''); setFSup(''); setFEstado(''); setSoloRest(false) }
+  // Contraer todo = compactar toda partida con 2+ etapas Y contraer los proyectos.
+  const contraerTodo = () => {
+    const pids = new Set<number>()
+    const cuenta = new Map<number, number>()
+    for (const g of grupos) for (const a of g.actividades) {
+      if (a.partida_id) cuenta.set(a.partida_id, (cuenta.get(a.partida_id) ?? 0) + 1)
+    }
+    for (const [pid, n] of cuenta) if (n > 1) pids.add(pid)
+    setCompactas(pids)
+    setContraidos(new Set(grupos.map(g => g.otm_id ?? '-')))
+  }
+  const expandirTodo = () => { setCompactas(new Set()); setContraidos(new Set()) }
+
   // BFS transitivo sobre las actividades visibles para pintar la cadena.
   // El clic (cadenaDe) manda; si no hay, el hover con «Mostrar relaciones».
   const cadena = (() => {
@@ -315,6 +382,63 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
         </div>
       )}
 
+      {/* Encontrar entre muchas actividades */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="relative">
+          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-k-text3 pointer-events-none" />
+          <input value={busca} onChange={e => setBusca(e.target.value)}
+            placeholder="Buscar actividad, partida, código, responsable…"
+            title="Filtra las filas por título, código o descripción de la partida, etapa, responsable o #"
+            className="w-[300px] bg-k-raised border border-k-border rounded-lg pl-8 pr-7 py-2 text-sm text-k-text outline-none focus:border-k-amber placeholder:text-k-text3" />
+          {busca && (
+            <button onClick={() => setBusca('')} title="Limpiar la búsqueda"
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-k-text3 hover:text-k-text text-sm">✕</button>
+          )}
+        </div>
+        <select value={fSup} onChange={e => setFSup(e.target.value)}
+          title="Ver solo las actividades de un responsable"
+          className="bg-k-raised border border-k-border rounded-lg px-2.5 py-2 text-sm text-k-text2 outline-none">
+          <option value="">Todos los responsables</option>
+          {supervisores.map(([id, nom]) => <option key={id} value={id}>{nom}</option>)}
+        </select>
+        <select value={fEstado} onChange={e => setFEstado(e.target.value)}
+          className="bg-k-raised border border-k-border rounded-lg px-2.5 py-2 text-sm text-k-text2 outline-none">
+          <option value="">Todos los estados</option>
+          {['PROGRAMADO', 'EJECUTADO', 'NO_CUMPLIDA', 'CANCELADO'].map(e =>
+            <option key={e} value={e}>{e === 'NO_CUMPLIDA' ? 'NO CUMPLIDA' : e[0] + e.slice(1).toLowerCase()}</option>)}
+        </select>
+        <label className="flex items-center gap-1.5 text-xs text-k-text2 px-2.5 py-2 rounded-lg border border-k-border bg-k-raised cursor-pointer select-none"
+          title="Solo las actividades que todavía tienen restricciones sin liberar">
+          <input type="checkbox" checked={soloRest} onChange={e => setSoloRest(e.target.checked)} className="accent-amber-500" />
+          ⛔ Con restricción
+        </label>
+        <button onClick={contraerTodo} title="Compactar todas las partidas por etapas y contraer los proyectos"
+          className="text-xs px-2.5 py-2 rounded-lg border border-k-border bg-k-raised text-k-text2 hover:bg-k-border">
+          ⊟ Contraer todo
+        </button>
+        <button onClick={expandirTodo} title="Volver a mostrar todas las etapas y proyectos"
+          className="text-xs px-2.5 py-2 rounded-lg border border-k-border bg-k-raised text-k-text2 hover:bg-k-border">
+          ⊞ Expandir todo
+        </button>
+        <button onClick={() => setCompacto(v => !v)}
+          title="Filas de una sola línea: el código de la partida y la etapa pasan al tooltip. Cabe el doble de actividades."
+          className={`text-xs px-2.5 py-2 rounded-lg border font-bold ${
+            compacto ? 'border-amber-500/60 bg-amber-500/15 text-k-amber' : 'border-k-border bg-k-raised text-k-text2 hover:bg-k-border'}`}>
+          ☰ Compacto
+        </button>
+        <span className="text-[11px] text-k-text3">
+          {hayFiltro
+            ? <><b className="text-k-amber">{nVisible}</b> de {nTotal} actividades</>
+            : <>{nTotal} actividades en el rango</>}
+        </span>
+        {hayFiltro && (
+          <button onClick={limpiarFiltros}
+            className="text-[11px] px-2 py-1 rounded-lg border border-amber-500/40 text-k-amber hover:bg-amber-500/10">
+            Quitar filtros
+          </button>
+        )}
+      </div>
+
       {sel.length > 0 && (
         <div className="flex items-center gap-2 flex-wrap text-[11px] font-bold text-k-blue bg-blue-500/10 border border-blue-500/30 rounded-lg px-3 py-2">
           ☑ {sel.length} seleccionada(s) — se encadenan en el orden en que las marcaste:
@@ -374,10 +498,14 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
             </tr>
           </thead>
           <tbody>
-            {(d?.grupos ?? []).map(g => (
+            {grupos.map(g => (
               <GrupoOTM key={g.otm_id ?? '-'} grupo={g} fechas={d!.fechas} hoy={hoy}
                 laborable={laborable} onEditar={onEditar} cadena={cadena}
                 fijar={fijarCols} sel={sel} onSel={toggleSel}
+                compacto={compacto}
+                compactas={compactas} onCompactar={toggleCompacta}
+                contraido={contraidos.has(g.otm_id ?? '-')}
+                onContraer={() => toggleContraido(g.otm_id ?? '-')}
                 onEncadenar={ids => encadenar.mutate({ ids })}
                 onDeps={(a, txt) => guardarDeps.mutate({ a, txt })}
                 onCampo={(id, patch) => editarAct.mutate({ id, patch })}
@@ -388,10 +516,15 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
                 onReal={(actId, fecha, v) => guardarReal.mutate({ actId, fecha, v })}
                 onProg={(actId, fecha, v) => guardarProg.mutate({ actId, fecha, v })} />
             ))}
-            {(d?.grupos ?? []).length === 0 && !grid.isLoading && (
+            {grupos.length === 0 && !grid.isLoading && (
               <tr><td colSpan={nCols} className="px-4 py-8 text-center text-k-text3 text-sm">
-                Sin actividades en el rango. Prográmalas desde el Plan semanal (o el botón + del calendario)
-                indicando F.Inic–F.Fin y el metrado comprometido.
+                {hayFiltro ? (<>
+                  Ninguna de las {nTotal} actividades del rango coincide con el filtro.{' '}
+                  <button onClick={limpiarFiltros} className="text-k-amber underline">Quitar filtros</button>
+                </>) : (<>
+                  Sin actividades en el rango. Prográmalas desde el Plan semanal (o el botón + del calendario)
+                  indicando F.Inic–F.Fin y el metrado comprometido.
+                </>)}
               </td></tr>
             )}
           </tbody>
@@ -411,6 +544,15 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
         Una partida <b>desplegada por etapas</b> se agrupa bajo una cabecera con su color de cadena:
         clic en la cabecera para <b>compactarla en una sola fila</b> (suma el programado y el real de sus
         etapas, solo lectura) y clic de nuevo para desplegarla y editar.
+      </p>
+      <p className="text-[11px] text-k-text3">
+        <b>Encontrar entre muchas</b>: el <b>buscador</b> filtra las filas por título, código o
+        descripción de la partida, etapa, responsable o <b>#</b> (ignora tildes). Combínalo con los
+        filtros de responsable, estado y <b>⛔ con restricción</b>. <b>⊟ Contraer todo</b> compacta
+        las partidas por etapas y pliega los proyectos — clic en la barra azul de un proyecto para
+        plegarlo suelto. <b>☰ Compacto</b> deja cada fila en una línea (el código y la etapa pasan
+        al tooltip) y cabe el doble. El LookAhead solo trae las actividades que <b>cruzan las
+        semanas visibles</b>, así que mover la ventana también acota.
       </p>
       <p className="text-[11px] text-k-text3">
         <b>Editar sin abrir nada</b>: doble clic en METRADO, PLAZO, F.Inic, F.Fin o DESPUÉS DE.
@@ -800,13 +942,14 @@ interface Vincular { on: boolean; primera: number | null }
 
 interface PropsFila {
   fijar: boolean
+  compacto: boolean
   sel: number[]; onSel: (id: number) => void
   onEncadenar: (ids: number[]) => void
   onDeps: (a: ActGrid, txt: string) => void
   onCampo: (id: number, patch: Record<string, unknown>) => void
 }
 
-function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, onReal, onProg, vincular, onPick, onPanel, onHover, ...fp }: {
+function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, onReal, onProg, vincular, onPick, onPanel, onHover, compactas, onCompactar, contraido, onContraer, onEncadenar, ...fp }: {
   grupo: GridResp['grupos'][number]; fechas: string[]; hoy: string
   laborable: (f: string) => boolean
   cadena: { focal: number; azules: Set<number>; verdes: Set<number> } | null
@@ -816,25 +959,30 @@ function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, o
   onProg: (actId: number, fecha: string, v: number | null) => void
   vincular: Vincular; onPick: (id: number) => void; onPanel: (id: number) => void
   onHover: (id: number | null) => void
+  // Partidas compactadas (▸) y proyecto contraído: el estado vive en el padre
+  // para que «Contraer todo» pueda actuar sobre todos de una vez.
+  compactas: Set<number>; onCompactar: (pid: number) => void
+  contraido: boolean; onContraer: () => void
 } & PropsFila) {
-  // Partidas compactadas (▸): sus etapas se muestran en UNA sola fila agregada.
-  const [compactas, setCompactas] = useState<Set<number>>(new Set())
-  const toggle = (pid: number) => setCompactas(prev => {
-    const s = new Set(prev); if (s.has(pid)) s.delete(pid); else s.add(pid); return s
-  })
+  const toggle = onCompactar
   const items = agruparPorPartida(grupo.actividades)
   const idxCadena = new Map<number, number>()
   for (const it of items) if (it.tipo === 'partida') idxCadena.set(it.pid, idxCadena.size)
   return (
     <>
       <tr>
-        <td colSpan={N_FIJAS + fechas.length}
-          className="border border-k-border px-2 py-1 text-[11px] font-bold bg-blue-500/15 text-k-blue"
+        <td colSpan={N_FIJAS + fechas.length} onClick={onContraer}
+          title={contraido ? 'Clic para desplegar este proyecto' : 'Clic para contraer este proyecto entero'}
+          className="border border-k-border px-2 py-1 text-[11px] font-bold bg-blue-500/15 text-k-blue cursor-pointer hover:bg-blue-500/25"
           style={{ position: 'sticky', left: 0, zIndex: 5 }}>
+          <span className="text-k-text2">{contraido ? '▸' : '▾'}</span>{' '}
           {grupo.otm_id ?? 'Sin OTM'}{grupo.otm_desc ? ` — ${grupo.otm_desc}` : ''}
+          {contraido && (
+            <span className="text-k-text3 font-normal"> · {grupo.actividades.length} actividades ocultas</span>
+          )}
         </td>
       </tr>
-      {items.map(it => {
+      {!contraido && items.map(it => {
         if (it.tipo === 'suelta') {
           return <FilaActividad key={it.a.id} a={it.a} fechas={fechas} hoy={hoy}
             laborable={laborable} cadena={cadena} onCadena={onCadena}
@@ -846,7 +994,7 @@ function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, o
         const a0 = it.acts[0]
         if (compacta) {
           return <FilaPartidaCompacta key={`p${it.pid}`} acts={it.acts} color={color}
-            fechas={fechas} laborable={laborable} onToggle={() => toggle(it.pid)} fijar={fp.fijar} />
+            fechas={fechas} laborable={laborable} onToggle={() => toggle(it.pid)} fijar={fp.fijar} compacto={fp.compacto} />
         }
         return (
           <Fragment key={`p${it.pid}`}>
@@ -865,7 +1013,7 @@ function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, o
                 {/* Un clic encadena las etapas en su orden constructivo: es el
                     80% de los vínculos que crea el planner. */}
                 {it.acts.length > 1 && (
-                  <button onClick={() => fp.onEncadenar(it.acts.map(a => a.id))}
+                  <button onClick={() => onEncadenar(it.acts.map(a => a.id))}
                     title={`Encadenar las ${it.acts.length} etapas en secuencia FS: ${it.acts.map(a => `#${a.id}`).join(' → ')}`}
                     className="ml-2 text-[10px] font-bold px-1.5 py-0.5 rounded border border-k-border bg-k-surface text-k-text2 hover:bg-k-raised">
                     ⛓ Encadenar las {it.acts.length} etapas
@@ -888,9 +1036,10 @@ function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, o
 
 // Fila única de una partida COMPACTADA: agrega el programado y el real de
 // todas sus etapas por día (solo lectura — para editar, despliega con ▸).
-function FilaPartidaCompacta({ acts, color, fechas, laborable, onToggle, fijar }: {
+function FilaPartidaCompacta({ acts, color, fechas, laborable, onToggle, fijar, compacto }: {
   acts: ActGrid[]; color: string; fechas: string[]
-  laborable: (f: string) => boolean; onToggle: () => void; fijar: boolean
+  laborable: (f: string) => boolean; onToggle: () => void
+  fijar: boolean; compacto: boolean
 }) {
   const a0 = acts[0]
   const progAgg: Record<string, number> = {}
@@ -918,9 +1067,11 @@ function FilaPartidaCompacta({ acts, color, fechas, laborable, onToggle, fijar }
           <span style={{ color }}>●</span>
           <span className="text-k-text leading-tight font-bold">{a0.partida_codigo} — {a0.partida_desc}</span>
         </div>
-        <div className="text-[9px] text-k-text3 pl-3.5">
-          ◆ {acts.length} etapas compactadas · {ejecutadas}/{acts.length} ✓
-        </div>
+        {!compacto && (
+          <div className="text-[9px] text-k-text3 pl-3.5">
+            ◆ {acts.length} etapas compactadas · {ejecutadas}/{acts.length} ✓
+          </div>
+        )}
       </td>
       <td className={`${tdFijo} text-center text-k-text2`} style={stick(2, fijar)}>
         {a0.supervisor_nombre?.split(' ')[0] || a0.responsable || '—'}
@@ -952,7 +1103,7 @@ function FilaPartidaCompacta({ acts, color, fechas, laborable, onToggle, fijar }
   )
 }
 
-function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, onReal, onProg, color, vincular, onPick, onPanel, onHover, fijar, sel, onSel, onDeps, onCampo }: {
+function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, onReal, onProg, color, vincular, onPick, onPanel, onHover, fijar, compacto, sel, onSel, onDeps, onCampo }: {
   a: ActGrid; fechas: string[]; hoy: string
   laborable: (f: string) => boolean
   cadena: { focal: number; azules: Set<number>; verdes: Set<number> } | null
@@ -1000,7 +1151,7 @@ function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, 
                 ? (vincular.primera == null ? 'Clic: esta actividad va PRIMERO'
                   : esPrimera ? 'Elegida como la que va primero'
                   : `Clic: esta va DESPUÉS de #${vincular.primera}`)
-                : `${a.titulo}${a.partida_desc ? `\n📌 ${a.partida_codigo} — ${a.partida_desc}` : ''}\n(clic para editar: meta, fechas, saltos, antecesoras, restricciones)`}>
+                : `${a.titulo}${a.partida_desc ? `\n📌 ${a.partida_codigo} — ${a.partida_desc}` : ''}${a.hito_desc ? `\n◆ Etapa: ${a.hito_desc}` : ''}\n(clic para editar: meta, fechas, saltos, antecesoras, restricciones)`}>
               <div className={`flex items-center gap-1.5${color ? ' pl-2' : ''}`}>
                 <span className={`w-2 h-2 rounded-full flex-shrink-0 ${ESTADO_DOT[a.estado] ?? 'bg-zinc-500'}`} />
                 <span className="text-k-text leading-tight">{a.titulo}</span>
@@ -1014,18 +1165,20 @@ function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, 
                   </button>
                 )}
               </div>
-              {!color && a.partida_codigo && (
+              {/* En modo compacto la fila es UNA línea: el código de partida y
+                  la etapa viven en el tooltip del título. */}
+              {!compacto && !color && a.partida_codigo && (
                 <div className="text-[9px] text-k-text3 font-mono pl-3.5 truncate max-w-[240px]">
                   📌 {a.partida_codigo}{a.partida_desc ? ` · ${a.partida_desc.slice(0, 34)}` : ''}
                 </div>
               )}
-              {a.hito_desc && (
+              {!compacto && a.hito_desc && (
                 <div className="text-[9px] text-violet-300/90 pl-3.5 truncate max-w-[240px]"
                   title="Etapa (hito) de la partida que programa esta actividad — su registro diario alimenta ese hito en el % EV">
                   ◆ Etapa: {a.hito_desc}{a.hito_peso != null ? ` (${Math.round(a.hito_peso * 100)}%)` : ''}
                 </div>
               )}
-              {a.estado === 'NO_CUMPLIDA' && (a.causa_nc_cat || a.causa_nc) && (
+              {!compacto && a.estado === 'NO_CUMPLIDA' && (a.causa_nc_cat || a.causa_nc) && (
                 <div className="text-[9px] text-k-red/90 pl-3.5">
                   {CNC[a.causa_nc_cat ?? ''] ?? ''}{a.causa_nc ? ` — ${a.causa_nc.slice(0, 40)}` : ''}
                 </div>
