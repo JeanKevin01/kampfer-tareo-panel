@@ -22,8 +22,9 @@ import {
   Target, BarChart3, ClipboardList, PenLine, Settings2,
   Plus, Pencil, Trash2, X, Save, Loader2, TrendingUp, Clock, Gauge,
   Upload, CalendarDays, Users, History, AlertTriangle, Activity,
-  ChevronRight, ChevronDown, LayoutGrid, Receipt,
+  ChevronRight, ChevronDown, LayoutGrid, Receipt, LineChart as LineChartIcon,
 } from 'lucide-react'
+import CurvaS from '@/components/CurvaS'
 import { buildWbsTree, flattenVisible, nivelStyle, NIVEL_LABELS, faseColor } from '@/lib/wbs'
 import ImportarPartidas from '@/pages/ImportarPartidas'
 
@@ -178,7 +179,7 @@ const CustomTooltip = ({ active, payload, label }: {
 // ============================================================
 // Componente principal
 // ============================================================
-type Tab = 'resumen' | 'ejecutivo' | 'partidas' | 'isp' | 'diario' | 'performance' | 'rendimientos' | 'productividad' | 'seguimiento' | 'valorizacion' | 'registro' | 'config' | 'importar' | 'historico'
+type Tab = 'resumen' | 'curvas' | 'ejecutivo' | 'partidas' | 'isp' | 'diario' | 'performance' | 'rendimientos' | 'productividad' | 'seguimiento' | 'valorizacion' | 'registro' | 'config' | 'importar' | 'historico'
 
 export default function ValorGanado() {
   const [tab, setTab] = useState<Tab>('resumen')
@@ -228,6 +229,7 @@ export default function ValorGanado() {
   // hace que tareo_partida alimente HH gastadas automáticamente.
   const TABS: { id: Tab; label: string; icon: typeof Target; secondary?: boolean }[] = [
     { id: 'resumen',       label: 'Resumen',          icon: BarChart3 },
+    { id: 'curvas',        label: 'Curva S · EVM',    icon: LineChartIcon },
     { id: 'ejecutivo',     label: 'Resumen Ejecutivo',icon: LayoutGrid },
     { id: 'partidas',      label: 'Partidas',         icon: ClipboardList },
     { id: 'isp',           label: 'ISP',              icon: Activity },
@@ -345,6 +347,7 @@ export default function ValorGanado() {
         />
       )}
       {tab === 'productividad' && <TabProductividad semana={semana} otm={selectedOtm} />}
+      {tab === 'curvas'        && <CurvaS semana={semana} otm={selectedOtm} />}
       {tab === 'seguimiento'   && <TabSeguimiento semana={semana} otm={selectedOtm} />}
       {tab === 'valorizacion'  && <TabValorizacion semana={semana} otm={selectedOtm} />}
       {tab === 'config'        && <TabConfig otm={selectedOtm} />}
