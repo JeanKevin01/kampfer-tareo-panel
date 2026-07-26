@@ -169,15 +169,23 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
         return !y || (y.tipo ?? 'FS') !== dep.tipo || (y.lag_dias ?? 0) !== dep.lag
       })
       for (const p of quitar) await api(`/ev/programacion/dependencias/${p.dep_id}`, { method: 'DELETE' })
+      const movidas = new Set<number>()
       for (const dep of poner) {
-        await api(`/ev/programacion/actividades/${a.id}/dependencias`, {
+        const j = await api<{ movidas?: number[] }>(`/ev/programacion/actividades/${a.id}/dependencias`, {
           method: 'POST',
           body: JSON.stringify({ predecesora_id: dep.pred, tipo: dep.tipo, lag_dias: dep.lag }),
         })
+        for (const m of j?.movidas ?? []) movidas.add(m)
       }
-      return { n: poner.length, q: quitar.length }
+      return { n: poner.length, q: quitar.length, movidas: movidas.size }
     },
-    onSuccess: (r) => { setToast({ msg: `✓ Vínculos: ${r.n} guardado(s), ${r.q} quitado(s)` }); invalidar() },
+    onSuccess: (r) => {
+      setToast({
+        msg: `✓ Vínculos: ${r.n} guardado(s), ${r.q} quitado(s)`
+          + (r.movidas ? ` · se reprogramaron ${r.movidas} actividad(es)` : ''),
+      })
+      invalidar()
+    },
     onError: (e: Error) => setToast({ msg: e.message, error: true }),
   })
   // Clic-clic: el 2º clic crea el FS y esa actividad pasa a ser la nueva
