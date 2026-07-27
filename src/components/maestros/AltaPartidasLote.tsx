@@ -17,10 +17,12 @@ const inputCls = 'bg-k-raised border border-k-border rounded-lg px-2.5 py-2 text
 
 interface Fila {
   codigo: string; descripcion: string; unidad: string
-  metrado: number; hh: number; error?: string
+  metrado: number; hh: number; pu: number; error?: string
 }
 
-/** Una fila pegada desde Excel: CÓDIGO ⇥ DESCRIPCIÓN ⇥ UND ⇥ METRADO ⇥ HH.
+/** Una fila pegada desde Excel: CÓDIGO ⇥ DESCRIPCIÓN ⇥ UND ⇥ METRADO ⇥ HH ⇥ PU.
+ *  El PU (precio unitario de VENTA) es la última y es opcional: sin él la
+ *  partida no vende en el RO y queda en la bandeja «Por completar».
  *  Se acepta ; o , como separador para quien copie de un CSV. */
 function parsearFilas(texto: string): Fila[] {
   const lineas = texto.split('\n').map(l => l.trim()).filter(Boolean)
@@ -31,17 +33,18 @@ function parsearFilas(texto: string): Fila[] {
     const c = linea.split(sep).map(x => x.trim())
     // Cabecera pegada sin querer: se salta en silencio.
     if (i === 0 && /c[oó]digo|codigo/i.test(c[0] ?? '')) continue
-    const [codigo = '', descripcion = '', unidad = '', met = '', hh = ''] = c
+    const [codigo = '', descripcion = '', unidad = '', met = '', hh = '', pu = ''] = c
     const num = (v: string) => Number(String(v).replace(/\s/g, '').replace(',', '.'))
     const fila: Fila = {
       codigo, descripcion, unidad,
-      metrado: num(met) || 0, hh: num(hh) || 0,
+      metrado: num(met) || 0, hh: num(hh) || 0, pu: num(pu) || 0,
     }
     if (!codigo) fila.error = 'sin código'
     else if (vistos.has(codigo.toUpperCase())) fila.error = 'código repetido en la lista'
     else if (!descripcion) fila.error = 'sin descripción'
     else if (met && !Number.isFinite(num(met))) fila.error = 'metrado no numérico'
     else if (hh && !Number.isFinite(num(hh))) fila.error = 'HH no numéricas'
+    else if (pu && !Number.isFinite(num(pu))) fila.error = 'PU no numérico'
     vistos.add(codigo.toUpperCase())
     out.push(fila)
   }
@@ -68,6 +71,8 @@ export default function AltaPartidasLote({ otmId, padres, onListo, onCancelar }:
   const validas = filas.filter(f => !f.error)
   const conError = filas.filter(f => f.error)
   const sinHH = naturaleza === 'CONTRACTUAL' && validas.some(f => f.hh <= 0)
+  const sinPU = validas.filter(f => f.pu <= 0).length
+  const ventaLote = validas.reduce((s, f) => s + f.metrado * f.pu, 0)
 
   // OJO: el importador responde partidas_creadas / partidas_actualizadas, y
   // los errores de fila viajan como 400 (los recoge onError, no onSuccess).
@@ -79,6 +84,9 @@ export default function AltaPartidasLote({ otmId, padres, onListo, onCancelar }:
           codigo: f.codigo, otm_id: otmId, fase: fase.trim() || null,
           descripcion: f.descripcion, unidad: f.unidad || 'und',
           metrado_presup: f.metrado, hh_presup: f.hh,
+          // null (no 0) si la columna vino vacía: el API no pisa el PU que ya
+          // tenga una partida existente (el upsert es por código + OTM).
+          precio_unitario: f.pu > 0 ? f.pu : null,
           naturaleza, parent_codigo: parent || null,
         })),
       }),
@@ -92,8 +100,9 @@ export default function AltaPartidasLote({ otmId, padres, onListo, onCancelar }:
       <p className="text-[11px] font-bold text-k-text">Pegar varias partidas desde Excel</p>
       <p className="text-[10px] text-k-text3">
         Una fila por partida, en este orden:
-        <b> CÓDIGO · DESCRIPCIÓN · UND · METRADO · HH</b>. Copia las celdas del presupuesto y
-        pégalas aquí tal cual — si copias también la fila de títulos, se ignora.
+        <b> CÓDIGO · DESCRIPCIÓN · UND · METRADO · HH · PU</b>. Copia las celdas del presupuesto y
+        pégalas aquí tal cual — si copias también la fila de títulos, se ignora. El <b>PU</b> (precio
+        de venta) es opcional: sin él la partida no vende en el Resultado Operativo.
       </p>
       <div className="grid grid-cols-2 gap-2">
         <select value={fase} onChange={e => setFase(e.target.value)} className={inputCls}
@@ -123,7 +132,7 @@ export default function AltaPartidasLote({ otmId, padres, onListo, onCancelar }:
         ))}
       </div>
       <textarea value={texto} onChange={e => setTexto(e.target.value)} rows={6}
-        placeholder={'02.01.05\tRelleno y compactación Z9\tm3\t800\t1200\n02.01.06\tPerfilado de talud\tm2\t450\t300'}
+        placeholder={'02.01.05\tRelleno y compactación Z9\tm3\t800\t1200\t45\n02.01.06\tPerfilado de talud\tm2\t450\t300\t28.5'}
         className={`${inputCls} font-mono text-[11px]`} />
 
       {filas.length > 0 && (
@@ -131,7 +140,7 @@ export default function AltaPartidasLote({ otmId, padres, onListo, onCancelar }:
           <div className="max-h-40 overflow-y-auto">
             <table className="w-full text-[10px]">
               <thead className="bg-k-raised">
-                <tr>{['Código', 'Descripción', 'Und', 'Metrado', 'HH', ''].map(h => (
+                <tr>{['Código', 'Descripción', 'Und', 'Metrado', 'HH', 'PU', ''].map(h => (
                   <th key={h} className="px-2 py-1 text-left font-bold text-k-text3 uppercase">{h}</th>
                 ))}</tr>
               </thead>
@@ -144,6 +153,12 @@ export default function AltaPartidasLote({ otmId, padres, onListo, onCancelar }:
                     <td className="px-2 py-1 text-right font-mono text-k-text2">{f.metrado || '—'}</td>
                     <td className={`px-2 py-1 text-right font-mono ${f.hh > 0 ? 'text-k-text2' : 'text-k-amber'}`}>
                       {f.hh || '—'}
+                    </td>
+                    <td className={`px-2 py-1 text-right font-mono ${f.pu > 0 ? 'text-k-dinero' : 'text-k-text3'}`}
+                      title={f.pu > 0
+                        ? `Venta: ${(f.metrado * f.pu).toLocaleString('es-PE', { maximumFractionDigits: 2 })}`
+                        : 'Sin PU esta partida no vende en el RO'}>
+                      {f.pu || '—'}
                     </td>
                     <td className="px-2 py-1 text-k-red">{f.error ?? ''}</td>
                   </tr>
@@ -158,6 +173,18 @@ export default function AltaPartidasLote({ otmId, padres, onListo, onCancelar }:
         <p className="text-[10px] text-k-amber">
           ⚠ Hay partidas contractuales <b>sin HH</b>: quedarán marcadas en rojo hasta que las
           cargues, porque una partida sin HH gasta horas sin poder ganar ninguna.
+        </p>
+      )}
+      {ventaLote > 0 && (
+        <p className="text-[10px] text-k-dinero">
+          Venta del lote: <b>{ventaLote.toLocaleString('es-PE', { maximumFractionDigits: 2 })}</b>
+          {sinPU > 0 && <> · {sinPU} sin PU</>}
+        </p>
+      )}
+      {sinPU > 0 && ventaLote === 0 && (
+        <p className="text-[10px] text-k-text3">
+          Ninguna trae <b>PU</b>: entrarán al Resultado Operativo con costo y <b>sin venta</b>.
+          Quedan en <b>⚑ Por completar</b> para cargarlo cuando lo tengas.
         </p>
       )}
       {conError.length > 0 && (
