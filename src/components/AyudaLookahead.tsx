@@ -44,8 +44,11 @@ const Tabla = ({ filas, cab }: { cab: [string, string]; filas: [React.ReactNode,
 const Cod = ({ children }: { children: React.ReactNode }) => (
   <code className="font-mono text-k-blue bg-k-void border border-k-border rounded px-1">{children}</code>
 )
-const Cel = ({ clase, children }: { clase: string; children: React.ReactNode }) => (
-  <span className={`inline-block font-mono text-[10px] font-bold px-1.5 py-0.5 rounded border ${clase}`}>{children}</span>
+const Cel = ({ clase, estilo, children }: {
+  clase: string; estilo?: React.CSSProperties; children: React.ReactNode
+}) => (
+  <span style={estilo}
+    className={`inline-block font-mono text-[10px] font-bold px-1.5 py-0.5 rounded border ${clase}`}>{children}</span>
 )
 
 function Contenido({ tema }: { tema: Tema }) {
@@ -64,6 +67,19 @@ function Contenido({ tema }: { tema: Tema }) {
         La <b className="text-k-green">línea verde vertical</b> es <b>hoy</b>: a su izquierda está
         lo que ya pasó, a su derecha lo que viene.
       </P>
+      <H>Dos formas de ver una fila</H>
+      <Tabla cab={['Estado', 'Cómo se ve']} filas={[
+        [<b>En curso o pendiente</b>,
+          <>Una casilla por día con su metrado, editable. Es la superficie de trabajo: aquí se
+            programa y se anota el avance.</>],
+        [<b className="text-k-green">Cumplida</b>,
+          <>Se resume en <b>una sola barra verde con el total</b> (<b>✓ 120 m³</b>): ya es historia y
+            no hace falta el detalle. Clic en la barra —o en el <b className="text-k-green">⊞</b> del
+            nombre— para abrirla y corregir un día.</>],
+        [<b>Vencida sin cumplirse</b>,
+          <>Se queda en <b>detalle día a día</b> a propósito: es justo donde quieres ver qué días
+            fallaron.</>],
+      ]} />
       <H>El color de una celda</H>
       <Tabla cab={['Celda', 'Qué significa']} filas={[
         [<Cel clase="border-transparent bg-k-plan-solido text-white">120</Cel>,
@@ -80,7 +96,10 @@ function Contenido({ tema }: { tema: Tema }) {
             la columna, así la semana se lee como semana.</>],
         [<Cel clase="border-k-border text-k-text3">∅</Cel>,
           <>Salto intencional de esa actividad (paro programado). No se le reparte metrado.</>],
-        [<Cel clase="border-k-border text-k-text3">◐</Cel>, <>Medio día: pesa 0.5 al repartir.</>],
+        [<Cel clase="border-transparent bg-k-plan-solido text-white"
+          estilo={{ backgroundImage: 'repeating-linear-gradient(45deg, rgb(255 255 255 / .30) 0 3px, transparent 3px 7px)' }}>◐ 20.8</Cel>,
+          <><b>Medio día</b>: el rayado diagonal lo distingue de un día entero. Pesa <b>0.5</b> al
+            repartir el metrado, así que le toca la mitad que a sus vecinos.</>],
         [<Cel clase="border-k-border text-k-text3">✎</Cel>,
           <>Celda <b>manual</b>: la escribiste tú y queda protegida de los re-prorrateos.</>],
       ]} />

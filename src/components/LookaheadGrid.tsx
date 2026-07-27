@@ -11,7 +11,7 @@ import { ChevronLeft, ChevronRight, Loader2, Printer, Search } from 'lucide-reac
 import { api } from '@/lib/api'
 import { CNC } from '@/lib/catalogos'
 import { lunesDe, iso } from '@/lib/semana'
-import { DIAS_1, fmtDia, fmtCorta, num, isoDow, clrRealTxt, parseDeps, fmtDeps, runsDeFila } from '@/lib/lookahead'
+import { DIAS_1, fmtDia, fmtCorta, num, isoDow, clrRealTxt, parseDeps, fmtDeps, runsDeFila, tramosDeFila, numCorto } from '@/lib/lookahead'
 import type { TipoDep } from '@/lib/lookahead'
 import CeldaDia from '@/components/CeldaDia'
 import AyudaLookahead from '@/components/AyudaLookahead'
@@ -178,6 +178,14 @@ export function LookaheadGrid({ onEditar, onProgramar }: {
   // para que «Contraer todo» pueda actuar sobre todos de una vez.
   const [compactas, setCompactas] = useState<Set<number>>(new Set())
   const [contraidos, setContraidos] = useState<Set<string>>(new Set())
+  // Una actividad CUMPLIDA se resume en una barra; el planner puede abrirla
+  // para corregir un día (los errores de captura aparecen después).
+  const [expandidas, setExpandidas] = useState<Set<number>>(new Set())
+  const toggleExpandida = (id: number) => setExpandidas(prev => {
+    const s = new Set(prev)
+    if (s.has(id)) s.delete(id); else s.add(id)
+    return s
+  })
   const toggleCompacta = (pid: number) => setCompactas(prev => {
     const s = new Set(prev)
     if (s.has(pid)) s.delete(pid); else s.add(pid)
@@ -608,6 +616,7 @@ export function LookaheadGrid({ onEditar, onProgramar }: {
                 laborable={laborable} onEditar={onEditar} cadena={cadena}
                 fijar={fijarCols} sel={sel} onSel={toggleSel}
                 compacto={compacto}
+                expandidas={expandidas} onExpandir={toggleExpandida}
                 compactas={compactas} onCompactar={toggleCompacta}
                 contraido={contraidos.has(g.otm_id ?? '-')}
                 onContraer={() => toggleContraido(g.otm_id ?? '-')}
@@ -1091,6 +1100,9 @@ interface PropsFila {
   onEncadenar: (ids: number[]) => void
   onDeps: (a: ActGrid, txt: string) => void
   onCampo: (id: number, patch: Record<string, unknown>) => void
+  /** actividades cumplidas que el planner abrió para ver el día a día */
+  expandidas: Set<number>
+  onExpandir: (id: number) => void
 }
 
 function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, onReal, onProg, vincular, onPick, onPanel, onHover, compactas, onCompactar, contraido, onContraer, onEncadenar, ...fp }: {
@@ -1260,7 +1272,7 @@ function FilaPartidaCompacta({ acts, color, fechas, hoy, laborable, onToggle, fi
   )
 }
 
-function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, onReal, onProg, color, vincular, onPick, onPanel, onHover, fijar, compacto, sel, onSel, onDeps, onCampo }: {
+function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, onReal, onProg, color, vincular, onPick, onPanel, onHover, fijar, compacto, sel, onSel, onDeps, onCampo, expandidas, onExpandir }: {
   a: ActGrid; fechas: string[]; hoy: string
   laborable: (f: string) => boolean
   cadena: { focal: number; azules: Set<number>; verdes: Set<number> } | null
@@ -1273,13 +1285,23 @@ function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, 
   onHover: (id: number | null) => void
 } & Omit<PropsFila, 'onEncadenar'>) {
         const editable = a.estado !== 'CANCELADO'
+        const expandida = expandidas.has(a.id)
         const saltos = new Set(a.dias_salto ?? [])
         const medios = new Set(a.dias_medio ?? [])
         const manuales = new Set(a.prog_manual ?? [])
         // Los días seguidos con dato se dibujan como una barra: la fila es la
         // única que ve la secuencia completa, así que el cálculo va aquí.
-        const runs = runsDeFila(fechas, f =>
-          !saltos.has(f) && ((a.prog[f] ?? 0) > 0 || a.real[f] != null))
+        const lleno = (f: string) => !saltos.has(f) && ((a.prog[f] ?? 0) > 0 || a.real[f] != null)
+        const runs = runsDeFila(fechas, lleno)
+        // ── Cumplida = una sola barra, sin el detalle por día ──────
+        // Decisión de Jean: lo que ya se cumplió es historia y se lee mejor
+        // como una pieza limpia con su total (estilo Project); lo que sigue
+        // abierto —o venció sin cumplirse— se queda en detalle, que es donde
+        // se trabaja y donde hace falta ver qué pasó cada día.
+        const cumplida = (a.metrado_prog ?? 0) > 0
+          && (a.estado === 'EJECUTADO' || (a.acum_real ?? 0) >= (a.metrado_prog ?? 0) - 0.0005)
+        const verBarra = cumplida && !expandida
+        const tramos = verBarra ? tramosDeFila(fechas, lleno) : []
         // Resaltado de cadena: focal con anillo, antecesoras azul, sucesoras
         // verde. El resto NO se atenúa (antes iba a opacity-30): con el dock
         // abierto costaba ver justo las que aún no tienen vínculo, que son las
@@ -1341,6 +1363,17 @@ function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, 
                     className={`text-[9px] font-bold flex-shrink-0 px-1 rounded ${
                       cadena?.focal === a.id ? 'bg-amber-500/20 text-k-amber' : 'text-k-blue hover:bg-k-raised'}`}>
                     🔗{a.dep_total}
+                  </button>
+                )}
+                {/* Cumplida: se resume en una barra. El botón dice que hay
+                    detalle debajo, para que no parezca que se perdió. */}
+                {cumplida && (
+                  <button onClick={e => { e.stopPropagation(); onExpandir(a.id) }}
+                    title={expandida
+                      ? 'Volver a la barra resumen'
+                      : 'Cumplida: se muestra como una barra. Clic para ver y editar el detalle por día.'}
+                    className="text-[9px] font-bold flex-shrink-0 px-1 rounded text-k-green hover:bg-k-raised">
+                    {expandida ? '⊟' : '⊞'}
                   </button>
                 )}
               </div>
@@ -1419,15 +1452,55 @@ function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, 
                   className="w-full text-[8px] font-bold text-k-red hover:underline">⛓ vincular</button>
               )}
             </td>
-            {fechas.map((f, i) => (
-              <CeldaDia key={f} prog={a.prog[f]} real={a.real[f]}
-                esSalto={saltos.has(f)} esMedio={medios.has(f)} laborable={laborable(f)}
-                editable={editable && !!a.partida_id && f <= hoy}
-                editableProg={editable && f > hoy} esManual={manuales.has(f)}
-                run={runs[f]} esHoy={f === hoy} finSemana={(i + 1) % 7 === 0}
-                onProgramar={v => onProg(a.id, f, v)}
-                onRegistrar={v => onReal(a.id, f, v)} />
-            ))}
+            {verBarra
+              ? (() => {
+                // Barra única: un <td colSpan> por tramo (el fin de semana lo
+                // parte, como en Project) y el total en el más ancho. El resto
+                // de días se pintan como celdas normales, así la banda del fin
+                // de semana y la línea de hoy siguen bajando por la tabla.
+                const enTramo = new Map<number, { largo: number; ancho: boolean }>()
+                const mayor = tramos.reduce((m, t) => (t.largo > m.largo ? t : m), tramos[0])
+                const dentro = new Set<number>()
+                for (const t of tramos) {
+                  enTramo.set(t.i, { largo: t.largo, ancho: t === mayor })
+                  for (let k = t.i; k < t.i + t.largo; k++) dentro.add(k)
+                }
+                const total = a.acum_real ?? a.metrado_prog ?? 0
+                return fechas.map((f, i) => {
+                  const t = enTramo.get(i)
+                  if (t) {
+                    return (
+                      <td key={f} colSpan={t.largo}
+                        onClick={() => onExpandir(a.id)}
+                        title={`Cumplida: ${num(total)}${a.und ? ` ${a.und}` : ''} de ${num(a.metrado_prog ?? 0)}`
+                          + ` entre el ${fmtCorta(a.fecha)} y el ${fmtCorta(a.fecha_fin)}.\nClic para ver y editar el detalle por día.`}
+                        className="relative border-b border-k-border/50 p-0 cursor-pointer">
+                        <div className="my-0.5 mx-px min-h-[1.15rem] rounded-md bg-k-green-solido
+                          text-white font-bold text-[10px] tabular-nums flex items-center justify-center gap-1 px-1
+                          hover:brightness-110">
+                          {t.ancho ? <>✓ {numCorto(total)}{a.und ? ` ${a.und}` : ''}</> : null}
+                        </div>
+                      </td>
+                    )
+                  }
+                  if (dentro.has(i)) return null      // día absorbido por el colSpan
+                  return (
+                    <CeldaDia key={f} prog={undefined} real={undefined}
+                      esSalto={saltos.has(f)} esMedio={false} laborable={laborable(f)}
+                      editable={false} onRegistrar={() => {}}
+                      esHoy={f === hoy} finSemana={(i + 1) % 7 === 0} />
+                  )
+                })
+              })()
+              : fechas.map((f, i) => (
+                <CeldaDia key={f} prog={a.prog[f]} real={a.real[f]}
+                  esSalto={saltos.has(f)} esMedio={medios.has(f)} laborable={laborable(f)}
+                  editable={editable && !!a.partida_id && f <= hoy}
+                  editableProg={editable && f > hoy} esManual={manuales.has(f)}
+                  run={runs[f]} esHoy={f === hoy} finSemana={(i + 1) % 7 === 0}
+                  onProgramar={v => onProg(a.id, f, v)}
+                  onRegistrar={v => onReal(a.id, f, v)} />
+              ))}
           </tr>
         )
 }

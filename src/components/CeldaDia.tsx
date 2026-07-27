@@ -16,7 +16,7 @@
 // redondear los extremos (`run` dice cuál es cuál) y dejar la barra flotando
 // dentro de la fila. La celda solo pinta la BANDA de los días en que no se
 // trabaja, que sí ocupa todo el alto porque es de la columna, no del trabajo.
-import { NIVEL_TXT, NIVEL_BG, NIVEL_RGBA, nivelDe, num } from '@/lib/lookahead'
+import { NIVEL_TXT, NIVEL_BG, nivelDe, num, numCorto } from '@/lib/lookahead'
 import type { Run } from '@/lib/lookahead'
 
 export default function CeldaDia({ prog, real, editable, esSalto, esMedio, laborable, onRegistrar,
@@ -54,9 +54,12 @@ export default function CeldaDia({ prog, real, editable, esSalto, esMedio, labor
   const relleno = nivel && !banda ? NIVEL_BG[nivel] : ''
   const curva = run === 'solo' ? 'rounded-md' : run === 'ini' ? 'rounded-l-md'
     : run === 'fin' ? 'rounded-r-md' : ''
-  // Medio día: el relleno llega solo a la MITAD inferior de la barra.
+  // Medio día: TRAMA DIAGONAL sobre el color pleno. Antes era un relleno a
+  // media altura, y al pasar el número a blanco el texto caía sobre la mitad
+  // transparente y desaparecía. Rayado se distingue de lejos y el número se
+  // sigue leyendo.
   const estiloBarra = esMedio && relleno
-    ? { background: `linear-gradient(to top, ${NIVEL_RGBA[nivel]} 50%, transparent 50%)` }
+    ? { backgroundImage: 'repeating-linear-gradient(45deg, rgb(255 255 255 / .30) 0 3px, transparent 3px 7px)' }
     : undefined
 
   const modoProg = !editable && !!editableProg && !!onProgramar
@@ -84,23 +87,28 @@ export default function CeldaDia({ prog, real, editable, esSalto, esMedio, labor
         className={`${marco} p-0 text-center ${banda ? NIVEL_BG.gris : ''}`}>
         <div className={barraCls} style={estiloBarra}>
           {marcas}
-          {valor != null && valor > 0 ? num(valor) : ''}
+          {valor != null && valor > 0 ? numCorto(valor) : ''}
         </div>
       </td>
     )
   }
+  // Lo que se ve en la casilla va recortado (cabe en 44 px); si el planner no
+  // toca nada, el texto sigue siendo ese y NO se guarda nada — así el recorte
+  // nunca pisa el valor exacto que hay detrás.
+  const mostrado = valor != null && valor > 0 ? numCorto(valor) : ''
   const commit = (el: HTMLInputElement) => {
     const limpio = el.value.trim()
+    if (limpio === mostrado) return                 // no lo tocó
     const v = limpio === '' ? null : Number(limpio)
-    if (limpio !== '' && (Number.isNaN(v) || v! < 0)) { el.value = valor != null ? num(valor) : ''; return }
+    if (limpio !== '' && (Number.isNaN(v) || v! < 0)) { el.value = mostrado; return }
     if (modoProg) {
       // Replanificar el PROGRAMADO del día; vaciar libera la celda manual.
-      if (v === (prog ?? null)) { el.value = valor != null ? num(valor) : ''; return }
+      if (v === (prog ?? null)) { el.value = mostrado; return }
       onProgramar!(v)
       return
     }
     // vaciar una celda registrada borra el avance del día (vuelve al plan)
-    if (registrada ? v === real : v === null) { el.value = valor != null ? num(valor) : ''; return }
+    if (registrada ? v === real : v === null) { el.value = mostrado; return }
     onRegistrar(v)
   }
   return (
@@ -110,7 +118,7 @@ export default function CeldaDia({ prog, real, editable, esSalto, esMedio, labor
         {marcas}
         {/* No controlado + key: al llegar el valor del servidor la celda se re-monta.
             El foco no cambia el fondo (taparía la barra): se marca con un anillo. */}
-        <input key={`${prog ?? '-'}|${real ?? '-'}`} defaultValue={valor != null ? num(valor) : ''}
+        <input key={`${prog ?? '-'}|${real ?? '-'}`} defaultValue={mostrado}
           onBlur={e => commit(e.target)}
           onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
           className={`w-11 bg-transparent text-center text-[10px] tabular-nums py-0.5 outline-none

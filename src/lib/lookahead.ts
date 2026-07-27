@@ -8,6 +8,15 @@ export const fmtDia = (f: string) => `${Number(f.slice(8, 10))} ${MESES[Number(f
 export const fmtCorta = (f: string) => `${f.slice(8, 10)}/${f.slice(5, 7)}`
 export const num = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(2).replace(/\.?0+$/, ''))
 
+/** El mismo número recortado para que quepa en una casilla de día (44 px):
+ *  un decimal, y entero a partir de 1000 — `3333.33` se pisaba con el día de
+ *  al lado. El valor exacto sigue en el tooltip y al editar la celda. */
+export const numCorto = (v: number) => {
+  if (Math.abs(v) >= 1000) return String(Math.round(v))
+  const r = Math.round(v * 10) / 10
+  return Number.isInteger(r) ? String(r) : r.toFixed(1)
+}
+
 // ISO weekday del string YYYY-MM-DD sin depender de la zona horaria local
 export const isoDow = (f: string) => {
   const d = new Date(f + 'T12:00:00Z').getUTCDay()
@@ -55,6 +64,21 @@ export const NIVEL_RGBA: Record<string, string> = {
 // forma que cualquiera reconoce. Un día vacío, un feriado o un salto ∅ cortan
 // la barra — que es exactamente lo que pasa en obra.
 export type Run = 'ini' | 'medio' | 'fin' | 'solo' | null
+
+/** Los mismos días seguidos, pero como TRAMOS: {desde, largo} sobre el índice
+ *  de `fechas`. Lo usa la barra única de una actividad cumplida, que pinta un
+ *  <td colSpan> por tramo en vez de una celda por día. Un fin de semana o un
+ *  salto parten la barra en dos tramos, como en Project. */
+export function tramosDeFila(fechas: string[], lleno: (f: string) => boolean) {
+  const out: { i: number; largo: number }[] = []
+  for (let i = 0; i < fechas.length; i++) {
+    if (!lleno(fechas[i])) continue
+    const ini = i
+    while (i + 1 < fechas.length && lleno(fechas[i + 1])) i++
+    out.push({ i: ini, largo: i - ini + 1 })
+  }
+  return out
+}
 
 /** Para cada fecha, qué parte de la barra es. `lleno` decide si ese día
  *  cuenta (tiene programado o real y no es un salto). */
