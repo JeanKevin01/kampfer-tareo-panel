@@ -51,12 +51,11 @@ export interface Restriccion {
 
 export interface Semana { lunes: string; fechas: string[]; actividades: Actividad[]; reportes: Reporte[] }
 
-// Partida creada al programar a la que todavía le falta algo: OTM, lugar en el
-// WBS, HH… o el PU de venta, sin el cual entra al RO como costo sin venta.
+// Partida creada al programar que todavía no tiene OTM, lugar en el WBS o HH.
 export interface PorUbicar {
   id: number; codigo: string; descripcion: string; unidad: string
   fase?: string | null; otm_id?: string | null
-  metrado_presup: number; hh_presup: number; precio_unitario?: number
+  metrado_presup: number; hh_presup: number
   naturaleza?: string | null; nivel?: number | null; parent_codigo?: string | null
   actividades: number; motivos: string[]
 }
@@ -152,9 +151,9 @@ export default function Programacion() {
           </button>
           {(porUbicar.data ?? []).length > 0 && (
             <button onClick={() => setVerUbicar(true)}
-              title="Partidas creadas al programar a las que aún les falta OTM, lugar en el WBS, HH o PU de venta"
+              title="Partidas creadas al programar que aún no tienen OTM, lugar en el WBS o HH"
               className="btn btn-on font-bold">
-              ⚑ Por completar ({(porUbicar.data ?? []).length})
+              ⚑ Por ubicar ({(porUbicar.data ?? []).length})
             </button>
           )}
           <button onClick={() => setVerCalendario(v => !v)}
@@ -1592,7 +1591,6 @@ function NuevaPartida({ otmId, metrado, und, titulo, padres, onCancelar, onCread
   const [f, setF] = useState({
     codigo: '', descripcion: titulo.trim(), unidad: und || '', fase: '',
     metrado_presup: metrado || '', hh_presup: '', parent_codigo: '',
-    precio_unitario: '',
     naturaleza: 'CONTRACTUAL' as 'CONTRACTUAL' | 'ADICIONAL',
   })
   const [err, setErr] = useState('')
@@ -1600,10 +1598,6 @@ function NuevaPartida({ otmId, metrado, und, titulo, padres, onCancelar, onCread
   // ahí deja de recalcularse solo (si no, cambiar el padre le borraría lo tecleado).
   const [codigoTocado, setCodigoTocado] = useState(false)
   const adicional = f.naturaleza === 'ADICIONAL'
-  // Metrado × PU = lo que esta partida le vende al cliente. Se muestra al
-  // teclear porque es la cifra que el planner reconoce de su presupuesto y
-  // delata al vuelo un PU con un cero de más.
-  const venta = (Number(f.metrado_presup) || 0) * (Number(f.precio_unitario) || 0)
   // La fase es la clave con la que el RO cruza costo ↔ meta: sin ella la
   // partida no aparecería en el resultado operativo por fase.
   const fases = useQuery<{ codigo: string; nombre: string }[]>({
@@ -1635,9 +1629,6 @@ function NuevaPartida({ otmId, metrado, und, titulo, padres, onCancelar, onCread
         parent_codigo: f.parent_codigo.trim() || null,
         metrado_presup: Number(f.metrado_presup) || 0,
         hh_presup: Number(f.hh_presup) || 0,      // 0 = adicional aún sin aprobar
-        // null (no 0) cuando no se teclea: el API lo deja como esté en vez de
-        // pisar con 0 el PU que pudo dejar el congelado del contractual.
-        precio_unitario: f.precio_unitario.trim() === '' ? null : Number(f.precio_unitario),
         naturaleza: f.naturaleza,
         hitos: [{ numero: 1, descripcion: 'Ejecución', peso: 1, es_principal: true }],
       }),
@@ -1703,25 +1694,15 @@ function NuevaPartida({ otmId, metrado, und, titulo, padres, onCancelar, onCread
           ))}
         </select>
       </div>
-      {/* Metrado, unidad y PU JUNTOS: son la venta de la partida («800 m3 ×
-          45»), y separarlos obligaba a saltar de un lado a otro. */}
-      <div className="grid grid-cols-[1fr_64px_1fr] gap-2">
+      {/* Metrado y unidad JUNTOS: son un solo dato («800 m3»), separarlos
+          obligaba a saltar de un lado a otro del formulario. */}
+      <div className="grid grid-cols-[1fr_90px] gap-2">
         <input placeholder="Metrado de la partida" value={f.metrado_presup} inputMode="decimal"
           title="Metrado del presupuesto. Baja como meta de la actividad al crearla."
           onChange={e => setF({ ...f, metrado_presup: e.target.value })} className={inputCls} />
         <input placeholder="und" value={f.unidad}
           onChange={e => setF({ ...f, unidad: e.target.value })} className={inputCls} />
-        <input placeholder="PU venta (opcional)" value={f.precio_unitario} inputMode="decimal"
-          title="Precio unitario de VENTA del contrato. La venta del Resultado Operativo es metrado valorizado × PU: si queda en 0, esta partida entra al RO como costo sin venta. Puedes dejarlo y completarlo después desde «Por completar»."
-          onChange={e => setF({ ...f, precio_unitario: e.target.value })}
-          className={`${inputCls} ${venta > 0 ? 'border-k-dinero/50' : ''}`} />
       </div>
-      {venta > 0 && (
-        <p className="text-[10px] text-k-dinero">
-          Venta de esta partida: <b>{venta.toLocaleString('es-PE', { maximumFractionDigits: 2 })}</b>
-          {' '}({f.metrado_presup} {f.unidad || 'und'} × {f.precio_unitario})
-        </p>
-      )}
       <div className="grid grid-cols-2 gap-2">
         <input placeholder="Fase (ej. EST, CIV…)" value={f.fase} list="fases-adic"
           title="La fase es la clave con la que el Resultado Operativo cruza el costo con la meta"
@@ -1755,10 +1736,6 @@ function NuevaPartida({ otmId, metrado, und, titulo, padres, onCancelar, onCread
           <>Las <b>HH son obligatorias</b> acá: si la partida está en el contrato, el dato existe.
           Sin él la partida gasta HH sin poder ganar ninguna y hunde el rendimiento de su fase.</>
         )}
-        {f.precio_unitario.trim() === '' && (
-          <> Sin <b>PU</b> la partida <b>no vende</b> en el Resultado Operativo (solo suma costo):
-          se queda en <b>⚑ Por completar</b> hasta que lo cargues.</>
-        )}
         {!otmId && <> Se crea <b>sin OTM</b> y quedará en la bandeja <b>por ubicar</b>.</>}
       </p>
       {err && <p className="text-k-red text-xs">{err}</p>}
@@ -1776,15 +1753,11 @@ function NuevaPartida({ otmId, metrado, und, titulo, padres, onCancelar, onCread
   )
 }
 
-// ── Bandeja «partidas por completar» ─────────────────────────
+// ── Bandeja «partidas por ubicar» ────────────────────────────
 // Las partidas creadas sin saber a qué OTM van (misceláneos: muchos proyectitos
 // con su propio metrado y HH) no aparecen en NINGÚN selector de partida, así que
 // sin esta lista se quedarían olvidadas. También recoge las que quedaron sueltas
-// del WBS, sin HH o —desde 2026-07-27— sin PU de venta teniendo ya trabajo
-// programado: esas están a punto de entrar al RO como costo puro.
-//
-// Se arregla AQUÍ, en línea: ubicar (OTM + WBS) y completar (metrado/HH/PU) son
-// dos gestos distintos y solo aparece el que hace falta.
+// del WBS o sin HH.
 function BandejaPorUbicar({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient()
   const [sel, setSel] = useState<number | null>(null)
@@ -1792,8 +1765,6 @@ function BandejaPorUbicar({ onClose }: { onClose: () => void }) {
   const [padre, setPadre] = useState('')
   const [codigo, setCodigo] = useState('')
   const [err, setErr] = useState('')
-  // Datos que se rellenan en línea. Strings: son inputs, y '' = no tocar.
-  const [datos, setDatos] = useState({ metrado_presup: '', hh_presup: '', precio_unitario: '' })
 
   const lista = useQuery<PorUbicar[]>({
     queryKey: ['partidas-por-ubicar'],
@@ -1821,28 +1792,8 @@ function BandejaPorUbicar({ onClose }: { onClose: () => void }) {
     },
     onError: (e: Error) => setErr(e.message),
   })
-  // Completar NO es editar la partida: manda solo los campos escritos y no
-  // toca hitos, fase ni código (para eso está el editor de Valor Ganado).
-  const completar = useMutation({
-    mutationFn: (id: number) => {
-      const body: Record<string, number> = {}
-      for (const [k, v] of Object.entries(datos)) {
-        if (v.trim() !== '' && Number.isFinite(Number(v))) body[k] = Number(v)
-      }
-      return api(`/ev/partidas/${id}/completar`, { method: 'PUT', body: JSON.stringify(body) })
-    },
-    onSuccess: () => {
-      setDatos({ metrado_presup: '', hh_presup: '', precio_unitario: '' }); setErr('')
-      qc.invalidateQueries({ queryKey: ['partidas-por-ubicar'] })
-      qc.invalidateQueries({ queryKey: ['partidas-otm'] })
-      qc.invalidateQueries({ queryKey: ['lookahead-grid'] })
-    },
-    onError: (e: Error) => setErr(e.message),
-  })
-  const hayDatos = Object.values(datos).some(v => v.trim() !== '')
   const MOTIVO: Record<string, string> = {
     SIN_OTM: 'Sin OTM', SIN_PADRE: 'Suelta del WBS', SIN_HH: 'Sin HH',
-    SIN_PU: 'Sin PU: no vende',
   }
 
   return (
@@ -1852,9 +1803,9 @@ function BandejaPorUbicar({ onClose }: { onClose: () => void }) {
         onClick={e => e.stopPropagation()}>
         <div className="px-4 py-3 border-b border-k-border flex items-center justify-between">
           <div>
-            <h3 className="text-sm font-bold text-k-text">Partidas por completar</h3>
+            <h3 className="text-sm font-bold text-k-text">Partidas por ubicar</h3>
             <p className="text-[11px] text-k-text3">
-              Creadas al programar, a las que todavía les falta OTM, lugar en el WBS, HH o PU.
+              Creadas al programar, todavía sin OTM, sin lugar en el WBS o sin HH.
             </p>
           </div>
           <button onClick={onClose} className="text-k-text3 hover:text-k-text"><X size={18} /></button>
@@ -1884,7 +1835,6 @@ function BandejaPorUbicar({ onClose }: { onClose: () => void }) {
                   <p className="text-[11px] text-k-text2 truncate">{p.descripcion}</p>
                   <p className="text-[10px] text-k-text3">
                     {p.metrado_presup} {p.unidad} · {p.hh_presup} HH
-                    {(p.precio_unitario ?? 0) > 0 ? ` · PU ${p.precio_unitario}` : ''}
                     {p.otm_id ? ` · ${p.otm_id}` : ''}
                     {p.actividades > 0 ? ` · ${p.actividades} actividad(es) programadas` : ''}
                   </p>
@@ -1892,73 +1842,41 @@ function BandejaPorUbicar({ onClose }: { onClose: () => void }) {
                 <button onClick={() => {
                   setSel(sel === p.id ? null : p.id); setOtm(p.otm_id ?? '')
                   setPadre(''); setCodigo(''); setErr('')
-                  setDatos({ metrado_presup: '', hh_presup: '', precio_unitario: '' })
                 }}
                   className="shrink-0 text-[11px] font-bold px-2.5 py-1 rounded-lg border border-k-amber/50 text-k-amber hover:bg-k-amber/10">
-                  {sel === p.id ? 'Cerrar' : 'Arreglar'}
+                  {sel === p.id ? 'Cerrar' : 'Ubicar'}
                 </button>
               </div>
               {sel === p.id && (
                 <div className="mt-2 pt-2 border-t border-k-border space-y-2">
-                  {/* Ubicar: solo si es lo que le falta. Una partida a la que
-                      solo le falta el PU no necesita ver este bloque. */}
-                  {(p.motivos.includes('SIN_OTM') || p.motivos.includes('SIN_PADRE')) && (
-                    <>
-                      <div className="grid grid-cols-2 gap-2">
-                        <select value={otm} onChange={e => { setOtm(e.target.value); setPadre('') }}
-                          className={inputCls}>
-                          <option value="">Elige la OTM…</option>
-                          {(otms.data ?? []).map(o => (
-                            <option key={o.otm_id} value={o.otm_id}>
-                              {o.otm_id} — {(o.descripcion ?? '').slice(0, 30)}
-                            </option>
-                          ))}
-                        </select>
-                        <select value={padre} onChange={e => setPadre(e.target.value)}
-                          className={inputCls} disabled={!otm}
-                          title="De qué partida cuelga en el árbol de Valor Ganado">
-                          <option value="">Cuelga de… (raíz del WBS)</option>
-                          {(padresQ.data ?? []).filter(x => x.id !== p.id).map(x => (
-                            <option key={x.id} value={x.codigo}>
-                              {x.codigo} — {(x.descripcion ?? '').slice(0, 28)}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <input placeholder={`Código (dejar vacío = ${p.codigo})`} value={codigo}
-                        onChange={e => setCodigo(e.target.value)} className={inputCls}
-                        title="Solo si la OTM destino ya usa ese código" />
-                      <button onClick={() => ubicar.mutate(p.id)} disabled={!otm || ubicar.isPending}
-                        className="w-full bg-k-amber text-black font-bold text-xs py-2 rounded-lg disabled:opacity-40">
-                        {ubicar.isPending ? 'Ubicando…' : 'Ubicar en esta OTM'}
-                      </button>
-                    </>
-                  )}
-                  {/* Completar: los números que le faltan, sin abrir el editor
-                      de la partida. Lo que se deje vacío no se toca. */}
-                  <div className="grid grid-cols-3 gap-2">
-                    <input placeholder={`Metrado (${p.metrado_presup})`} inputMode="decimal"
-                      value={datos.metrado_presup} title="Metrado del presupuesto"
-                      onChange={e => setDatos({ ...datos, metrado_presup: e.target.value })}
-                      className={inputCls} />
-                    <input placeholder={`HH (${p.hh_presup})`} inputMode="decimal"
-                      value={datos.hh_presup}
-                      title="HH presupuestadas: sin ellas la partida gasta horas sin ganar ninguna"
-                      onChange={e => setDatos({ ...datos, hh_presup: e.target.value })}
-                      className={`${inputCls} ${p.motivos.includes('SIN_HH') ? 'border-k-amber/60' : ''}`} />
-                    <input placeholder={`PU venta (${p.precio_unitario ?? 0})`} inputMode="decimal"
-                      value={datos.precio_unitario}
-                      title="Precio unitario de VENTA del contrato. La venta del RO es metrado valorizado × PU: en 0, esta partida entra al resultado como costo sin venta."
-                      onChange={e => setDatos({ ...datos, precio_unitario: e.target.value })}
-                      className={`${inputCls} ${p.motivos.includes('SIN_PU') ? 'border-k-red/60' : ''}`} />
+                  <div className="grid grid-cols-2 gap-2">
+                    <select value={otm} onChange={e => { setOtm(e.target.value); setPadre('') }}
+                      className={inputCls}>
+                      <option value="">Elige la OTM…</option>
+                      {(otms.data ?? []).map(o => (
+                        <option key={o.otm_id} value={o.otm_id}>
+                          {o.otm_id} — {(o.descripcion ?? '').slice(0, 30)}
+                        </option>
+                      ))}
+                    </select>
+                    <select value={padre} onChange={e => setPadre(e.target.value)}
+                      className={inputCls} disabled={!otm}
+                      title="De qué partida cuelga en el árbol de Valor Ganado">
+                      <option value="">Cuelga de… (raíz del WBS)</option>
+                      {(padresQ.data ?? []).filter(x => x.id !== p.id).map(x => (
+                        <option key={x.id} value={x.codigo}>
+                          {x.codigo} — {(x.descripcion ?? '').slice(0, 28)}
+                        </option>
+                      ))}
+                    </select>
                   </div>
+                  <input placeholder={`Código (dejar vacío = ${p.codigo})`} value={codigo}
+                    onChange={e => setCodigo(e.target.value)} className={inputCls}
+                    title="Solo si la OTM destino ya usa ese código" />
                   {err && <p className="text-k-red text-[11px]">{err}</p>}
-                  <button onClick={() => completar.mutate(p.id)}
-                    disabled={!hayDatos || completar.isPending}
-                    title={!hayDatos ? 'Escribe al menos un dato' : undefined}
-                    className="w-full border border-k-border text-k-text font-bold text-xs py-2 rounded-lg
-                      hover:bg-k-raised disabled:opacity-40">
-                    {completar.isPending ? 'Guardando…' : 'Guardar estos datos'}
+                  <button onClick={() => ubicar.mutate(p.id)} disabled={!otm || ubicar.isPending}
+                    className="w-full bg-k-amber text-black font-bold text-xs py-2 rounded-lg disabled:opacity-40">
+                    {ubicar.isPending ? 'Ubicando…' : 'Ubicar en esta OTM'}
                   </button>
                 </div>
               )}

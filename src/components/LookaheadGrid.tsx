@@ -22,8 +22,6 @@ export interface ActGrid {
   otm_id?: string | null; partida_id?: number | null
   partida_codigo?: string | null; partida_desc?: string | null
   partida_hh_presup?: number | null; partida_naturaleza?: string | null
-  /** PU de venta y OTM de la PARTIDA (no de la actividad): ver motivoRevisar */
-  partida_pu?: number | null; partida_otm_id?: string | null
   responsable?: string | null; supervisor_id?: string | null; supervisor_nombre?: string | null
   causa_nc?: string | null; causa_nc_cat?: string | null
   causa_nc_planner?: string | null; causa_nc_planner_cat?: string | null
@@ -87,26 +85,16 @@ const stick = (i: number, fijar: boolean): React.CSSProperties | undefined => {
 const ROTULO: React.CSSProperties = {
   position: 'sticky', left: 8, width: 'fit-content', maxWidth: '100%',
 }
-/** Los cuatro problemas que hay que ver a la primera, todos en rojo:
+/** Dos problemas que hay que ver a la primera, ambos en rojo:
  *  · metrado SIN partida → no se puede anotar el avance, no suma al valor
  *    ganado y el PPC la cuenta como no cumplida aunque el trabajo se haga;
- *  · partida sin OTM → la app de campo lista las partidas POR OTM, así que
- *    nadie puede tarear contra ella: las horas reales se pierden;
  *  · partida sin HH presupuestadas → normalmente un ADICIONAL al que todavía
- *    no le llegó el dato (se sabe al aprobarlo o al terminarlo);
- *  · partida sin PU de venta → la venta del RO es metrado valorizado × PU, así
- *    que la partida entra al resultado como costo puro y hunde el margen de su
- *    fase por un problema de captura, no de obra.
- *  Los tres últimos se arreglan de un tirón en ⚑ Por completar. */
+ *    no le llegó el dato (se sabe al aprobarlo o al terminarlo). */
 const motivoRevisar = (a: ActGrid): string | null => {
   if ((a.metrado_prog ?? 0) > 0 && !a.partida_id)
     return 'Tiene metrado pero NO tiene partida: no se puede registrar su avance real, no suma al valor ganado y el PPC la contará como no cumplida.\nÁbrela y elige la partida, o bórrale el metrado si es una actividad de apoyo.'
-  if (a.partida_id && !a.partida_otm_id)
-    return 'La partida todavía no tiene OTM: la app de campo lista las partidas por OTM, así que el supervisor NO puede tarear contra ella y sus horas reales se pierden.\nUbícala en ⚑ Por completar.'
   if (a.partida_id && (a.partida_hh_presup ?? 0) <= 0)
-    return `A la partida${a.partida_naturaleza === 'ADICIONAL' ? ' (ADICIONAL)' : ''} le faltan las HH presupuestadas.\nHasta cargarlas, el trabajo consume horas sin ganar ninguna: el rendimiento sale castigado.\nCárgalas en ⚑ Por completar cuando tengas el dato.`
-  if (a.partida_id && (a.partida_pu ?? 0) <= 0)
-    return 'La partida no tiene PU de venta.\nLa venta del Resultado Operativo es metrado valorizado × PU: mientras esté en 0, este trabajo entra al RO como COSTO SIN VENTA y hunde el margen de su fase.\nCárgalo en ⚑ Por completar.'
+    return `A la partida${a.partida_naturaleza === 'ADICIONAL' ? ' (ADICIONAL)' : ''} le faltan las HH presupuestadas.\nHasta cargarlas, el trabajo consume horas sin ganar ninguna: el rendimiento sale castigado.\nCárgalas en Valor Ganado → Partidas cuando tengas el dato.`
   return null
 }
 const porRevisar = (a: ActGrid) => motivoRevisar(a) !== null
