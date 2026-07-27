@@ -9,6 +9,7 @@ import { api, apiBlob, descargarBlob, API_BASE } from '@/lib/api'
 import { CNC, TIPOS_RESTRICCION } from '@/lib/catalogos'
 import { lunesDe, iso } from '@/lib/semana'
 import { LookaheadGrid, EvaluacionSemanal, type ActGrid } from '@/components/LookaheadGrid'
+import AltaPartidasLote from '@/components/maestros/AltaPartidasLote'
 import { ProgramarLote } from '@/components/ProgramarLote'
 import { CalendarioLaboral } from '@/components/CalendarioLaboral'
 import { CalendarioMes } from '@/components/CalendarioMes'
@@ -425,6 +426,8 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
   const [error, setError] = useState('')
   const [showNC, setShowNC] = useState(false)
   const [nuevaPartida, setNuevaPartida] = useState(false)
+  const [lotePartidas, setLotePartidas] = useState(false)
+  const [avisoLote, setAvisoLote] = useState('')
 
   // OJO: /ev/otms devuelve `otm_id` (no `id`) — usar otro nombre rompe el select.
   const otms = useQuery<{ otm_id: string; descripcion: string }[]>({
@@ -453,6 +456,10 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
       ...f, partida_id: pid,
       metrado_prog: f.metrado_prog.trim() === '' && Number.isFinite(base) && base > 0 ? String(base) : f.metrado_prog,
       und: !f.und && p?.unidad ? p.unidad : f.und,
+      // El título de la actividad se propone con el nombre de la partida: en el
+      // caso normal («programar esta partida») no hay nada más que escribir, y
+      // si es una etapa el planner le agrega « — Batido de material».
+      titulo: f.titulo.trim() || (p?.descripcion ?? ''),
     }))
   }
 
@@ -521,7 +528,13 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
         </div>
 
         <div className="space-y-2">
-          <input placeholder="Título (ej. Hormigonado fundación chancador — etapa 1)" value={form.titulo}
+          {/* El título es el nombre de LA ACTIVIDAD, no el de la partida: es lo
+              que se lee en la fila del LookAhead y en la agenda del supervisor,
+              y suele llevar la etapa o la zona («… — Batido de material»). Al
+              elegir una partida se rellena solo con su descripción, así que en
+              el caso normal no hay que escribir nada aquí. */}
+          <input placeholder="Nombre de la actividad (se completa al elegir la partida)"
+            value={form.titulo} title="Lo que se lee en la fila del LookAhead y en la agenda del supervisor. Puede llevar la etapa o la zona; la partida puede llamarse distinto."
             onChange={e => setForm({ ...form, titulo: e.target.value })} className={inputCls} autoFocus={!editar} />
           <div className="grid grid-cols-3 gap-2">
             <div>
@@ -600,7 +613,8 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
           </div>
           <select value={form.partida_id || ''}
             onChange={e => {
-              if (e.target.value === '__nueva') { setNuevaPartida(true); return }
+              if (e.target.value === '__nueva') { setNuevaPartida(true); setLotePartidas(false); return }
+              if (e.target.value === '__lote') { setLotePartidas(true); setNuevaPartida(false); return }
               elegirPartida(Number(e.target.value) || 0)
             }}
             className={`${inputCls} ${faltaPartida ? 'border-red-500/70' : ''}`}
@@ -610,6 +624,7 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
               <option key={p.id} value={p.id}>{p.codigo} — {(p.descripcion ?? '').slice(0, 48)}</option>
             ))}
             <option value="__nueva">＋ Nueva partida (olvidada del presupuesto o adicional)…</option>
+            <option value="__lote">＋＋ Varias partidas de una vez (pegar desde Excel)…</option>
           </select>
           {!form.otm_id && (
             <p className="text-[10px] text-k-text3">
@@ -627,12 +642,35 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
           )}
           {nuevaPartida && (
             <NuevaPartida otmId={form.otm_id || null} metrado={form.metrado_prog} und={form.und}
-              padres={partidas.data ?? []}
+              titulo={form.titulo} padres={partidas.data ?? []}
               onCancelar={() => setNuevaPartida(false)}
-              onCreada={pid => {
+              onCreada={p => {
                 setNuevaPartida(false)
-                partidas.refetch().then(() => setForm(f => ({ ...f, partida_id: pid })))
+                // El metrado y la unidad de la partida BAJAN a la actividad (lo
+                // mismo que hace elegirPartida con una existente): si no, la
+                // actividad nace sin metrado y no se puede programar.
+                partidas.refetch().then(() => setForm(f => ({
+                  ...f, partida_id: p.id,
+                  titulo: f.titulo.trim() || p.descripcion,
+                  und: f.und || p.unidad,
+                  metrado_prog: f.metrado_prog.trim() || p.metrado,
+                })))
               }} />
+          )}
+          {lotePartidas && (
+            <AltaPartidasLote otmId={form.otm_id || null} padres={partidas.data ?? []}
+              onCancelar={() => setLotePartidas(false)}
+              onListo={n => {
+                setLotePartidas(false)
+                setAvisoLote(`✓ ${n} partida(s) creadas. Elige aquí la de esta actividad; para programar`
+                  + ' las demás de un golpe usa «Programar por partidas» en la cabecera.')
+                partidas.refetch()
+              }} />
+          )}
+          {avisoLote && (
+            <p className="text-[10px] text-k-green bg-green-500/10 border border-green-500/25 rounded-lg px-2.5 py-1.5">
+              {avisoLote}
+            </p>
           )}
           <div className="grid grid-cols-2 gap-2">
             <select value={form.supervisor_id ?? ''} onChange={e => setForm({ ...form, supervisor_id: e.target.value })}
@@ -1637,13 +1675,18 @@ function PanelAlmacenamiento({ onCambio }: { onCambio: () => void }) {
 //
 // Además se elige de qué partida CUELGA en el WBS: sin eso nace huérfana y
 // aparece suelta al final del árbol de Valor Ganado en vez de dentro de su fase.
-function NuevaPartida({ otmId, metrado, und, padres, onCancelar, onCreada }: {
-  otmId: string | null; metrado: string; und: string
+function NuevaPartida({ otmId, metrado, und, titulo, padres, onCancelar, onCreada }: {
+  otmId: string | null; metrado: string; und: string; titulo: string
   padres: { id: number; codigo: string; descripcion?: string }[]
-  onCancelar: () => void; onCreada: (partidaId: number) => void
+  onCancelar: () => void
+  onCreada: (p: { id: number; descripcion: string; unidad: string; metrado: string }) => void
 }) {
+  // La descripción arranca con el TÍTULO de la actividad: para una partida
+  // olvidada son la misma frase («Relleno y compactación Z5»), y escribirla dos
+  // veces era trabajo tonto. Sigue siendo editable si el planner quiere que la
+  // partida se llame distinto de la actividad de ese día.
   const [f, setF] = useState({
-    codigo: '', descripcion: '', unidad: und || '', fase: '',
+    codigo: '', descripcion: titulo.trim(), unidad: und || '', fase: '',
     metrado_presup: metrado || '', hh_presup: '', parent_codigo: '',
     naturaleza: 'CONTRACTUAL' as 'CONTRACTUAL' | 'ADICIONAL',
   })
@@ -1672,11 +1715,13 @@ function NuevaPartida({ otmId, metrado, und, padres, onCancelar, onCreada }: {
   // Derivado durante el render (no en un efecto): el input muestra lo tecleado
   // o, mientras nadie lo toque, la sugerencia vigente.
   const codigo = codigoTocado ? f.codigo : (sugerido.data?.codigo ?? '')
+  // Sin descripción propia, la partida se llama como la actividad.
+  const descripcion = (f.descripcion.trim() || titulo.trim())
   const crear = useMutation({
     mutationFn: () => api<{ id: number }>('/ev/partidas', {
       method: 'POST',
       body: JSON.stringify({
-        codigo: codigo.trim(), otm_id: otmId, descripcion: f.descripcion.trim(),
+        codigo: codigo.trim(), otm_id: otmId, descripcion,
         unidad: f.unidad.trim(), fase: f.fase.trim(),
         parent_codigo: f.parent_codigo.trim() || null,
         metrado_presup: Number(f.metrado_presup) || 0,
@@ -1685,11 +1730,19 @@ function NuevaPartida({ otmId, metrado, und, padres, onCancelar, onCreada }: {
         hitos: [{ numero: 1, descripcion: 'Ejecución', peso: 1, es_principal: true }],
       }),
     }),
-    onSuccess: r => onCreada(r.id),
+    // Se devuelve la partida entera, no solo el id: el metrado y la unidad
+    // tienen que bajar a la actividad. Sin esto la actividad nacía SIN metrado
+    // y el LookAhead la mostraba vacía, sin celdas programadas.
+    onSuccess: r => onCreada({
+      id: r.id, descripcion, unidad: f.unidad.trim(),
+      metrado: String(Number(f.metrado_presup) || ''),
+    }),
     onError: (e: Error) => setErr(e.message),
   })
-  // Una partida olvidada SÍ tiene HH (están en el presupuesto): se exigen.
-  const listo = codigo.trim() && f.descripcion.trim() && f.unidad.trim() && f.fase.trim()
+  // La descripción NO se exige: si está vacía, la partida hereda el título de
+  // la actividad. Lo que sí se exige de una partida olvidada son sus HH, que
+  // por definición existen en el presupuesto.
+  const listo = codigo.trim() && descripcion && f.unidad.trim() && f.fase.trim()
     && (adicional || Number(f.hh_presup) > 0)
   const borde = adicional ? 'border-red-500/40 bg-red-500/5' : 'border-k-border bg-k-raised/40'
   return (
@@ -1729,15 +1782,6 @@ function NuevaPartida({ otmId, metrado, und, padres, onCancelar, onCreada }: {
             </button>
           )}
         </div>
-        <input placeholder="Unidad (m3, hh…)" value={f.unidad}
-          onChange={e => setF({ ...f, unidad: e.target.value })} className={inputCls} />
-      </div>
-      <input placeholder="Descripción de la partida" value={f.descripcion}
-        onChange={e => setF({ ...f, descripcion: e.target.value })} className={inputCls} />
-      <div className="grid grid-cols-2 gap-2">
-        <input placeholder="Fase (ej. EST, CIV…)" value={f.fase} list="fases-adic"
-          title="La fase es la clave con la que el Resultado Operativo cruza el costo con la meta"
-          onChange={e => setF({ ...f, fase: e.target.value })} className={inputCls} />
         <select value={f.parent_codigo} onChange={e => setF({ ...f, parent_codigo: e.target.value })}
           className={inputCls}
           title="De qué partida cuelga en el árbol. Sin esto aparece suelta al final del WBS.">
@@ -1747,12 +1791,19 @@ function NuevaPartida({ otmId, metrado, und, padres, onCancelar, onCreada }: {
           ))}
         </select>
       </div>
-      <datalist id="fases-adic">
-        {(fases.data ?? []).map(x => <option key={x.codigo} value={x.codigo}>{x.nombre}</option>)}
-      </datalist>
-      <div className="grid grid-cols-2 gap-2">
-        <input placeholder="Metrado" value={f.metrado_presup} inputMode="decimal"
+      {/* Metrado y unidad JUNTOS: son un solo dato («800 m3»), separarlos
+          obligaba a saltar de un lado a otro del formulario. */}
+      <div className="grid grid-cols-[1fr_90px] gap-2">
+        <input placeholder="Metrado de la partida" value={f.metrado_presup} inputMode="decimal"
+          title="Metrado del presupuesto. Baja como meta de la actividad al crearla."
           onChange={e => setF({ ...f, metrado_presup: e.target.value })} className={inputCls} />
+        <input placeholder="und" value={f.unidad}
+          onChange={e => setF({ ...f, unidad: e.target.value })} className={inputCls} />
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <input placeholder="Fase (ej. EST, CIV…)" value={f.fase} list="fases-adic"
+          title="La fase es la clave con la que el Resultado Operativo cruza el costo con la meta"
+          onChange={e => setF({ ...f, fase: e.target.value })} className={inputCls} />
         <input placeholder={adicional ? 'HH presupuestadas (opcional)' : 'HH del presupuesto'}
           value={f.hh_presup} inputMode="decimal"
           title={adicional
@@ -1761,6 +1812,17 @@ function NuevaPartida({ otmId, metrado, und, padres, onCancelar, onCreada }: {
           onChange={e => setF({ ...f, hh_presup: e.target.value })}
           className={`${inputCls} ${!adicional && f.hh_presup.trim() === '' ? 'border-k-amber/50' : ''}`} />
       </div>
+      <datalist id="fases-adic">
+        {(fases.data ?? []).map(x => <option key={x.codigo} value={x.codigo}>{x.nombre}</option>)}
+      </datalist>
+      {/* La descripción va al final y es OPCIONAL: por defecto la partida se
+          llama igual que la actividad, que es lo normal en una olvidada. */}
+      <input value={f.descripcion} onChange={e => setF({ ...f, descripcion: e.target.value })}
+        placeholder={titulo.trim()
+          ? `Nombre de la partida (por defecto: ${titulo.trim().slice(0, 34)})`
+          : 'Nombre de la partida'}
+        title="Solo si la partida se llama distinto de la actividad de este día"
+        className={inputCls} />
       <p className="text-[10px] text-k-text3">
         {adicional ? (
           <>Si aún no tienes las <b>HH</b> (normal hasta que aprueben el adicional), déjalas vacías: la

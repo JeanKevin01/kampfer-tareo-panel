@@ -15,6 +15,7 @@ import {
 import { api } from '@/lib/api'
 import { TabConfig as PartidasMaestro } from '@/pages/ValorGanado'
 import CostosMaestro from '@/components/maestros/CostosMaestro'
+import AltaPartidasLote from '@/components/maestros/AltaPartidasLote'
 import Presupuesto from '@/pages/Presupuesto'
 
 type Tab = 'partidas' | 'costos' | 'presupuesto' | 'trabajadores' | 'otms'
@@ -27,6 +28,8 @@ export default function EdicionDatos() {
   const qc = useQueryClient()
   const [tab, setTab]           = useState<Tab>('partidas')
   const [proyecto, setProyecto] = useState('')       // '' = todos, para Partidas
+  const [lote, setLote]         = useState(false)    // alta masiva pegando del Excel
+  const [nLote, setNLote]       = useState(0)
   const [search, setSearch]     = useState('')
   const [editTrab, setEditTrab] = useState<Trabajador | null>(null)
   const [editOTM,  setEditOTM]  = useState<OTM | null>(null)
@@ -68,6 +71,12 @@ export default function EdicionDatos() {
   const { data: otms = [], isLoading: loadO } = useQuery<OTM[]>({
     queryKey: ['otms-all'],
     queryFn: () => api<OTM[]>('/api/otms'),
+  })
+  // Partidas del proyecto elegido: son los padres candidatos del alta masiva.
+  const { data: partidasOtm = [] } = useQuery<{ id: number; codigo: string; descripcion?: string }[]>({
+    queryKey: ['ev-partidas', proyecto],
+    queryFn: () => api(`/ev/partidas?otm=${encodeURIComponent(proyecto)}`),
+    enabled: !!proyecto,
   })
 
   const filteredO = useMemo(() => {
@@ -137,11 +146,25 @@ export default function EdicionDatos() {
               <option value="">Todos los proyectos</option>
               {otms.map(o => <option key={o.id} value={o.id}>{o.id} — {(o.descripcion ?? '').slice(0, 40)}</option>)}
             </select>
+            <button onClick={() => { setLote(v => !v); setNLote(0) }} disabled={!proyecto}
+              title={proyecto ? 'Pegar varias filas del Excel del presupuesto' : 'Elige primero el proyecto'}
+              className={`text-xs font-bold px-3 py-2 rounded-lg border disabled:opacity-40 ${
+                lote ? 'border-k-amber bg-k-amber/15 text-k-amber' : 'border-k-border text-k-text2 hover:bg-k-raised'}`}>
+              ＋＋ Cargar varias
+            </button>
             <p className="text-[11px] text-k-text3">
               Metrado, HH, fase, unidad e hitos. Desactivar una partida con trabajo registrado
               pide confirmación y te dice qué tiene colgado.
             </p>
           </div>
+          {lote && proyecto && (
+            <AltaPartidasLote otmId={proyecto} padres={partidasOtm}
+              onCancelar={() => setLote(false)}
+              onListo={n => { setLote(false); setNLote(n); qc.invalidateQueries({ queryKey: ['ev-partidas'] }) }} />
+          )}
+          {nLote > 0 && (
+            <p className="text-[11px] text-k-green">✓ {nLote} partida(s) cargadas.</p>
+          )}
           <PartidasMaestro otm={proyecto || undefined} />
         </div>
       )}
