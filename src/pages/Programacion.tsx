@@ -50,6 +50,15 @@ export interface Restriccion {
 
 export interface Semana { lunes: string; fechas: string[]; actividades: Actividad[]; reportes: Reporte[] }
 
+// Partida creada al programar que todavía no tiene OTM, lugar en el WBS o HH.
+export interface PorUbicar {
+  id: number; codigo: string; descripcion: string; unidad: string
+  fase?: string | null; otm_id?: string | null
+  metrado_presup: number; hh_presup: number
+  naturaleza?: string | null; nivel?: number | null; parent_codigo?: string | null
+  actividades: number; motivos: string[]
+}
+
 const ESTADO_CLR: Record<string, string> = {
   PROGRAMADO: 'text-k-amber bg-amber-500/10 border-amber-500/30',
   EJECUTADO: 'text-k-green bg-green-500/10 border-green-500/30',
@@ -97,6 +106,14 @@ export default function Programacion() {
   const [verParte, setVerParte] = useState(false)
   const [verSustento, setVerSustento] = useState(false)
   const [verCalendario, setVerCalendario] = useState(false)
+  const [verUbicar, setVerUbicar] = useState(false)
+
+  // Contador de la bandeja: las partidas sin OTM no salen en ningún selector,
+  // así que sin este aviso se quedarían olvidadas.
+  const porUbicar = useQuery<PorUbicar[]>({
+    queryKey: ['partidas-por-ubicar'],
+    queryFn: () => api('/ev/partidas-por-ubicar'),
+  })
 
   const sem = useQuery<Semana>({
     queryKey: ['programacion', lunes],
@@ -131,6 +148,13 @@ export default function Programacion() {
             className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg bg-k-amber text-black font-bold">
             <Plus size={14} /> Programar por partidas
           </button>
+          {(porUbicar.data ?? []).length > 0 && (
+            <button onClick={() => setVerUbicar(true)}
+              title="Partidas creadas al programar que aún no tienen OTM, lugar en el WBS o HH"
+              className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-k-amber/60 bg-k-amber/10 text-k-amber font-bold">
+              ⚑ Por ubicar ({(porUbicar.data ?? []).length})
+            </button>
+          )}
           <button onClick={() => setVerCalendario(v => !v)}
             className={`flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border ${verCalendario ? 'border-k-amber text-k-amber' : 'border-k-border bg-k-raised text-k-text2 hover:bg-k-border'}`}>
             <CalendarDays size={14} /> Calendario laboral
@@ -160,6 +184,7 @@ export default function Programacion() {
       {verAlmacen && <PanelAlmacenamiento onCambio={invalidar} />}
       {verParte && <ModalParteDia onClose={() => setVerParte(false)} />}
       {verSustento && <ModalReportePartida onClose={() => setVerSustento(false)} />}
+      {verUbicar && <BandejaPorUbicar onClose={() => setVerUbicar(false)} />}
 
       {/* Vistas Last Planner: plan semanal / lookahead / aprendizaje */}
       <div className="flex gap-2">
@@ -410,11 +435,14 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
     queryKey: ['supervisores-lista'],
     queryFn: () => api('/api/supervisores'),
   })
-  // Partidas de control de el proyecto elegida (LPS: 1 actividad = 1 partida)
-  const partidas = useQuery<{ id: number; codigo: string; descripcion?: string; unidad?: string | null; metrado_presup?: number | string | null }[]>({
+  // Partidas de control de la OTM elegida (LPS: 1 actividad = 1 partida).
+  // Sin OTM se ofrecen las de la bandeja «por ubicar»: en misceláneos se
+  // programa antes de saber a qué obra va la partida.
+  const partidas = useQuery<{ id: number; codigo: string; descripcion?: string; unidad?: string | null; metrado_presup?: number | string | null; fase?: string | null }[]>({
     queryKey: ['partidas-otm', form.otm_id],
-    queryFn: () => api(`/ev/partidas?otm=${encodeURIComponent(form.otm_id!)}`),
-    enabled: !!form.otm_id,
+    queryFn: () => api(form.otm_id
+      ? `/ev/partidas?otm=${encodeURIComponent(form.otm_id)}`
+      : '/ev/partidas?sin_otm=true'),
   })
   // Al elegir partida, el metrado meta se prellena con el del presupuesto
   // (editable: es la "opción de trabajar con el metrado meta" de Jean).
@@ -570,38 +598,41 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
               ))}
             </select>
           </div>
-          {form.otm_id && (
-            <>
-              <select value={form.partida_id || ''}
-                onChange={e => {
-                  if (e.target.value === '__nueva') { setNuevaPartida(true); return }
-                  elegirPartida(Number(e.target.value) || 0)
-                }}
-                className={`${inputCls} ${faltaPartida ? 'border-red-500/70' : ''}`}
-                title="Partida de control que se trabajará (1 actividad = 1 partida)">
-                <option value="">Sin partida — solo para actividades de apoyo (sin metrado)</option>
-                {(partidas.data ?? []).map(p => (
-                  <option key={p.id} value={p.id}>{p.codigo} — {(p.descripcion ?? '').slice(0, 48)}</option>
-                ))}
-                <option value="__nueva">＋ Nueva partida (adicional no presupuestado)…</option>
-              </select>
-              {faltaPartida && (
-                <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-[11px] text-k-red">
-                  <b>Falta la partida.</b> Con metrado y sin partida no se puede registrar el avance
-                  real, la actividad no suma al valor ganado y el <b>PPC la contará como no
-                  cumplida</b> aunque el trabajo se haga. Elige una partida, crea el adicional, o
-                  borra el metrado si es una actividad de apoyo (reunión, traslado…).
-                </div>
-              )}
-              {nuevaPartida && (
-                <NuevaPartidaAdicional otmId={form.otm_id!} metrado={form.metrado_prog} und={form.und}
-                  onCancelar={() => setNuevaPartida(false)}
-                  onCreada={pid => {
-                    setNuevaPartida(false)
-                    partidas.refetch().then(() => setForm(f => ({ ...f, partida_id: pid })))
-                  }} />
-              )}
-            </>
+          <select value={form.partida_id || ''}
+            onChange={e => {
+              if (e.target.value === '__nueva') { setNuevaPartida(true); return }
+              elegirPartida(Number(e.target.value) || 0)
+            }}
+            className={`${inputCls} ${faltaPartida ? 'border-red-500/70' : ''}`}
+            title="Partida de control que se trabajará (1 actividad = 1 partida)">
+            <option value="">Sin partida — solo para actividades de apoyo (sin metrado)</option>
+            {(partidas.data ?? []).map(p => (
+              <option key={p.id} value={p.id}>{p.codigo} — {(p.descripcion ?? '').slice(0, 48)}</option>
+            ))}
+            <option value="__nueva">＋ Nueva partida (olvidada del presupuesto o adicional)…</option>
+          </select>
+          {!form.otm_id && (
+            <p className="text-[10px] text-k-text3">
+              Sin OTM se listan las partidas <b>por ubicar</b> (las que aún no se sabe a qué obra
+              van). Elige la OTM arriba para ver las suyas.
+            </p>
+          )}
+          {faltaPartida && (
+            <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-[11px] text-k-red">
+              <b>Falta la partida.</b> Con metrado y sin partida no se puede registrar el avance
+              real, la actividad no suma al valor ganado y el <b>PPC la contará como no
+              cumplida</b> aunque el trabajo se haga. Elige una partida, créala, o
+              borra el metrado si es una actividad de apoyo (reunión, traslado…).
+            </div>
+          )}
+          {nuevaPartida && (
+            <NuevaPartida otmId={form.otm_id || null} metrado={form.metrado_prog} und={form.und}
+              padres={(partidas.data ?? []).filter(p => !p.fase)}
+              onCancelar={() => setNuevaPartida(false)}
+              onCreada={pid => {
+                setNuevaPartida(false)
+                partidas.refetch().then(() => setForm(f => ({ ...f, partida_id: pid })))
+              }} />
           )}
           <div className="grid grid-cols-2 gap-2">
             <select value={form.supervisor_id ?? ''} onChange={e => setForm({ ...form, supervisor_id: e.target.value })}
@@ -1594,26 +1625,32 @@ function PanelAlmacenamiento({ onCambio }: { onCambio: () => void }) {
   )
 }
 
-// ── Adicional no presupuestado ───────────────────────────────
-// Lo que el cliente pide en obra y no estaba en el presupuesto meta. Antes no
-// tenía dónde ir: el planner lo cargaba como actividad libre y quedaba sin
-// medir (y castigando el PPC). Ahora se crea su partida desde aquí mismo.
+// ── Partida que no está en el presupuesto cargado ────────────
+// Dos casos DISTINTOS que antes se guardaban igual (y ensuciaban el RO):
 //
-// Clave del negocio (Jean): en obra las HH del adicional NO se conocen todavía
-// — el dato llega cuando lo aprueban o cuando termina. Por eso el presupuesto
-// es OPCIONAL y, mientras falte, la partida queda marcada en ROJO en el
-// LookAhead para poder completarla en cuanto se tenga.
-function NuevaPartidaAdicional({ otmId, metrado, und, onCancelar, onCreada }: {
-  otmId: string; metrado: string; und: string
+//   OLVIDADA   está en el contrato pero no se cargó a la BD. Es CONTRACTUAL y
+//              sus HH sí existen (están en el presupuesto en papel): se piden.
+//   ADICIONAL  trabajo fuera del contrato. Clave del negocio (Jean): en obra
+//              las HH NO se conocen todavía — el dato llega al aprobarlo o al
+//              terminarlo. Por eso son OPCIONALES y, mientras falten, la
+//              partida queda marcada en ROJO en el LookAhead.
+//
+// Además se elige de qué partida CUELGA en el WBS: sin eso nace huérfana y
+// aparece suelta al final del árbol de Valor Ganado en vez de dentro de su fase.
+function NuevaPartida({ otmId, metrado, und, padres, onCancelar, onCreada }: {
+  otmId: string | null; metrado: string; und: string
+  padres: { id: number; codigo: string; descripcion?: string }[]
   onCancelar: () => void; onCreada: (partidaId: number) => void
 }) {
   const [f, setF] = useState({
     codigo: '', descripcion: '', unidad: und || '', fase: '',
-    metrado_presup: metrado || '', hh_presup: '',
+    metrado_presup: metrado || '', hh_presup: '', parent_codigo: '',
+    naturaleza: 'CONTRACTUAL' as 'CONTRACTUAL' | 'ADICIONAL',
   })
   const [err, setErr] = useState('')
-  // La fase es la clave con la que el RO cruza costo ↔ meta: sin ella el
-  // adicional no aparecería en el resultado operativo por fase.
+  const adicional = f.naturaleza === 'ADICIONAL'
+  // La fase es la clave con la que el RO cruza costo ↔ meta: sin ella la
+  // partida no aparecería en el resultado operativo por fase.
   const fases = useQuery<{ codigo: string; nombre: string }[]>({
     queryKey: ['fases-catalogo'],
     queryFn: () => api('/ev/fases?proyecto_id=1'),
@@ -1624,45 +1661,86 @@ function NuevaPartidaAdicional({ otmId, metrado, und, onCancelar, onCreada }: {
       body: JSON.stringify({
         codigo: f.codigo.trim(), otm_id: otmId, descripcion: f.descripcion.trim(),
         unidad: f.unidad.trim(), fase: f.fase.trim(),
+        parent_codigo: f.parent_codigo.trim() || null,
         metrado_presup: Number(f.metrado_presup) || 0,
-        hh_presup: Number(f.hh_presup) || 0,      // 0 = todavía sin aprobar
-        naturaleza: 'ADICIONAL',
+        hh_presup: Number(f.hh_presup) || 0,      // 0 = adicional aún sin aprobar
+        naturaleza: f.naturaleza,
         hitos: [{ numero: 1, descripcion: 'Ejecución', peso: 1, es_principal: true }],
       }),
     }),
     onSuccess: r => onCreada(r.id),
     onError: (e: Error) => setErr(e.message),
   })
+  // Una partida olvidada SÍ tiene HH (están en el presupuesto): se exigen.
   const listo = f.codigo.trim() && f.descripcion.trim() && f.unidad.trim() && f.fase.trim()
+    && (adicional || Number(f.hh_presup) > 0)
+  const borde = adicional ? 'border-red-500/40 bg-red-500/5' : 'border-k-border bg-k-raised/40'
   return (
-    <div className="rounded-lg border border-red-500/40 bg-red-500/5 px-3 py-2.5 space-y-2">
-      <p className="text-[11px] font-bold text-k-red">＋ Nueva partida — adicional no presupuestado</p>
+    <div className={`rounded-lg border px-3 py-2.5 space-y-2 ${borde}`}>
+      <div className="flex gap-1.5">
+        {([['CONTRACTUAL', 'Se me olvidó cargarla'], ['ADICIONAL', 'Adicional no presupuestado']] as const)
+          .map(([v, lbl]) => (
+            <button key={v} onClick={() => setF({ ...f, naturaleza: v })}
+              className={`flex-1 text-[10px] font-bold py-1.5 rounded-lg border transition-colors ${
+                f.naturaleza === v
+                  ? (v === 'ADICIONAL' ? 'border-red-500/60 bg-red-500/15 text-k-red'
+                                       : 'border-k-amber/60 bg-k-amber/15 text-k-amber')
+                  : 'border-k-border text-k-text3 hover:bg-k-raised'}`}>
+              {lbl}
+            </button>
+          ))}
+      </div>
+      <p className="text-[10px] text-k-text3">
+        {adicional
+          ? 'Trabajo FUERA del contrato. Va aparte en el Resultado Operativo.'
+          : 'Está en el contrato pero no se cargó a la BD: es contractual y sus HH ya existen en tu presupuesto.'}
+      </p>
       <div className="grid grid-cols-2 gap-2">
-        <input placeholder="Código (ej. ADIC-01)" value={f.codigo}
+        <input placeholder={adicional ? 'Código (ej. ADIC-01)' : 'Código del presupuesto'} value={f.codigo}
           onChange={e => setF({ ...f, codigo: e.target.value })} className={inputCls} />
         <input placeholder="Unidad (m3, hh…)" value={f.unidad}
           onChange={e => setF({ ...f, unidad: e.target.value })} className={inputCls} />
       </div>
-      <input placeholder="Descripción del adicional" value={f.descripcion}
+      <input placeholder="Descripción de la partida" value={f.descripcion}
         onChange={e => setF({ ...f, descripcion: e.target.value })} className={inputCls} />
-      <input placeholder="Fase (ej. EST, CIV…)" value={f.fase} list="fases-adic"
-        title="La fase es la clave con la que el Resultado Operativo cruza el costo con la meta"
-        onChange={e => setF({ ...f, fase: e.target.value })} className={inputCls} />
+      <div className="grid grid-cols-2 gap-2">
+        <input placeholder="Fase (ej. EST, CIV…)" value={f.fase} list="fases-adic"
+          title="La fase es la clave con la que el Resultado Operativo cruza el costo con la meta"
+          onChange={e => setF({ ...f, fase: e.target.value })} className={inputCls} />
+        <select value={f.parent_codigo} onChange={e => setF({ ...f, parent_codigo: e.target.value })}
+          className={inputCls}
+          title="De qué partida cuelga en el árbol. Sin esto aparece suelta al final del WBS.">
+          <option value="">Cuelga de… (raíz del WBS)</option>
+          {padres.map(p => (
+            <option key={p.id} value={p.codigo}>{p.codigo} — {(p.descripcion ?? '').slice(0, 32)}</option>
+          ))}
+        </select>
+      </div>
       <datalist id="fases-adic">
         {(fases.data ?? []).map(x => <option key={x.codigo} value={x.codigo}>{x.nombre}</option>)}
       </datalist>
       <div className="grid grid-cols-2 gap-2">
         <input placeholder="Metrado" value={f.metrado_presup} inputMode="decimal"
           onChange={e => setF({ ...f, metrado_presup: e.target.value })} className={inputCls} />
-        <input placeholder="HH presupuestadas (opcional)" value={f.hh_presup} inputMode="decimal"
-          title="Si el adicional todavía no está aprobado, déjalo vacío: la partida quedará marcada en rojo hasta que cargues el dato"
-          onChange={e => setF({ ...f, hh_presup: e.target.value })} className={inputCls} />
+        <input placeholder={adicional ? 'HH presupuestadas (opcional)' : 'HH del presupuesto'}
+          value={f.hh_presup} inputMode="decimal"
+          title={adicional
+            ? 'Si el adicional todavía no está aprobado, déjalo vacío: la partida quedará marcada en rojo hasta que cargues el dato'
+            : 'Cópialas de tu presupuesto: sin HH la partida no puede ganar valor y el rendimiento sale distorsionado'}
+          onChange={e => setF({ ...f, hh_presup: e.target.value })}
+          className={`${inputCls} ${!adicional && f.hh_presup.trim() === '' ? 'border-k-amber/50' : ''}`} />
       </div>
       <p className="text-[10px] text-k-text3">
-        Si aún no tienes las <b>HH</b> (normal hasta que aprueben el adicional), déjalas vacías: la
-        partida queda <b className="text-k-red">en rojo</b> en el LookAhead para completarla después.
-        Mientras tanto el trabajo <b>sí se mide</b> — consume HH del tareo sin ganar ninguna, que es
-        lo que un adicional le hace al rendimiento.
+        {adicional ? (
+          <>Si aún no tienes las <b>HH</b> (normal hasta que aprueben el adicional), déjalas vacías: la
+          partida queda <b className="text-k-red">en rojo</b> en el LookAhead para completarla después.
+          Mientras tanto el trabajo <b>sí se mide</b> — consume HH del tareo sin ganar ninguna, que es
+          lo que un adicional le hace al rendimiento.</>
+        ) : (
+          <>Las <b>HH son obligatorias</b> acá: si la partida está en el contrato, el dato existe.
+          Sin él la partida gasta HH sin poder ganar ninguna y hunde el rendimiento de su fase.</>
+        )}
+        {!otmId && <> Se crea <b>sin OTM</b> y quedará en la bandeja <b>por ubicar</b>.</>}
       </p>
       {err && <p className="text-k-red text-xs">{err}</p>}
       <div className="flex gap-2">
@@ -1674,6 +1752,141 @@ function NuevaPartidaAdicional({ otmId, metrado, und, onCancelar, onCreada }: {
           className="px-3 text-xs rounded-lg border border-k-border text-k-text2 hover:bg-k-raised">
           Cancelar
         </button>
+      </div>
+    </div>
+  )
+}
+
+// ── Bandeja «partidas por ubicar» ────────────────────────────
+// Las partidas creadas sin saber a qué OTM van (misceláneos: muchos proyectitos
+// con su propio metrado y HH) no aparecen en NINGÚN selector de partida, así que
+// sin esta lista se quedarían olvidadas. También recoge las que quedaron sueltas
+// del WBS o sin HH.
+function BandejaPorUbicar({ onClose }: { onClose: () => void }) {
+  const qc = useQueryClient()
+  const [sel, setSel] = useState<number | null>(null)
+  const [otm, setOtm] = useState('')
+  const [padre, setPadre] = useState('')
+  const [codigo, setCodigo] = useState('')
+  const [err, setErr] = useState('')
+
+  const lista = useQuery<PorUbicar[]>({
+    queryKey: ['partidas-por-ubicar'],
+    queryFn: () => api('/ev/partidas-por-ubicar'),
+  })
+  const otms = useQuery<{ otm_id: string; descripcion: string }[]>({
+    queryKey: ['otms-lista'], queryFn: () => api('/ev/otms'),
+  })
+  const padresQ = useQuery<{ id: number; codigo: string; descripcion?: string; fase?: string | null }[]>({
+    queryKey: ['partidas-otm', otm],
+    queryFn: () => api(`/ev/partidas?otm=${encodeURIComponent(otm)}`),
+    enabled: !!otm,
+  })
+  const ubicar = useMutation({
+    mutationFn: (id: number) => api(`/ev/partidas/${id}/ubicar`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        otm_id: otm, parent_codigo: padre || null, codigo: codigo.trim() || null,
+      }),
+    }),
+    onSuccess: () => {
+      setSel(null); setOtm(''); setPadre(''); setCodigo(''); setErr('')
+      qc.invalidateQueries({ queryKey: ['partidas-por-ubicar'] })
+      qc.invalidateQueries({ queryKey: ['partidas-otm'] })
+    },
+    onError: (e: Error) => setErr(e.message),
+  })
+  const MOTIVO: Record<string, string> = {
+    SIN_OTM: 'Sin OTM', SIN_PADRE: 'Suelta del WBS', SIN_HH: 'Sin HH',
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-start justify-center p-4 overflow-y-auto"
+      onClick={onClose}>
+      <div className="bg-k-surface border border-k-border rounded-2xl w-full max-w-3xl mt-8"
+        onClick={e => e.stopPropagation()}>
+        <div className="px-4 py-3 border-b border-k-border flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-bold text-k-text">Partidas por ubicar</h3>
+            <p className="text-[11px] text-k-text3">
+              Creadas al programar, todavía sin OTM, sin lugar en el WBS o sin HH.
+            </p>
+          </div>
+          <button onClick={onClose} className="text-k-text3 hover:text-k-text"><X size={18} /></button>
+        </div>
+        <div className="p-3 space-y-2 max-h-[70vh] overflow-y-auto">
+          {lista.isLoading && <p className="text-xs text-k-text3 text-center py-6">Cargando…</p>}
+          {(lista.data ?? []).length === 0 && !lista.isLoading && (
+            <p className="text-xs text-k-text3 text-center py-6">
+              ✓ Todas las partidas están ubicadas.
+            </p>
+          )}
+          {(lista.data ?? []).map(p => (
+            <div key={p.id} className="rounded-lg border border-k-border bg-k-raised/40 px-3 py-2">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="font-mono text-[11px] font-bold text-k-text">{p.codigo}</span>
+                    {p.naturaleza === 'ADICIONAL' && (
+                      <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-red-500/15 text-k-red border border-red-500/25">ADICIONAL</span>
+                    )}
+                    {p.motivos.map(m => (
+                      <span key={m} className="text-[9px] px-1 py-0.5 rounded bg-k-amber/15 text-k-amber border border-k-amber/25">
+                        {MOTIVO[m] ?? m}
+                      </span>
+                    ))}
+                  </div>
+                  <p className="text-[11px] text-k-text2 truncate">{p.descripcion}</p>
+                  <p className="text-[10px] text-k-text3">
+                    {p.metrado_presup} {p.unidad} · {p.hh_presup} HH
+                    {p.otm_id ? ` · ${p.otm_id}` : ''}
+                    {p.actividades > 0 ? ` · ${p.actividades} actividad(es) programadas` : ''}
+                  </p>
+                </div>
+                <button onClick={() => {
+                  setSel(sel === p.id ? null : p.id); setOtm(p.otm_id ?? '')
+                  setPadre(''); setCodigo(''); setErr('')
+                }}
+                  className="shrink-0 text-[11px] font-bold px-2.5 py-1 rounded-lg border border-k-amber/50 text-k-amber hover:bg-k-amber/10">
+                  {sel === p.id ? 'Cerrar' : 'Ubicar'}
+                </button>
+              </div>
+              {sel === p.id && (
+                <div className="mt-2 pt-2 border-t border-k-border space-y-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <select value={otm} onChange={e => { setOtm(e.target.value); setPadre('') }}
+                      className={inputCls}>
+                      <option value="">Elige la OTM…</option>
+                      {(otms.data ?? []).map(o => (
+                        <option key={o.otm_id} value={o.otm_id}>
+                          {o.otm_id} — {(o.descripcion ?? '').slice(0, 30)}
+                        </option>
+                      ))}
+                    </select>
+                    <select value={padre} onChange={e => setPadre(e.target.value)}
+                      className={inputCls} disabled={!otm}
+                      title="De qué partida cuelga en el árbol de Valor Ganado">
+                      <option value="">Cuelga de… (raíz del WBS)</option>
+                      {(padresQ.data ?? []).filter(x => !x.fase && x.id !== p.id).map(x => (
+                        <option key={x.id} value={x.codigo}>
+                          {x.codigo} — {(x.descripcion ?? '').slice(0, 28)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <input placeholder={`Código (dejar vacío = ${p.codigo})`} value={codigo}
+                    onChange={e => setCodigo(e.target.value)} className={inputCls}
+                    title="Solo si la OTM destino ya usa ese código" />
+                  {err && <p className="text-k-red text-[11px]">{err}</p>}
+                  <button onClick={() => ubicar.mutate(p.id)} disabled={!otm || ubicar.isPending}
+                    className="w-full bg-k-amber text-black font-bold text-xs py-2 rounded-lg disabled:opacity-40">
+                    {ubicar.isPending ? 'Ubicando…' : 'Ubicar en esta OTM'}
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   )
