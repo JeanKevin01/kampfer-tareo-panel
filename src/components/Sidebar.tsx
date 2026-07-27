@@ -54,7 +54,7 @@ const NAV: NavGroup[] = [
   {
     label: 'Gestión',
     items: [
-      { path: '/edicion',      label: 'Edición Datos',  icon: PenLine },
+      { path: '/edicion',      label: 'Datos maestros', icon: PenLine },
       { path: '/monitor',      label: 'Monitor', icon: Activity },
       { path: '/bitacora',     label: 'Bitácora',       icon: History },
       { path: '/usuarios',     label: 'Usuarios',       icon: ShieldCheck, adminOnly: true },

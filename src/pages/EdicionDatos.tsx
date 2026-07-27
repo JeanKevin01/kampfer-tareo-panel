@@ -1,10 +1,23 @@
+// ── Datos maestros ───────────────────────────────────────────
+// Centro ÚNICO de lo que se carga al inicio desde las plantillas Excel
+// (encargo de Jean 2026-07-26: «no hay un panel donde pueda modificarlo o
+// eliminarlo todo»). La edición existía pero estaba repartida y escondida —
+// la de partidas vivía en Valor Ganado → «Configuración» —, y a los documentos
+// de costo solo se les podía dar de baja. Aquí se reúne todo.
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Search, Pencil, X, Loader2, Save, Users, ClipboardList } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import {
+  Search, Pencil, X, Loader2, Save, Users, ClipboardList,
+  Package, FileSpreadsheet, Target,
+} from 'lucide-react'
 
 import { api } from '@/lib/api'
+import { TabConfig as PartidasMaestro } from '@/pages/ValorGanado'
+import CostosMaestro from '@/components/maestros/CostosMaestro'
+import Presupuesto from '@/pages/Presupuesto'
 
-type Tab = 'trabajadores' | 'otms'
+type Tab = 'partidas' | 'costos' | 'presupuesto' | 'trabajadores' | 'otms'
 interface Trabajador { id: string; nombre: string; cargo: string; dni?: string; activo: boolean }
 interface OTM { id: string; descripcion: string; estado: string; area?: string; cc?: string }
 
@@ -12,7 +25,8 @@ const ESTADOS_OTM = ['EJECUCION', 'POR INICIAR', 'CERRADA', 'CONCLUIDA']
 
 export default function EdicionDatos() {
   const qc = useQueryClient()
-  const [tab, setTab]           = useState<Tab>('trabajadores')
+  const [tab, setTab]           = useState<Tab>('partidas')
+  const [proyecto, setProyecto] = useState('')       // '' = todos, para Partidas
   const [search, setSearch]     = useState('')
   const [editTrab, setEditTrab] = useState<Trabajador | null>(null)
   const [editOTM,  setEditOTM]  = useState<OTM | null>(null)
@@ -75,12 +89,22 @@ export default function EdicionDatos() {
 
   return (
     <div className="space-y-5">
+      <div>
+        <h1 className="text-xl font-bold text-k-text">Datos maestros</h1>
+        <p className="text-k-text2 text-sm">
+          Todo lo que se carga al inicio desde las plantillas Excel, en un solo sitio:
+          revisar, corregir y dar de baja.
+        </p>
+      </div>
 
       {/* Tabs */}
-      <div className="flex gap-2 bg-k-raised border border-k-border rounded-xl p-1 w-fit">
+      <div className="flex gap-2 bg-k-raised border border-k-border rounded-xl p-1 w-fit flex-wrap">
         {([
+          ['partidas',     'Partidas',     Target],
+          ['costos',       'Costos',       Package],
+          ['presupuesto',  'Presupuesto',  FileSpreadsheet],
           ['trabajadores', 'Trabajadores', Users],
-          ['otms',         'Proyectos',         ClipboardList],
+          ['otms',         'Proyectos',    ClipboardList],
         ] as [Tab, string, React.ElementType][]).map(([id, label, Icon]) => (
           <button key={id} onClick={() => { setTab(id); setSearch('') }}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${
@@ -93,14 +117,58 @@ export default function EdicionDatos() {
         ))}
       </div>
 
-      {/* Búsqueda */}
-      <div className="relative">
-        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-k-text3" />
-        <input type="text"
-          placeholder={tab === 'trabajadores' ? 'Buscar por nombre, cargo o ID…' : 'Buscar por ID o descripción…'}
-          value={search} onChange={e => setSearch(e.target.value)}
-          className="w-full bg-k-raised border border-k-border rounded-lg pl-9 pr-4 py-2.5 text-sm text-k-text placeholder:text-k-text3 outline-none focus:border-k-amber transition-colors" />
-      </div>
+      {/* Búsqueda — solo para las tablas de esta página (las otras traen la suya) */}
+      {(tab === 'trabajadores' || tab === 'otms') && (
+        <div className="relative">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-k-text3" />
+          <input type="text"
+            placeholder={tab === 'trabajadores' ? 'Buscar por nombre, cargo o ID…' : 'Buscar por ID o descripción…'}
+            value={search} onChange={e => setSearch(e.target.value)}
+            className="w-full bg-k-raised border border-k-border rounded-lg pl-9 pr-4 py-2.5 text-sm text-k-text placeholder:text-k-text3 outline-none focus:border-k-amber transition-colors" />
+        </div>
+      )}
+
+      {/* Partidas de control: el mismo editor de Valor Ganado → Configuración */}
+      {tab === 'partidas' && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 flex-wrap">
+            <select value={proyecto} onChange={e => setProyecto(e.target.value)}
+              className="bg-k-raised border border-k-border rounded-lg px-3 py-2 text-sm text-k-text outline-none focus:border-k-amber">
+              <option value="">Todos los proyectos</option>
+              {otms.map(o => <option key={o.id} value={o.id}>{o.id} — {(o.descripcion ?? '').slice(0, 40)}</option>)}
+            </select>
+            <p className="text-[11px] text-k-text3">
+              Metrado, HH, fase, unidad e hitos. Desactivar una partida con trabajo registrado
+              pide confirmación y te dice qué tiene colgado.
+            </p>
+          </div>
+          <PartidasMaestro otm={proyecto || undefined} />
+        </div>
+      )}
+
+      {/* Documentos de costo (import .xlsx de Costos) */}
+      {tab === 'costos' && <CostosMaestro />}
+
+      {/* Presupuesto: la página completa (versiones, líneas, APU, congelar) */}
+      {tab === 'presupuesto' && (
+        <div className="space-y-3">
+          <p className="text-[11px] text-k-text3 bg-k-raised border border-k-border rounded-lg px-3 py-2">
+            Las líneas del presupuesto <b>CONTRACTUAL</b> se editan aquí mientras la versión esté
+            en BORRADOR. La <b>META</b> nace del import de la plantilla PU y no se edita línea a
+            línea a propósito: sus HH salen del APU, así que corregirlas a mano dejaría el costo
+            meta descuadrado. Para cambiarla, vuelve a importar el PU en una versión nueva.
+          </p>
+          <Presupuesto />
+        </div>
+      )}
+
+      {/* Catálogo de fases: su CRUD ya vive en Guía de Fases, no se duplica */}
+      {(tab === 'partidas' || tab === 'costos') && (
+        <p className="text-[11px] text-k-text3">
+          ¿Falta una fase o quieres renombrarla? Está en{' '}
+          <Link to="/guia-fases" className="text-k-amber hover:underline">Guía de Fases → Catálogo del proyecto</Link>.
+        </p>
+      )}
 
       {/* Tabla Trabajadores */}
       {tab === 'trabajadores' && (

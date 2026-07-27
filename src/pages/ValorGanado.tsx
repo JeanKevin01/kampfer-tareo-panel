@@ -1107,7 +1107,10 @@ function JornadaConfig() {
   )
 }
 
-function TabConfig({ otm }: { otm?: string }) {
+// Exportado para la página «Datos maestros» (Edición Datos): es el único sitio
+// donde se editan y desactivan partidas, y estaba escondido en una pestaña
+// llamada «Configuración» dentro de Valor Ganado.
+export function TabConfig({ otm }: { otm?: string }) {
   const qc = useQueryClient()
   const { data: partidas = [], isLoading } = useQuery<Partida[]>({
     queryKey: ['ev-partidas', otm],
@@ -1147,9 +1150,18 @@ function TabConfig({ otm }: { otm?: string }) {
     onError: (e: Error) => setErrMsg(e.message),
   })
 
+  // El API responde 409 con el detalle cuando la partida tiene trabajo colgado
+  // (actividades, avance, HH de tareo, documentos de costo). Se muestra ese
+  // detalle y recién entonces se puede desactivar a propósito.
   const eliminar = useMutation({
-    mutationFn: (id: number) => req(`/ev/partidas/${id}`, { method: 'DELETE' }),
+    mutationFn: ({ id, forzar }: { id: number; forzar?: boolean }) =>
+      req(`/ev/partidas/${id}${forzar ? '?desactivar=true' : ''}`, { method: 'DELETE' }),
     onSuccess: invalidar,
+    onError: (e: Error, vars) => {
+      if (window.confirm(`${e.message}\n\n¿Desactivarla de todos modos?`)) {
+        eliminar.mutate({ id: vars.id, forzar: true })
+      }
+    },
   })
 
   const abrirEdicion = (p: Partida) => {
@@ -1255,7 +1267,7 @@ function TabConfig({ otm }: { otm?: string }) {
                         <button
                           onClick={() => {
                             if (window.confirm(`¿Desactivar la partida ${p.codigo}? Sus avances históricos se conservan.`)) {
-                              eliminar.mutate(p.id)
+                              eliminar.mutate({ id: p.id })
                             }
                           }}
                           className="inline-flex items-center gap-1.5 text-[11px] font-bold text-k-red bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 px-3 py-1.5 rounded-lg transition-colors">
