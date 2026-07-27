@@ -11,7 +11,7 @@ import { ChevronLeft, ChevronRight, Loader2, Printer, Search } from 'lucide-reac
 import { api } from '@/lib/api'
 import { CNC } from '@/lib/catalogos'
 import { lunesDe, iso } from '@/lib/semana'
-import { DIAS_1, fmtDia, fmtCorta, num, isoDow, clrReal, parseDeps, fmtDeps } from '@/lib/lookahead'
+import { DIAS_1, fmtDia, fmtCorta, num, isoDow, clrReal, parseDeps, fmtDeps, runsDeFila } from '@/lib/lookahead'
 import type { TipoDep } from '@/lib/lookahead'
 import CeldaDia from '@/components/CeldaDia'
 import AyudaLookahead from '@/components/AyudaLookahead'
@@ -45,9 +45,12 @@ export interface GridResp {
   grupos: { otm_id: string | null; otm_desc: string | null; actividades: ActGrid[] }[]
 }
 
+// Tanda 2 del sistema de color: PROGRAMADO deja de ser ámbar y pasa a
+// «lo previsto». Con eso el ámbar queda para la ACCIÓN y deja de significar
+// tres cosas a la vez.
 const ESTADO_DOT: Record<string, string> = {
-  PROGRAMADO: 'bg-amber-400', EJECUTADO: 'bg-green-500',
-  CANCELADO: 'bg-zinc-500', NO_CUMPLIDA: 'bg-red-500',
+  PROGRAMADO: 'bg-k-plan', EJECUTADO: 'bg-k-green',
+  CANCELADO: 'bg-zinc-500', NO_CUMPLIDA: 'bg-k-red',
 }
 
 const PROYECTO_ID = 1
@@ -111,7 +114,11 @@ const thSticky = (top: number, z = 30): React.CSSProperties => ({
   boxShadow: 'inset 0 -1px 0 rgb(var(--k-border)), inset -1px 0 0 rgb(var(--k-border))',
 })
 
-export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) {
+export function LookaheadGrid({ onEditar, onProgramar }: {
+  onEditar: (a: ActGrid) => void
+  /** abre el wizard de programar por partidas desde la pantalla vacía */
+  onProgramar?: () => void
+}) {
   const qc = useQueryClient()
   const [nSemanas, setNSemanas] = useState(4)
   const [desde, setDesde] = useState(() => iso(lunesDe(new Date())))
@@ -564,19 +571,30 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
               <th className={thBase} rowSpan={2} style={{ ...stick(7, fijarCols), ...thSticky(0, 40) }}>F. Fin</th>
               <th className={thBase} rowSpan={2} style={{ ...stick(8, fijarCols), ...thSticky(0, 40) }}
                 title="Antecesoras, como en Project: 12 · 12FS+2 · 8;12SS-1. Doble clic para escribirlas.">DESPUÉS DE</th>
+              {/* La cabecera de semanas era rosa —que en la paleta significa
+                  «problema»— y no lo es. Neutra; la semana en curso se
+                  distingue por el peso del texto, no por el color. */}
               {(d?.semanas ?? []).map((s, i) => (
                 <th key={s.lunes} colSpan={7} style={thSticky(0, 20)}
-                  className="border border-k-border px-1 py-1 text-[10px] font-bold uppercase bg-red-900/30 text-red-200">
+                  className={`border-b border-k-border border-r-2 border-r-k-border2 px-1 py-1
+                    text-[10px] uppercase tracking-wide bg-k-raised ${
+                    i === 0 ? 'font-bold text-k-text' : 'font-medium text-k-text3'}`}>
                   {i === 0 ? 'Esta semana' : `Semana +${i}`} · {fmtDia(s.lunes)} — {fmtDia(s.domingo)}
                 </th>
               ))}
             </tr>
             <tr>
               {(d?.fechas ?? []).map((f, i) => (
-                <th key={f} style={thSticky(H_SEM, 20)}
-                  title={feriados.has(f) ? 'Feriado / día no laborable' : !laborable(f) ? 'Día no laborable (calendario)' : ''}
-                  className={`border border-k-border/60 px-0.5 py-0.5 text-[9px] font-bold min-w-[44px] ${
-                  f === hoy ? 'bg-green-500/20 text-k-green'
+                <th key={f} style={{
+                  ...thSticky(H_SEM, 20),
+                  // La línea de HOY se suma al inset del sticky, no lo pisa
+                  // (si no, la cabecera pierde su borde al desplazarse).
+                  ...(f === hoy ? { boxShadow: 'inset 2px 0 0 rgb(var(--k-green)), inset 0 -1px 0 rgb(var(--k-border))' } : {}),
+                }}
+                  title={f === hoy ? 'Hoy' : feriados.has(f) ? 'Feriado / día no laborable' : !laborable(f) ? 'Día no laborable (calendario)' : ''}
+                  className={`border-b border-k-border/60 px-0.5 py-0.5 text-[9px] font-bold min-w-[44px]
+                    ${(i + 1) % 7 === 0 ? 'border-r-2 border-r-k-border2' : ''} ${
+                  f === hoy ? 'bg-k-green/15 text-k-green'
                     : !laborable(f) ? 'bg-k-border/60 text-k-text2 line-through'
                     : 'bg-k-raised text-k-text2'}`}>
                   {DIAS_1[i % 7]}<br />{fmtCorta(f)}
@@ -603,15 +621,35 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
                 onReal={(actId, fecha, v) => guardarReal.mutate({ actId, fecha, v })}
                 onProg={(actId, fecha, v) => guardarProg.mutate({ actId, fecha, v })} />
             ))}
+            {/* La pantalla vacía es la primera que ve un planner nuevo: en vez
+                de un «Sin actividades» que no lleva a ningún lado, explica qué
+                es esto, cuál es el primer paso y trae el botón que lo hace. */}
             {grupos.length === 0 && !grid.isLoading && (
-              <tr><td colSpan={nCols} className="px-4 py-8 text-center text-k-text3 text-sm">
-                {hayFiltro ? (<>
-                  Ninguna de las {nTotal} actividades del rango coincide con el filtro.{' '}
-                  <button onClick={limpiarFiltros} className="text-k-amber underline">Quitar filtros</button>
-                </>) : (<>
-                  Sin actividades en el rango. Prográmalas desde el Plan semanal (o el botón + del calendario)
-                  indicando F.Inic–F.Fin y el metrado comprometido.
-                </>)}
+              <tr><td colSpan={nCols} className="px-4 py-10">
+                {hayFiltro ? (
+                  <p className="text-center text-k-text3 text-sm">
+                    Ninguna de las {nTotal} actividades del rango coincide con el filtro.{' '}
+                    <button onClick={limpiarFiltros} className="text-k-amber underline">Quitar filtros</button>
+                  </p>
+                ) : (
+                  <div className="max-w-md mx-auto text-center space-y-3">
+                    <p className="text-base font-bold text-k-text">Todavía no hay nada programado</p>
+                    <p className="text-sm text-k-text2 leading-relaxed">
+                      El LookAhead es el plan de las próximas semanas: eliges partidas del
+                      presupuesto, les pones <b>fechas</b> y el <b>metrado</b> que se compromete, y el
+                      sistema reparte solo ese metrado entre los días de trabajo.
+                    </p>
+                    {onProgramar && (
+                      <button onClick={onProgramar} className="btn btn-primario mx-auto">
+                        ＋ Programar por partidas
+                      </button>
+                    )}
+                    <p className="text-[11px] text-k-text3">
+                      ¿Estás mirando otras semanas? El LookAhead solo trae lo que cruza el rango
+                      visible — prueba «Hoy» o amplía a 6 semanas.
+                    </p>
+                  </div>
+                )}
               </td></tr>
             )}
           </tbody>
@@ -1077,9 +1115,13 @@ function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, o
   return (
     <>
       <tr>
+        {/* Nivel 1 de la jerarquía: proyecto. La franja de color a la izquierda
+            y la negrita lo separan del nivel 2 (partida, violeta) sin que haya
+            que contar sangrías. */}
         <td colSpan={N_FIJAS + fechas.length} onClick={onContraer}
+          style={{ boxShadow: 'inset 3px 0 0 rgb(var(--k-blue))' }}
           title={contraido ? 'Clic para desplegar este proyecto' : 'Clic para contraer este proyecto entero'}
-          className="border border-k-border px-2 py-1 text-[11px] font-bold bg-blue-500/15 text-k-blue cursor-pointer hover:bg-blue-500/25">
+          className="border-b border-k-border px-2 py-1.5 text-[11px] font-bold bg-k-blue/10 text-k-blue cursor-pointer hover:bg-k-blue/20">
           {/* El `sticky` va en el CONTENIDO, no en la celda: una celda con
               colSpan ya ocupa todo el ancho, así que pegarla a left:0 no hace
               nada y el texto se iba con el scroll horizontal. */}
@@ -1104,14 +1146,16 @@ function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, o
         const a0 = it.acts[0]
         if (compacta) {
           return <FilaPartidaCompacta key={`p${it.pid}`} acts={it.acts} color={color}
-            fechas={fechas} laborable={laborable} onToggle={() => toggle(it.pid)} fijar={fp.fijar} compacto={fp.compacto} />
+            fechas={fechas} hoy={hoy} laborable={laborable} onToggle={() => toggle(it.pid)}
+            fijar={fp.fijar} compacto={fp.compacto} />
         }
         return (
           <Fragment key={`p${it.pid}`}>
             <tr>
+              {/* Nivel 2: partida. Franja del color de su cadena. */}
               <td colSpan={N_FIJAS + fechas.length}
-                className="border border-k-border px-2 py-1 text-[10px] font-bold"
-                style={{ borderLeft: `3px solid ${color}`, background: `${color}14` }}>
+                className="border-b border-k-border px-2 py-1 text-[10px] font-bold"
+                style={{ boxShadow: `inset 3px 0 0 ${color}`, background: `${color}14` }}>
                 <div style={ROTULO}>
                   <span onClick={() => toggle(it.pid)} className="cursor-pointer hover:opacity-70"
                     title="Partida desplegada por etapas (hitos) — clic para compactarla en una sola fila">
@@ -1147,8 +1191,8 @@ function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, o
 
 // Fila única de una partida COMPACTADA: agrega el programado y el real de
 // todas sus etapas por día (solo lectura — para editar, despliega con ▸).
-function FilaPartidaCompacta({ acts, color, fechas, laborable, onToggle, fijar, compacto }: {
-  acts: ActGrid[]; color: string; fechas: string[]
+function FilaPartidaCompacta({ acts, color, fechas, hoy, laborable, onToggle, fijar, compacto }: {
+  acts: ActGrid[]; color: string; fechas: string[]; hoy: string
   laborable: (f: string) => boolean; onToggle: () => void
   fijar: boolean; compacto: boolean
 }) {
@@ -1166,6 +1210,7 @@ function FilaPartidaCompacta({ acts, color, fechas, laborable, onToggle, fijar, 
   const fFin = acts.reduce((m, a) => (a.fecha_fin > m ? a.fecha_fin : m), acts[0].fecha_fin)
   const conFS = acts.some(a => (a.predecesoras ?? []).length > 0)
   const plazoTot = acts.reduce((s, a) => s + (a.plazo_dias ?? 0), 0)
+  const runsAgg = runsDeFila(fechas, f => (progAgg[f] ?? 0) > 0 || realAgg[f] != null)
   return (
     <tr>
       <td className={`${tdFijo} text-center font-mono text-[9px] text-k-text3`} style={stick(0, true)}>—</td>
@@ -1195,19 +1240,20 @@ function FilaPartidaCompacta({ acts, color, fechas, laborable, onToggle, fijar, 
         )}
       </td>
       <td className={`${tdFijo} text-center text-k-text2`} style={stick(4, fijar)}>{a0.und ?? '—'}</td>
-      <td className={`${tdFijo} text-center font-mono text-[10px] text-k-text2`} style={stick(5, fijar)}
+      <td className={`${tdFijo} text-center font-mono tabular-nums text-[10px] text-k-text2`} style={stick(5, fijar)}
         title="Σ del plazo de las etapas (no es la duración de la partida si se traslapan)">
         {plazoTot > 0 ? `Σ ${num(plazoTot)}` : '—'}
       </td>
-      <td className={`${tdFijo} text-center font-mono text-[10px] text-k-text2`} style={stick(6, fijar)}>{fmtCorta(fIni)}</td>
-      <td className={`${tdFijo} text-center font-mono text-[10px] text-k-text2`} style={stick(7, fijar)}>{fmtCorta(fFin)}</td>
+      <td className={`${tdFijo} text-center font-mono tabular-nums text-[10px] text-k-text2`} style={stick(6, fijar)}>{fmtCorta(fIni)}</td>
+      <td className={`${tdFijo} text-center font-mono tabular-nums text-[10px] text-k-text2`} style={stick(7, fijar)}>{fmtCorta(fFin)}</td>
       <td className={`${tdFijo} text-center font-mono text-[9px] text-k-text2`} style={stick(8, fijar)}
         title={conFS ? 'Las etapas están encadenadas (despliega para verlas)' : 'Sin antecesoras'}>
         {conFS ? '⛓' : '—'}
       </td>
-      {fechas.map(f => (
+      {fechas.map((f, i) => (
         <CeldaDia key={f} prog={progAgg[f]} real={realAgg[f]}
           esSalto={false} esMedio={false} laborable={laborable(f)}
+          run={runsAgg[f]} esHoy={f === hoy} finSemana={(i + 1) % 7 === 0}
           editable={false} onRegistrar={() => {}} />
       ))}
     </tr>
@@ -1230,6 +1276,10 @@ function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, 
         const saltos = new Set(a.dias_salto ?? [])
         const medios = new Set(a.dias_medio ?? [])
         const manuales = new Set(a.prog_manual ?? [])
+        // Los días seguidos con dato se dibujan como una barra: la fila es la
+        // única que ve la secuencia completa, así que el cálculo va aquí.
+        const runs = runsDeFila(fechas, f =>
+          !saltos.has(f) && ((a.prog[f] ?? 0) > 0 || a.real[f] != null))
         // Resaltado de cadena: focal con anillo, antecesoras azul, sucesoras
         // verde. El resto NO se atenúa (antes iba a opacity-30): con el dock
         // abierto costaba ver justo las que aún no tienen vínculo, que son las
@@ -1319,7 +1369,7 @@ function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, 
             {/* Metrado, plazo y fechas: editables in-situ (doble clic) para no
                 tener que abrir un panel por cada dato. */}
             <td className={`${tdFijo} text-center align-middle`} style={stick(3, fijar)}>
-              <CeldaEdit tipo="text" clase="font-mono font-bold text-k-text text-center"
+              <CeldaEdit tipo="text" clase="font-mono font-bold tabular-nums text-k-text text-center"
                 valor={a.metrado_prog != null ? String(a.metrado_prog) : ''}
                 titulo="Metrado META de la actividad — doble clic para cambiarlo"
                 onCommit={v => onCampo(a.id, { metrado_prog: v === '' ? null : Number(v) })} />
@@ -1369,11 +1419,12 @@ function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, 
                   className="w-full text-[8px] font-bold text-k-red hover:underline">⛓ vincular</button>
               )}
             </td>
-            {fechas.map(f => (
+            {fechas.map((f, i) => (
               <CeldaDia key={f} prog={a.prog[f]} real={a.real[f]}
                 esSalto={saltos.has(f)} esMedio={medios.has(f)} laborable={laborable(f)}
                 editable={editable && !!a.partida_id && f <= hoy}
                 editableProg={editable && f > hoy} esManual={manuales.has(f)}
+                run={runs[f]} esHoy={f === hoy} finSemana={(i + 1) % 7 === 0}
                 onProgramar={v => onProg(a.id, f, v)}
                 onRegistrar={v => onReal(a.id, f, v)} />
             ))}
@@ -1472,7 +1523,7 @@ export function EvaluacionSemanal() {
         </table>
       </div>
       <p className="px-4 py-2 text-[10px] text-k-text3 border-t border-k-border">
-        Por día: <span className="text-sky-300">programado</span> / real (<span className="text-green-300">verde</span> más,{' '}
+        Por día: <span className="text-k-plan">programado</span> / real (<span className="text-green-300">verde</span> más,{' '}
         <span className="text-amber-300">ámbar</span> igual, <span className="text-red-300">rojo</span> menos que lo programado).
         COMPROM. = metrado comprometido de la semana · ALCANZ. = metrado real registrado (avance diario del EV).
         CUMPL. es <b>automático</b>: SI apenas lo alcanzado iguala o supera lo comprometido (aunque la semana
@@ -1516,11 +1567,11 @@ function EvalGrupo({ grupo, fechas, cumplimiento, restricciones, onCausaPlanner 
             <td className={`${tdFijo} text-center text-k-text2`}>{a.supervisor_nombre?.split(' ')[0] || a.responsable || '—'}</td>
             {fechas.map(f => (
               <td key={f} className="border border-k-border/60 px-0.5 py-0.5 text-center text-[10px]">
-                {(a.prog[f] ?? 0) > 0 && <div className="text-sky-300">{num(a.prog[f])}</div>}
+                {(a.prog[f] ?? 0) > 0 && <div className="text-k-plan">{num(a.prog[f])}</div>}
                 {a.real[f] != null && <div className={clrReal(a.real[f], a.prog[f]).replace(/bg-\S+/g, '')}>{num(a.real[f])}</div>}
               </td>
             ))}
-            <td className={`${tdFijo} text-center font-mono font-bold text-sky-300`}>{comprom > 0 ? num(comprom) : '—'}</td>
+            <td className={`${tdFijo} text-center font-mono font-bold text-k-plan`}>{comprom > 0 ? num(comprom) : '—'}</td>
             <td className={`${tdFijo} text-center font-mono font-bold ${
               alcanz <= 0 ? 'text-k-text3' : alcanz > comprom + 0.0005 ? 'text-green-300' : alcanz >= comprom - 0.0005 ? 'text-amber-300' : 'text-red-300'}`}>
               {alcanz > 0 ? num(alcanz) : '—'}</td>

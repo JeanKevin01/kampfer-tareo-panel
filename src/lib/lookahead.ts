@@ -25,19 +25,47 @@ export const clrReal = (real: number | undefined, prog: number | undefined) => {
 }
 
 // Colores base de la celda (bg tailwind ↔ rgba para el gradiente de medio día)
+// «celeste» = PROGRAMADO = lo previsto. Desde la tanda 2 sale del token
+// --k-plan, que trae su propio valor para el tema claro (antes iba con un
+// parche sobre .text-sky-300 en index.css).
 export const NIVEL_TXT: Record<string, string> = {
   verde: 'text-green-300 font-bold', ambar: 'text-amber-300 font-bold',
-  rojo: 'text-red-300 font-bold', celeste: 'text-sky-300 font-medium', gris: '',
+  rojo: 'text-red-300 font-bold', celeste: 'text-k-plan font-medium', gris: '',
 }
 export const NIVEL_BG: Record<string, string> = {
   verde: 'bg-green-500/25', ambar: 'bg-amber-500/25', rojo: 'bg-red-500/25',
-  celeste: 'bg-sky-500/20', gris: 'bg-zinc-700/30',
+  // «gris» = día en el que no se trabaja. Con el token en vez de zinc-700 la
+  // banda queda suave en claro y visible en oscuro, y baja por toda la
+  // columna: es lo que hace que la semana se lea como semana.
+  celeste: 'bg-k-plan/20', gris: 'bg-k-border/50',
 }
 export const NIVEL_RGBA: Record<string, string> = {
   verde: 'rgba(34,197,94,0.25)', ambar: 'rgba(245,158,11,0.25)',
-  rojo: 'rgba(239,68,68,0.25)', celeste: 'rgba(14,165,233,0.20)',
-  gris: 'rgba(63,63,70,0.30)',
+  rojo: 'rgba(239,68,68,0.25)', celeste: 'rgb(var(--k-plan) / 0.20)',
+  gris: 'rgb(var(--k-border) / 0.50)',
 }
+// ── Barras: días seguidos de una actividad se dibujan como UNA pieza ──
+// Antes cada día era un cuadrito con borde y había que juntar «40 40 40» con
+// la vista para saber cuánto dura la actividad. Uniendo los días seguidos
+// (esquinas redondeadas en los extremos, sin borde entre medio) aparece la
+// forma que cualquiera reconoce. Un día vacío, un feriado o un salto ∅ cortan
+// la barra — que es exactamente lo que pasa en obra.
+export type Run = 'ini' | 'medio' | 'fin' | 'solo' | null
+
+/** Para cada fecha, qué parte de la barra es. `lleno` decide si ese día
+ *  cuenta (tiene programado o real y no es un salto). */
+export function runsDeFila(fechas: string[], lleno: (f: string) => boolean): Record<string, Run> {
+  const out: Record<string, Run> = {}
+  for (let i = 0; i < fechas.length; i++) {
+    const f = fechas[i]
+    if (!lleno(f)) { out[f] = null; continue }
+    const antes = i > 0 && lleno(fechas[i - 1])
+    const despues = i < fechas.length - 1 && lleno(fechas[i + 1])
+    out[f] = antes && despues ? 'medio' : antes ? 'fin' : despues ? 'ini' : 'solo'
+  }
+  return out
+}
+
 export const nivelDe = (real: number | undefined, prog: number | undefined, laborable: boolean) =>
   real != null
     ? (real > (prog ?? 0) + 0.0005 ? 'verde' : real >= (prog ?? 0) - 0.0005 ? 'ambar' : 'rojo')

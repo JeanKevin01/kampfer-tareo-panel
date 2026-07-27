@@ -57,9 +57,16 @@ function Contenido({ tema }: { tema: Tema }) {
         Una misma partida puede tener varias actividades (sus etapas): se agrupan bajo una cabecera
         de color.
       </P>
+      <P>
+        Los días seguidos de una actividad se dibujan como <b>una barra</b>: dónde empieza, dónde
+        termina y cuánto dura se ve sin leer los números. La barra se corta en los días que no se
+        trabajan — la <b>banda gris</b> de domingos y feriados, y los saltos ∅ de esa actividad.
+        La <b className="text-k-green">línea verde vertical</b> es <b>hoy</b>: a su izquierda está
+        lo que ya pasó, a su derecha lo que viene.
+      </P>
       <H>El color de una celda</H>
       <Tabla cab={['Celda', 'Qué significa']} filas={[
-        [<Cel clase="border-sky-500/50 bg-sky-500/20 text-sky-200">120</Cel>,
+        [<Cel clase="border-k-plan/50 bg-k-plan/20 text-k-plan">120</Cel>,
           <>PROGRAMADO. Es la <b>línea base</b>: el metrado meta repartido entre los días laborables
             del rango, saltando feriados, domingos y saltos ∅.</>],
         [<Cel clase="border-green-500/50 bg-green-500/20 text-green-200">140 ✓</Cel>,
@@ -78,8 +85,11 @@ function Contenido({ tema }: { tema: Tema }) {
       ]} />
       <H>El punto de color del nombre</H>
       <P>
-        Es el estado: <b>ámbar</b> programado · <b>verde</b> ejecutado · <b>rojo</b> no cumplida
-        (con su causa debajo) · <b>gris</b> cancelada. El <b className="text-k-red">🔴</b> al lado del
+        Es el estado: <b className="text-k-plan">azul</b> programado · <b className="text-k-green">verde</b> ejecutado
+        · <b className="text-k-red">rojo</b> no cumplida (con su causa debajo) · <b>gris</b> cancelada.
+        El ámbar ya no aparece en los datos: quedó reservado para los <b>botones de acción</b>, así
+        que si algo está en ámbar es porque se puede pulsar.
+        El <b className="text-k-red">🔴</b> al lado del
         título marca las que hay que revisar: con metrado pero <b>sin partida</b> (no se puede anotar
         su avance y el PPC las castiga), o con la partida <b>sin HH presupuestadas</b>.
         El <b className="text-k-red">⛔</b> cuenta las restricciones sin liberar.

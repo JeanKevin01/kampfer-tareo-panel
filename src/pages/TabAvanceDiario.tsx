@@ -8,7 +8,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Loader2, PlayCircle } from 'lucide-react'
 import { api } from '@/lib/api'
-import { DIAS_1, fmtCorta, num, isoDow } from '@/lib/lookahead'
+import { DIAS_1, fmtCorta, num, isoDow, runsDeFila } from '@/lib/lookahead'
 import CeldaDia from '@/components/CeldaDia'
 
 interface EtapaH {
@@ -148,6 +148,9 @@ export default function TabAvanceDiario({ otm }: { otm?: string }) {
               for (const e of p.etapas) {
                 const saltos = new Set(e.actividades.flatMap(a => a.dias_salto))
                 const medios = new Set(e.actividades.flatMap(a => a.dias_medio))
+                // Días seguidos con dato = una barra (mismo criterio del LookAhead).
+                const runsE = runsDeFila(d.fechas, f =>
+                  !saltos.has(f) && ((e.prog[f] ?? 0) > 0 || e.real[f] != null))
                 const acum = Object.values(e.real).reduce((s, v) => s + v, 0)
                 const etiqueta = e.hito_id == null
                   ? (p.etapas.length > 1 ? 'Ejecución (principal)' : 'Avance diario')
@@ -155,19 +158,20 @@ export default function TabAvanceDiario({ otm }: { otm?: string }) {
                 filas.push(
                   <tr key={`e-${p.id}-${e.hito_id ?? 0}`}>
                     <td className="border border-k-border px-2 py-1 text-[10px] bg-k-surface sticky left-0 z-10">
-                      <span className={e.hito_id == null ? 'text-sky-300' : 'text-k-wbs'}>
+                      <span className={e.hito_id == null ? 'text-k-plan' : 'text-k-wbs'}>
                         {e.hito_id == null ? '●' : '◆'} {etiqueta}
                       </span>
                     </td>
                     <td className="border border-k-border px-1 py-1 text-center text-[10px] font-mono text-k-text2">{num(p.metrado)}</td>
                     <td className="border border-k-border px-1 py-1 text-center text-[10px] font-mono text-k-green">{acum > 0 ? num(acum) : '—'}</td>
                     <td className="border border-k-border px-1 py-1 text-center text-[10px] font-mono text-k-text2">{p.metrado > 0 ? num(Math.max(p.metrado - acum, 0)) : '—'}</td>
-                    {d.fechas.map(f => (
+                    {d.fechas.map((f, i) => (
                       <CeldaDia key={f}
                         prog={e.prog[f]} real={e.real[f]}
                         editable={f <= d.hoy}
                         esSalto={saltos.has(f)} esMedio={medios.has(f)}
                         laborable={laborable(f)}
+                        run={runsE[f]} esHoy={f === d.hoy} finSemana={(i + 1) % 7 === 0}
                         onRegistrar={v => guardar.mutate({ pid: p.id, hito: e.hito_id, fecha: f, v })}
                       />
                     ))}

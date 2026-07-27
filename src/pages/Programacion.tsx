@@ -201,7 +201,8 @@ export default function Programacion() {
           información con menos densidad y le robaba una franja a la
           cuadrícula (se retiró a pedido de Jean). */}
       {vista === 'lookahead' && (
-        <LookaheadGrid onEditar={a => setModalAct({ modo: 'editar', act: desdeGrid(a) })} />
+        <LookaheadGrid onEditar={a => setModalAct({ modo: 'editar', act: desdeGrid(a) })}
+          onProgramar={() => setModalLote(lunes)} />
       )}
       {vista === 'histograma' && <HistogramaMO />}
 
