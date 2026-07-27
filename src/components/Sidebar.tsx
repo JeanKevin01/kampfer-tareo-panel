@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom'
 import {
-  LayoutDashboard, UserCheck, Users, Upload, QrCode, Printer,
-  Table2, BarChart3, ClipboardList, FileSpreadsheet, Package, CalendarDays, Grid3X3,
+  LayoutDashboard, UserCheck, Users,
+  Table2, ClipboardList, FileSpreadsheet, Package, CalendarDays, Grid3X3,
   Receipt, TrendingUp, PenLine, Activity, History, ChevronRight, Target,
   FileText, LogOut, ShieldCheck, PanelLeftClose, PanelLeft,
   type LucideIcon,
@@ -21,13 +21,13 @@ const NAV: NavGroup[] = [
       { path: '/supervisores', label: 'Supervisores',   icon: UserCheck },
     ],
   },
+  // Importar/QRs/Impresión y Analytics dejaron de ser entradas propias: son
+  // pestañas de Trabajadores y de Registros y HH (encargo de Jean 2026-07-26).
+  // Las rutas viejas siguen vivas y redirigen a su pestaña.
   {
     label: 'Personal',
     items: [
       { path: '/trabajadores', label: 'Trabajadores',   icon: Users },
-      { path: '/importar',     label: 'Importar',       icon: Upload },
-      { path: '/qrs',          label: 'QRs',            icon: QrCode },
-      { path: '/impresion-qr', label: 'Impresión QR',   icon: Printer },
     ],
   },
   {
@@ -35,7 +35,6 @@ const NAV: NavGroup[] = [
     items: [
       { path: '/registros',    label: 'Registros y HH', icon: Table2 },
       { path: '/matriz',       label: 'Matriz histórica', icon: Grid3X3 },
-      { path: '/reportes',     label: 'Analytics',      icon: BarChart3 },
     ],
   },
   {

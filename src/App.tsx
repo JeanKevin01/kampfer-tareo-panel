@@ -1,8 +1,6 @@
 import GuiaFases from './pages/GuiaFases'
 import Bitacora from '@/pages/Bitacora'
 import EdicionDatos from '@/pages/EdicionDatos'
-import ImpresionQR from '@/pages/ImpresionQR'
-import ImportarPersonal from '@/pages/ImportarPersonal'
 import GenerarRDC from '@/pages/GenerarRDC'
 import ValorGanado from '@/pages/ValorGanado'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
@@ -16,9 +14,7 @@ import Valorizacion from '@/pages/Valorizacion'
 import Supervisores from '@/pages/Supervisores'
 import Trabajadores from '@/pages/Trabajadores'
 import OTMs from '@/pages/OTMs'
-import QRs from '@/pages/QRs'
 import RegistrosHH from '@/pages/RegistrosHH'
-import Reportes from '@/pages/Reportes'
 import Monitor from '@/pages/Monitor'
 import Login from '@/pages/Login'
 import Usuarios from '@/pages/Usuarios'
@@ -58,12 +54,15 @@ export default function App() {
             <Route path="programacion" element={<Programacion />} />
             <Route path="supervisores" element={<Supervisores />} />
             <Route path="trabajadores" element={<Trabajadores />} />
-            <Route path="importar"     element={<ImportarPersonal />} />
-            <Route path="qrs"          element={<QRs />} />
-            <Route path="impresion-qr" element={<ImpresionQR />} />
+            {/* Importar/QRs/Impresión y Analytics son ahora PESTAÑAS de
+                Trabajadores y de Registros y HH; sus rutas siguen vivas y
+                redirigen a la pestaña, para no romper enlaces guardados. */}
+            <Route path="importar"     element={<Navigate to="/trabajadores?tab=importar" replace />} />
+            <Route path="qrs"          element={<Navigate to="/trabajadores?tab=qrs" replace />} />
+            <Route path="impresion-qr" element={<Navigate to="/trabajadores?tab=impresion" replace />} />
             <Route path="registros"    element={<RegistrosHH />} />
             <Route path="matriz"       element={<MatrizHistorica />} />
-            <Route path="reportes"     element={<Reportes />} />
+            <Route path="reportes"     element={<Navigate to="/registros?tab=analytics" replace />} />
             <Route path="monitor-tareo" element={<Navigate to="/monitor" replace />} />
             <Route path="otms"         element={<OTMs />} />
             <Route path="rdc"          element={<GenerarRDC />} />

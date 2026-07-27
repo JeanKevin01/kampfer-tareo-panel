@@ -1,14 +1,47 @@
+// ── Personal ─────────────────────────────────────────────────
+// Encargo de Jean (2026-07-26): Importar, QRs e Impresión QR eran entradas
+// sueltas del menú aunque las tres son cosas que se le hacen AL PERSONAL. Aquí
+// pasan a ser pestañas de esta misma página (la pestaña viaja en la URL, así
+// que los enlaces viejos siguen funcionando).
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Search, UserPlus, UserX, X, Loader2, CheckCircle, XCircle } from 'lucide-react'
+import {
+  Search, UserPlus, UserX, X, Loader2, CheckCircle, XCircle,
+  Users, Upload, QrCode, Printer,
+} from 'lucide-react'
 
 import { api } from '@/lib/api'
+import { TabsPagina } from '@/components/TabsPagina'
+import { useTab, type TabDef } from '@/lib/tabs'
+import ImportarPersonal from '@/pages/ImportarPersonal'
+import QRs from '@/pages/QRs'
+import ImpresionQR from '@/pages/ImpresionQR'
 
 interface Trabajador {
   id: string; nombre: string; cargo: string; dni?: string; activo: boolean
 }
 
+const TABS: TabDef[] = [
+  { id: 'personal',  label: 'Personal',     icon: Users },
+  { id: 'importar',  label: 'Importar',     icon: Upload },
+  { id: 'qrs',       label: 'QRs',          icon: QrCode },
+  { id: 'impresion', label: 'Impresión QR', icon: Printer },
+]
+
 export default function Trabajadores() {
+  const [tab, setTab] = useTab(TABS)
+  return (
+    <div className="space-y-5">
+      <TabsPagina tabs={TABS} activo={tab} onCambiar={setTab} />
+      {tab === 'personal'  && <PanelPersonal />}
+      {tab === 'importar'  && <ImportarPersonal />}
+      {tab === 'qrs'       && <QRs />}
+      {tab === 'impresion' && <ImpresionQR />}
+    </div>
+  )
+}
+
+function PanelPersonal() {
   const qc = useQueryClient()
   const [search, setSearch]         = useState('')
   const [cargoFilter, setCargoFilter] = useState('TODOS')

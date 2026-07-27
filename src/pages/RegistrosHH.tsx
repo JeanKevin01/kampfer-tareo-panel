@@ -1,8 +1,18 @@
+// ── Registros y HH ───────────────────────────────────────────
+// Encargo de Jean (2026-07-26): Analytics era una entrada de menú aparte que
+// mira exactamente los mismos registros del día, así que pasa a ser pestaña de
+// aquí. Y lo que faltaba: el HISTOGRAMA DE PERSONAL, que a diferencia del de
+// MO del Anexo 01 (solo días, ventana de semanas) permite ver la curva de toda
+// la obra agrupada por semana o por mes.
 import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Calendar, Download, Loader2 } from 'lucide-react'
+import { Calendar, Download, Loader2, Table2, BarChart3, Users } from 'lucide-react'
 
 import { api } from '@/lib/api'
+import { TabsPagina } from '@/components/TabsPagina'
+import { useTab, type TabDef } from '@/lib/tabs'
+import HistogramaPersonal from '@/components/HistogramaPersonal'
+import Reportes from '@/pages/Reportes'
 
 interface Registro { id: number; trab_id: string; otm_id: string; supervisor_id: string; fecha: string; hora: string; hh: number | null }
 interface Trabajador { id: string; nombre: string; cargo: string }
@@ -13,7 +23,25 @@ const hoy = () => {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 }
 
+const TABS: TabDef[] = [
+  { id: 'registros',   label: 'Registros del día', icon: Table2 },
+  { id: 'analytics',   label: 'Analytics',         icon: BarChart3 },
+  { id: 'histograma',  label: 'Histograma de personal', icon: Users },
+]
+
 export default function RegistrosHH() {
+  const [tab, setTab] = useTab(TABS)
+  return (
+    <div className="space-y-5">
+      <TabsPagina tabs={TABS} activo={tab} onCambiar={setTab} />
+      {tab === 'registros'  && <PanelRegistros />}
+      {tab === 'analytics'  && <Reportes />}
+      {tab === 'histograma' && <HistogramaPersonal />}
+    </div>
+  )
+}
+
+function PanelRegistros() {
   const [fecha, setFecha]         = useState(hoy())
   const [otmFilter, setOtmFilter] = useState('TODOS')
   const [supFilter, setSupFilter] = useState('TODOS')
