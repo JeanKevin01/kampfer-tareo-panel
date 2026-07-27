@@ -65,6 +65,12 @@ const stick = (i: number, fijar: boolean): React.CSSProperties | undefined =>
   (i > 1 && !fijar) ? undefined
     : { position: 'sticky', left: IZQ[i], zIndex: 10, minWidth: ANCHOS[i], width: ANCHOS[i] }
 /** Alto de la 1ª fila de cabecera (SEMANA); la 2ª (días) se pega debajo. */
+/** Rótulo de una fila de agrupación (proyecto / partida). La celda lleva
+ *  colSpan y por tanto ya ocupa todo el ancho: el `sticky` tiene que ir en el
+ *  contenido para que el texto no se vaya con el scroll horizontal. */
+const ROTULO: React.CSSProperties = {
+  position: 'sticky', left: 8, width: 'fit-content', maxWidth: '100%',
+}
 const H_SEM = 22
 // El borde de una celda `sticky` se va con el scroll cuando la tabla usa
 // border-collapse; el inset box-shadow lo reemplaza y no se despega.
@@ -973,13 +979,17 @@ function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, o
       <tr>
         <td colSpan={N_FIJAS + fechas.length} onClick={onContraer}
           title={contraido ? 'Clic para desplegar este proyecto' : 'Clic para contraer este proyecto entero'}
-          className="border border-k-border px-2 py-1 text-[11px] font-bold bg-blue-500/15 text-k-blue cursor-pointer hover:bg-blue-500/25"
-          style={{ position: 'sticky', left: 0, zIndex: 5 }}>
-          <span className="text-k-text2">{contraido ? '▸' : '▾'}</span>{' '}
-          {grupo.otm_id ?? 'Sin OTM'}{grupo.otm_desc ? ` — ${grupo.otm_desc}` : ''}
-          {contraido && (
-            <span className="text-k-text3 font-normal"> · {grupo.actividades.length} actividades ocultas</span>
-          )}
+          className="border border-k-border px-2 py-1 text-[11px] font-bold bg-blue-500/15 text-k-blue cursor-pointer hover:bg-blue-500/25">
+          {/* El `sticky` va en el CONTENIDO, no en la celda: una celda con
+              colSpan ya ocupa todo el ancho, así que pegarla a left:0 no hace
+              nada y el texto se iba con el scroll horizontal. */}
+          <div style={ROTULO}>
+            <span className="text-k-text2">{contraido ? '▸' : '▾'}</span>{' '}
+            {grupo.otm_id ?? 'Sin OTM'}{grupo.otm_desc ? ` — ${grupo.otm_desc}` : ''}
+            {contraido && (
+              <span className="text-k-text3 font-normal"> · {grupo.actividades.length} actividades ocultas</span>
+            )}
+          </div>
         </td>
       </tr>
       {!contraido && items.map(it => {
@@ -1001,24 +1011,25 @@ function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, o
             <tr>
               <td colSpan={N_FIJAS + fechas.length}
                 className="border border-k-border px-2 py-1 text-[10px] font-bold"
-                style={{ position: 'sticky', left: 0, zIndex: 5,
-                         borderLeft: `3px solid ${color}`, background: `${color}14` }}>
-                <span onClick={() => toggle(it.pid)} className="cursor-pointer hover:opacity-70"
-                  title="Partida desplegada por etapas (hitos) — clic para compactarla en una sola fila">
-                  <span className="text-k-text2">▾</span>{' '}
-                  <span style={{ color }}>●</span>{' '}
-                  <span className="text-k-text">{a0.partida_codigo} — {a0.partida_desc}</span>{' '}
-                  <span className="text-k-text3 font-normal">· {it.acts.length} etapas</span>
-                </span>
-                {/* Un clic encadena las etapas en su orden constructivo: es el
-                    80% de los vínculos que crea el planner. */}
-                {it.acts.length > 1 && (
-                  <button onClick={() => onEncadenar(it.acts.map(a => a.id))}
-                    title={`Encadenar las ${it.acts.length} etapas en secuencia FS: ${it.acts.map(a => `#${a.id}`).join(' → ')}`}
-                    className="ml-2 text-[10px] font-bold px-1.5 py-0.5 rounded border border-k-border bg-k-surface text-k-text2 hover:bg-k-raised">
-                    ⛓ Encadenar las {it.acts.length} etapas
-                  </button>
-                )}
+                style={{ borderLeft: `3px solid ${color}`, background: `${color}14` }}>
+                <div style={ROTULO}>
+                  <span onClick={() => toggle(it.pid)} className="cursor-pointer hover:opacity-70"
+                    title="Partida desplegada por etapas (hitos) — clic para compactarla en una sola fila">
+                    <span className="text-k-text2">▾</span>{' '}
+                    <span style={{ color }}>●</span>{' '}
+                    <span className="text-k-text">{a0.partida_codigo} — {a0.partida_desc}</span>{' '}
+                    <span className="text-k-text3 font-normal">· {it.acts.length} etapas</span>
+                  </span>
+                  {/* Un clic encadena las etapas en su orden constructivo: es el
+                      80% de los vínculos que crea el planner. */}
+                  {it.acts.length > 1 && (
+                    <button onClick={() => onEncadenar(it.acts.map(a => a.id))}
+                      title={`Encadenar las ${it.acts.length} etapas en secuencia FS: ${it.acts.map(a => `#${a.id}`).join(' → ')}`}
+                      className="ml-2 text-[10px] font-bold px-1.5 py-0.5 rounded border border-k-border bg-k-surface text-k-text2 hover:bg-k-raised">
+                      ⛓ Encadenar las {it.acts.length} etapas
+                    </button>
+                  )}
+                </div>
               </td>
             </tr>
             {it.acts.map(a => (
@@ -1134,15 +1145,17 @@ function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, 
             {/* # — el identificador que se teclea en DESPUÉS DE. El clic lo
                 marca para encadenar en bloque (el orden de marcado es el de
                 la secuencia). */}
-            <td className={`${tdFijo} text-center align-middle cursor-pointer select-none hover:bg-k-raised ${
-                  iSel >= 0 ? 'bg-blue-500/20' : ''}`}
+            <td className={`border border-k-border px-1 py-1 text-center align-middle cursor-pointer
+                  select-none hover:bg-k-raised ${iSel >= 0 ? 'bg-blue-500/25' : 'bg-k-raised/60'}`}
               style={stick(0, true)} onClick={() => onSel(a.id)}
               title={iSel >= 0
                 ? `Marcada en la posición ${iSel + 1} de la secuencia — clic para desmarcar`
-                : 'Clic para marcarla y encadenarla con otras'}>
-              <span className={`font-mono text-[10px] font-bold ${iSel >= 0 ? 'text-k-blue' : 'text-k-text3'}`}>
-                {iSel >= 0 ? `${iSel + 1}·` : ''}{a.id}
-              </span>
+                : `Actividad #${a.id} — este es el número que se teclea en DESPUÉS DE.\nClic para marcarla y encadenarla con otras.\nPara saltar a ella, escribe #${a.id} en el buscador.`}>
+              {iSel >= 0 && (
+                <div className="font-mono text-[9px] font-bold text-k-blue leading-none">{iSel + 1}º</div>
+              )}
+              <span className={`font-mono text-[13px] font-bold tabular-nums ${
+                iSel >= 0 ? 'text-k-blue' : 'text-k-text2'}`}>{a.id}</span>
             </td>
             <td onClick={() => (vincular.on ? onPick(a.id) : onEditar(a))}
               className={`${tdFijo} cursor-pointer hover:bg-k-raised align-top`}
