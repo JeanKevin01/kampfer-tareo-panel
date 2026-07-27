@@ -67,7 +67,9 @@ export default function CeldaDia({ prog, real, editable, esSalto, esMedio, labor
     ? `Programado: ${prog != null ? num(prog) : '—'} · Real registrado: ${num(real!)}`
     : modoProg
       ? `Programado: ${prog != null ? num(prog) : '—'} — escribe para REPLANIFICAR este día (el resto se re-prorratea); vaciar vuelve al prorrateo automático`
-      : (prog ?? 0) > 0 ? `Programado: ${num(prog!)} — escribe el avance real del día` : '')
+      : (prog ?? 0) > 0
+        ? `Programado: ${num(prog!)} — escribe el avance real del día, o pulsa Enter para registrar que salió tal como estaba previsto`
+        : '')
   const valor = registrada ? real : prog
   // Sobre el relleno sólido las marcas van en blanco; sobre celda vacía, en gris.
   const tinta = relleno ? 'text-white/85' : 'text-k-text3'
@@ -129,7 +131,16 @@ export default function CeldaDia({ prog, real, editable, esSalto, esMedio, labor
         <input key={`${prog ?? '-'}|${real ?? '-'}`} defaultValue={mostrado}
           onInput={e => { (e.target as HTMLInputElement).dataset.tocado = '1' }}
           onBlur={e => commit(e.target)}
-          onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+          // ENTER = «confirmo lo que veo». Sin escribir nada registra el avance
+          // igual al programado — el atajo de siempre para el día que salió tal
+          // como estaba previsto. Salir con clic o Tab sin teclear NO guarda:
+          // pasar por encima de una casilla no puede dar un día por hecho.
+          onKeyDown={e => {
+            const el = e.target as HTMLInputElement
+            if (e.key !== 'Enter') return
+            el.dataset.tocado = '1'
+            el.blur()
+          }}
           className={`w-11 bg-transparent text-center text-[10px] tabular-nums py-0.5 outline-none
             focus:ring-2 focus:ring-inset focus:ring-k-amber rounded
             ${relleno ? 'text-white font-bold placeholder:text-white/50' : 'text-k-plan'}`}

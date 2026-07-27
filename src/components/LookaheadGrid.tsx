@@ -1293,14 +1293,28 @@ function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, 
         // única que ve la secuencia completa, así que el cálculo va aquí.
         const lleno = (f: string) => !saltos.has(f) && ((a.prog[f] ?? 0) > 0 || a.real[f] != null)
         const runs = runsDeFila(fechas, lleno)
-        // ── Cumplida = una sola barra, sin el detalle por día ──────
-        // Decisión de Jean: lo que ya se cumplió es historia y se lee mejor
-        // como una pieza limpia con su total (estilo Project); lo que sigue
-        // abierto —o venció sin cumplirse— se queda en detalle, que es donde
-        // se trabaja y donde hace falta ver qué pasó cada día.
-        const cumplida = (a.metrado_prog ?? 0) > 0
-          && (a.estado === 'EJECUTADO' || (a.acum_real ?? 0) >= (a.metrado_prog ?? 0) - 0.0005)
-        const verBarra = cumplida && !expandida
+        // ── Cerrada = una sola barra con el veredicto ──────────────
+        // Lo que ya no espera captura es historia y se lee mejor como una pieza
+        // limpia con su total (estilo Project); lo que sigue abierto se queda
+        // en detalle, que es donde se trabaja y donde hace falta ver qué pasó
+        // cada día. Cierra por dos caminos: se registraron TODOS los días del
+        // plan, o el real ya alcanzó el meta (los días que quedaban sobran).
+        const meta = a.metrado_prog ?? 0
+        const hecho = a.acum_real ?? 0
+        const diasPlan = fechas.filter(f => !saltos.has(f) && (a.prog[f] ?? 0) > 0)
+        const todoRegistrado = diasPlan.length > 0 && diasPlan.every(f => a.real[f] != null)
+        // La barra resume TODA la actividad, así que solo aparece si toda la
+        // actividad está a la vista: si se sale del rango, el total del resumen
+        // incluiría días que no se ven y el veredicto sería una media verdad.
+        const dentroRango = fechas.length > 0
+          && a.fecha >= fechas[0] && a.fecha_fin <= fechas[fechas.length - 1]
+        const cerrada = meta > 0 && dentroRango && (todoRegistrado || hecho >= meta - 0.0005)
+        // El veredicto es lo que el planner busca de un vistazo: cumplí, me
+        // sobró metrado o me faltó. Verde con el saldo a favor, rojo con el
+        // saldo en contra — un total solo no dice si el día fue bueno.
+        const saldo = hecho - meta
+        const enContra = cerrada && saldo < -0.0005
+        const verBarra = cerrada && !expandida
         const tramos = verBarra ? tramosDeFila(fechas, lleno) : []
         // Resaltado de cadena: focal con anillo, antecesoras azul, sucesoras
         // verde. El resto NO se atenúa (antes iba a opacity-30): con el dock
@@ -1365,14 +1379,15 @@ function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, 
                     🔗{a.dep_total}
                   </button>
                 )}
-                {/* Cumplida: se resume en una barra. El botón dice que hay
+                {/* Cerrada: se resume en una barra. El botón dice que hay
                     detalle debajo, para que no parezca que se perdió. */}
-                {cumplida && (
+                {cerrada && (
                   <button onClick={e => { e.stopPropagation(); onExpandir(a.id) }}
                     title={expandida
                       ? 'Volver a la barra resumen'
-                      : 'Cumplida: se muestra como una barra. Clic para ver y editar el detalle por día.'}
-                    className="text-[9px] font-bold flex-shrink-0 px-1 rounded text-k-green hover:bg-k-raised">
+                      : 'Ya no espera registros: se muestra como una barra con el saldo. Clic para ver y editar el detalle por día.'}
+                    className={`text-[9px] font-bold flex-shrink-0 px-1 rounded hover:bg-k-raised ${
+                      enContra ? 'text-k-red' : 'text-k-green'}`}>
                     {expandida ? '⊟' : '⊞'}
                   </button>
                 )}
@@ -1465,20 +1480,30 @@ function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, 
                   enTramo.set(t.i, { largo: t.largo, ancho: t === mayor })
                   for (let k = t.i; k < t.i + t.largo; k++) dentro.add(k)
                 }
-                const total = a.acum_real ?? a.metrado_prog ?? 0
+                const und = a.und ? ` ${a.und}` : ''
+                // El saldo va EN la barra: sin él, un «✓ 4200» de un meta de
+                // 4000 se lee igual que uno de 4000 y se pierde justo el dato
+                // que el planner busca — cuánto sobró o cuánto faltó.
+                const sobra = Math.abs(saldo) > 0.0005
+                const etiqueta = `${enContra ? '⚠' : '✓'} ${numCorto(hecho)}${und}`
+                  + (sobra ? ` ${saldo > 0 ? '+' : '−'}${numCorto(Math.abs(saldo))}` : '')
+                const dictamen = !sobra ? `Cumplida al ras: ${num(hecho)}${und}, justo lo previsto.`
+                  : enContra
+                    ? `Cerrada con saldo EN CONTRA: se hizo ${num(hecho)}${und} de ${num(meta)} — faltaron ${num(-saldo)}${und}.`
+                    : `Cumplida con saldo A FAVOR: se hizo ${num(hecho)}${und} de ${num(meta)} — ${num(saldo)}${und} de más.`
                 return fechas.map((f, i) => {
                   const t = enTramo.get(i)
                   if (t) {
                     return (
                       <td key={f} colSpan={t.largo}
                         onClick={() => onExpandir(a.id)}
-                        title={`Cumplida: ${num(total)}${a.und ? ` ${a.und}` : ''} de ${num(a.metrado_prog ?? 0)}`
-                          + ` entre el ${fmtCorta(a.fecha)} y el ${fmtCorta(a.fecha_fin)}.\nClic para ver y editar el detalle por día.`}
+                        title={`${dictamen}\nEntre el ${fmtCorta(a.fecha)} y el ${fmtCorta(a.fecha_fin)}.`
+                          + '\nClic para ver y editar el detalle por día.'}
                         className="relative border-b border-k-border/50 p-0 cursor-pointer">
-                        <div className="my-0.5 mx-px min-h-[1.15rem] rounded-md bg-k-green-solido
+                        <div className={`my-0.5 mx-px min-h-[1.15rem] rounded-md overflow-hidden
                           text-white font-bold text-[10px] tabular-nums flex items-center justify-center gap-1 px-1
-                          hover:brightness-110">
-                          {t.ancho ? <>✓ {numCorto(total)}{a.und ? ` ${a.und}` : ''}</> : null}
+                          hover:brightness-110 ${enContra ? 'bg-k-red-solido' : 'bg-k-green-solido'}`}>
+                          {t.ancho ? etiqueta : null}
                         </div>
                       </td>
                     )

@@ -69,17 +69,25 @@ function Contenido({ tema }: { tema: Tema }) {
       </P>
       <H>Dos formas de ver una fila</H>
       <Tabla cab={['Estado', 'Cómo se ve']} filas={[
-        [<b>En curso o pendiente</b>,
+        [<b>Abierta</b>,
           <>Una casilla por día con su metrado, editable. Es la superficie de trabajo: aquí se
-            programa y se anota el avance.</>],
-        [<b className="text-k-green">Cumplida</b>,
-          <>Se resume en <b>una sola barra verde con el total</b> (<b>✓ 120 m³</b>): ya es historia y
-            no hace falta el detalle. Clic en la barra —o en el <b className="text-k-green">⊞</b> del
-            nombre— para abrirla y corregir un día.</>],
-        [<b>Vencida sin cumplirse</b>,
-          <>Se queda en <b>detalle día a día</b> a propósito: es justo donde quieres ver qué días
-            fallaron.</>],
+            programa y se anota el avance. Mientras quede un día del plan sin registrar, la fila
+            se queda así.</>],
+        [<b className="text-k-green">Cerrada, cumplida</b>,
+          <>Cuando ya no espera registros —todos sus días anotados, o el meta alcanzado— se resume
+            en <b>una barra verde</b> con lo hecho y el <b>saldo a favor</b>:{' '}
+            <Cel clase="border-transparent bg-k-green-solido text-white">✓ 4200 m³ +200</Cel>.
+            Sin saldo, salió al ras.</>],
+        [<b className="text-k-red">Cerrada, corta</b>,
+          <>La misma barra pero <b>roja</b>, con lo que faltó:{' '}
+            <Cel clase="border-transparent bg-k-red-solido text-white">⚠ 3600 m³ −400</Cel>. Se
+            registraron todos los días y no se llegó al metrado.</>],
       ]} />
+      <P>
+        Clic en la barra —o en el <b>⊞</b> del nombre— la abre para corregir un día; <b>⊟</b> vuelve
+        al resumen. Una actividad que <b>se sale del rango</b> de semanas que estás viendo se queda
+        en detalle: su resumen contaría días que no están a la vista.
+      </P>
       <H>El color de una celda</H>
       <Tabla cab={['Celda', 'Qué significa']} filas={[
         [<Cel clase="border-transparent bg-k-plan-solido text-white">120</Cel>,
@@ -136,6 +144,11 @@ function Contenido({ tema }: { tema: Tema }) {
         dice cómo fuiste contra lo programado. Los días <b>anteriores no se tocan</b>, y el
         <b> saldo se re-prorratea en los días que faltan</b> para llegar al meta en la F.Fin.
         Vaciar la celda borra ese avance.
+      </P>
+      <P>
+        Si el día salió <b>tal como estaba previsto</b>, basta con entrar en la celda y pulsar
+        <b> Enter</b>: registra el avance igual al programado sin teclear el número. Salir con clic
+        o con Tab <b>sin tocar nada no guarda</b>, así que puedes recorrer la fila sin miedo.
       </P>
       <H>3 · Replanificar un día futuro</H>
       <P>
