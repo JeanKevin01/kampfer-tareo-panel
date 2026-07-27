@@ -12,7 +12,6 @@ import { LookaheadGrid, EvaluacionSemanal, type ActGrid } from '@/components/Loo
 import AltaPartidasLote from '@/components/maestros/AltaPartidasLote'
 import { ProgramarLote } from '@/components/ProgramarLote'
 import { CalendarioLaboral } from '@/components/CalendarioLaboral'
-import { CalendarioMes } from '@/components/CalendarioMes'
 import HistogramaMO from '@/components/HistogramaMO'
 
 const PROYECTO_ID = 1
@@ -96,8 +95,6 @@ function agrupaPorSup(acts: Actividad[], libres: Reporte[]) {
 export default function Programacion() {
   const qc = useQueryClient()
   const [vista, setVista] = useState<'semana' | 'lookahead' | 'histograma' | 'ppc'>('semana')
-  const [laModo, setLaModo] = useState<'tabla' | 'tarjetas'>('tabla')
-  const [planModo, setPlanModo] = useState<'semana' | 'mes'>('semana')
   const [agruparSup, setAgruparSup] = useState(false)   // plan semanal separado por supervisor
   const [lunes, setLunes] = useState(() => iso(lunesDe(new Date())))
   const [modalAct, setModalAct] = useState<{ modo: 'crear'; fecha: string } | { modo: 'editar'; act: Actividad } | null>(null)
@@ -198,52 +195,30 @@ export default function Programacion() {
         ))}
       </div>
 
+      {/* Solo la tabla tipo Excel: la vista de tarjetas duplicaba la misma
+          información con menos densidad y le robaba una franja a la
+          cuadrícula (se retiró a pedido de Jean). */}
       {vista === 'lookahead' && (
-        <div className="space-y-3">
-          <div className="flex gap-1.5">
-            {([['tabla', 'Tabla (Excel)'], ['tarjetas', 'Tarjetas']] as const).map(([k, l]) => (
-              <button key={k} onClick={() => setLaModo(k)}
-                className={`text-[11px] px-2.5 py-1.5 rounded-lg border ${
-                  laModo === k ? 'border-k-amber text-k-amber bg-amber-500/10' : 'border-k-border text-k-text3 hover:bg-k-raised'}`}>
-                {l}
-              </button>
-            ))}
-          </div>
-          {laModo === 'tabla'
-            ? <LookaheadGrid onEditar={a => setModalAct({ modo: 'editar', act: desdeGrid(a) })} />
-            : <Lookahead onEditar={a => setModalAct({ modo: 'editar', act: a })}
-                onCrear={f => setModalLote(f)} />}
-        </div>
+        <LookaheadGrid onEditar={a => setModalAct({ modo: 'editar', act: desdeGrid(a) })} />
       )}
       {vista === 'histograma' && <HistogramaMO />}
 
       {vista === 'ppc' && <PanelPPC />}
 
+      {/* La vista de mes se retiró: el plan semanal es semanal por definición
+          (Last Planner) y el horizonte largo ya lo da el LookAhead. */}
       {vista === 'semana' && (
         <div className="flex gap-1.5 items-center">
-          {([['semana', 'Semana'], ['mes', 'Mes (calendario)']] as const).map(([k, l]) => (
-            <button key={k} onClick={() => setPlanModo(k)}
-              className={`text-[11px] px-2.5 py-1.5 rounded-lg border ${
-                planModo === k ? 'border-k-amber text-k-amber bg-amber-500/10' : 'border-k-border text-k-text3 hover:bg-k-raised'}`}>
-              {l}
-            </button>
-          ))}
-          {planModo === 'semana' && (
-            <button onClick={() => setAgruparSup(v => !v)}
-              title="Separa las tarjetas de cada día por supervisor"
-              className={`ml-auto flex items-center gap-1.5 text-[11px] px-2.5 py-1.5 rounded-lg border ${
-                agruparSup ? 'border-k-amber text-k-amber bg-amber-500/10' : 'border-k-border text-k-text3 hover:bg-k-raised'}`}>
-              <User size={12} /> Agrupar por supervisor
-            </button>
-          )}
+          <button onClick={() => setAgruparSup(v => !v)}
+            title="Separa las tarjetas de cada día por supervisor"
+            className={`ml-auto flex items-center gap-1.5 text-[11px] px-2.5 py-1.5 rounded-lg border ${
+              agruparSup ? 'border-k-amber text-k-amber bg-amber-500/10' : 'border-k-border text-k-text3 hover:bg-k-raised'}`}>
+            <User size={12} /> Agrupar por supervisor
+          </button>
         </div>
       )}
-      {vista === 'semana' && planModo === 'mes' && (
-        <CalendarioMes onEditar={a => setModalAct({ modo: 'editar', act: desdeGrid(a) })}
-          onCrearDia={f => setModalLote(f)} />
-      )}
 
-      {vista === 'semana' && planModo === 'semana' && <>
+      {vista === 'semana' && <>
       {/* Navegación de semana */}
       <div className="flex items-center gap-2">
         <button onClick={() => mover(-7)} className="p-1.5 rounded-lg border border-k-border text-k-text2 hover:bg-k-raised"><ChevronLeft size={15} /></button>
@@ -1294,81 +1269,6 @@ function ModalReporte({ rep, onClose }: { rep: Reporte; onClose: () => void }) {
         </div>
         {rep.fotos.length === 0 && <p className="text-k-text3 text-sm">Reporte sin fotos.</p>}
       </div>
-    </div>
-  )
-}
-
-// ── Lookahead: ¿qué se PUEDE hacer en las próximas semanas? ──
-function Lookahead({ onEditar, onCrear }: { onEditar: (a: Actividad) => void; onCrear: (fecha: string) => void }) {
-  const [nSemanas, setNSemanas] = useState(4)
-  const [desde, setDesde] = useState(() => iso(lunesDe(new Date())))
-
-  interface Resp { desde: string; semanas: { lunes: string; domingo: string; actividades: Actividad[] }[] }
-  const la = useQuery<Resp>({
-    queryKey: ['lookahead', desde, nSemanas],
-    queryFn: () => api(`/ev/programacion/lookahead?proyecto_id=${PROYECTO_ID}&desde=${desde}&semanas=${nSemanas}`),
-  })
-  const mover = (dias: number) => {
-    const d = new Date(desde + 'T12:00:00'); d.setDate(d.getDate() + dias); setDesde(iso(lunesDe(d)))
-  }
-
-  return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-2 flex-wrap">
-        <button onClick={() => mover(-7)} className="p-1.5 rounded-lg border border-k-border text-k-text2 hover:bg-k-raised"><ChevronLeft size={15} /></button>
-        <span className="text-sm font-bold text-k-text">Lookahead desde {fmtDia(desde)}</span>
-        <button onClick={() => mover(7)} className="p-1.5 rounded-lg border border-k-border text-k-text2 hover:bg-k-raised"><ChevronRight size={15} /></button>
-        <button onClick={() => setDesde(iso(lunesDe(new Date())))} className="text-xs px-2.5 py-1.5 rounded-lg border border-k-border text-k-text3 hover:bg-k-raised">Hoy</button>
-        <select value={nSemanas} onChange={e => setNSemanas(Number(e.target.value))} className={inputCls}>
-          {[3, 4, 5, 6].map(n => <option key={n} value={n}>{n} semanas</option>)}
-        </select>
-        {la.isFetching && <Loader2 size={14} className="animate-spin text-k-text3" />}
-      </div>
-
-      <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${nSemanas}, minmax(0, 1fr))` }}>
-        {(la.data?.semanas ?? []).map((s, i) => {
-          const pend = s.actividades.reduce((n, a) => n + (a.rest_pend ?? 0), 0)
-          return (
-            <div key={s.lunes} className="rounded-xl border border-k-border bg-k-surface flex flex-col min-h-[260px]">
-              <div className="px-2.5 py-2 border-b border-k-border flex items-center justify-between">
-                <div>
-                  <div className="text-[10px] uppercase font-bold text-k-text3">{i === 0 ? 'Esta semana' : `Semana +${i}`}</div>
-                  <div className="text-xs font-bold text-k-text">{fmtDia(s.lunes)} — {fmtDia(s.domingo)}</div>
-                  <div className="text-[10px] text-k-text3">
-                    {s.actividades.length} activ.{pend > 0 && <span className="text-k-red font-bold"> · ⛔ {pend} restric.</span>}
-                  </div>
-                </div>
-                <button title="Programar en esta semana" onClick={() => onCrear(s.lunes)}
-                  className="p-1 rounded-lg text-k-text3 hover:text-k-amber hover:bg-k-raised"><Plus size={15} /></button>
-              </div>
-              <div className="p-1.5 space-y-1.5 flex-1">
-                {s.actividades.map(a => (
-                  <div key={a.id} onClick={() => onEditar(a)}
-                    className="rounded-lg border border-k-border bg-k-raised/60 hover:bg-k-raised cursor-pointer p-2 space-y-0.5">
-                    <div className="flex items-center gap-1 flex-wrap">
-                      {a.otm_id && <span className="font-mono text-[9px] px-1 py-0.5 rounded bg-blue-500/15 text-k-blue">{a.otm_id}</span>}
-                      <span className={`text-[9px] font-bold px-1 py-0.5 rounded border ${ESTADO_CLR[a.estado]}`}>{ESTADO_LBL[a.estado]}</span>
-                      {(a.rest_pend ?? 0) > 0
-                        ? <span className="text-[9px] font-bold text-k-red" title="Restricciones pendientes">⛔ {a.rest_pend}</span>
-                        : a.estado === 'PROGRAMADO' && <span className="text-[9px] text-k-green" title="Sin restricciones: lista para comprometer">✓ libre</span>}
-                    </div>
-                    <div className="text-[11px] text-k-text leading-snug">{a.titulo}</div>
-                    <div className="text-[9px] text-k-text3">
-                      {fmtDia(a.fecha)}{a.partida_codigo ? ` · ${a.partida_codigo}` : ''}{a.supervisor_nombre ? ` · ${a.supervisor_nombre}` : ''}
-                    </div>
-                  </div>
-                ))}
-                {s.actividades.length === 0 && <p className="text-[10px] text-k-text3 text-center pt-8">—</p>}
-              </div>
-            </div>
-          )
-        })}
-      </div>
-      <p className="text-[11px] text-k-text3">
-        Regla Last Planner: una actividad solo debería comprometerse en el plan semanal cuando está
-        <span className="text-k-green font-bold"> ✓ libre</span> (todas sus restricciones liberadas).
-        Abre la actividad para gestionar sus restricciones.
-      </p>
     </div>
   )
 }

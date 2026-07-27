@@ -210,12 +210,35 @@ function Contenido({ tema }: { tema: Tema }) {
         la actividad le aparece en la agenda de su teléfono) y <b>DESPUÉS DE</b> con la sintaxis de
         Project. Enter o salir del campo guarda; el sistema re-prorratea y corre la cascada.
       </P>
+      <P>
+        Debajo del nombre se lee de qué <b>partida</b> es y, si programa una etapa, cuál:
+        <b className="text-violet-300/90"> ◆ Transporte (20%)</b>. Con varias etapas de la misma
+        partida en pantalla, es lo único que las distingue.
+      </P>
+      <H>Los días del rango</H>
+      <P>
+        La segunda franja lista los días entre F.Inicio y F.Fin. <b>Clic en un día</b> lo cicla:
+        se trabaja → <b className="text-k-red">∅ salto</b> (no se trabaja, pesa 0) →
+        <b className="text-sky-300"> ◐ medio día</b> (pesa 0.5) → se trabaja. Los días grises son
+        los no laborables del calendario del proyecto: ya estaban fuera del reparto.
+      </P>
+      <P>
+        <b>Ojo con lo que hace un salto:</b> no recorta el trabajo. Conserva el <b>plazo</b> en días
+        hábiles y <b>corre la F.Fin</b> — un paro de un día empuja el fin un día, y por eso aparece
+        un chip nuevo al final. El metrado total no se pierde nunca; se reparte entre los días que
+        quedan, sin tocar los ya avanzados. Y si mueves las sucesoras, la cascada las empuja sola.
+      </P>
       <H>El grafo</H>
       <P>
         Se lee de izquierda a derecha como una red: <b className="text-k-blue">antecesoras</b> →
         actividad en foco → <b className="text-green-400">sucesoras</b>. Sube y baja por la cadena
         mientras haya un solo vínculo; donde hay varias, se muestran en paralelo.
         <b> Clic en cualquier tarjeta</b> la trae a la franja de arriba, y editas esa sin cerrar nada.
+      </P>
+      <P>
+        En la cuadrícula, la cadena de la actividad en foco queda pintada (antecesoras en azul,
+        sucesoras en verde) pero <b>el resto de filas no se atenúa</b>: así se ven igual de claras
+        las que todavía no tienen ningún vínculo, que suelen ser las que quieres atar.
       </P>
       <P>
         <b>⌄ Solo datos</b> pliega el grafo y deja la franja: es el modo para programar rápido

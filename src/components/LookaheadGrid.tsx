@@ -100,8 +100,10 @@ const H_SEM = 22
 // Dock inferior de dependencias: plegado deja solo la franja de datos
 // editables; desplegado agrega el grafo. El grid se acorta lo mismo que mide,
 // así nunca queda una fila tapada.
-const ALTO_DOCK = 244
-const ALTO_DOCK_MIN = 52
+const ALTO_FRANJA = 52         // franja de datos (metrado, fechas, supervisor…)
+const ALTO_CHIPS = 34          // franja de los días del rango (∅ / ◐)
+const ALTO_DOCK = 278
+const ALTO_DOCK_MIN = ALTO_FRANJA + ALTO_CHIPS
 // El borde de una celda `sticky` se va con el scroll cuando la tabla usa
 // border-collapse; el inset box-shadow lo reemplaza y no se despega.
 const thSticky = (top: number, z = 30): React.CSSProperties => ({
@@ -771,6 +773,32 @@ function PanelDeps({ actId, data, grafo, caja, sups, onGrafo, onCerrar, onIr, on
     cur = ids.length === 1 ? porId.get(ids[0]) : undefined
   }
 
+  // ── Días del rango de la actividad en foco ───────────────────
+  // Mismo ciclo que los chips del modal: normal → ∅ salto → ◐ medio día.
+  // Se manda el par completo (el API lo trata como "el planner tocó los días"
+  // y re-prorratea el metrado entre los hábiles que quedan).
+  const dias: string[] = []
+  {
+    const d = new Date(focal.fecha + 'T12:00:00')
+    const fin = new Date(focal.fecha_fin + 'T12:00:00')
+    while (d <= fin && dias.length < 60) { dias.push(iso(d)); d.setDate(d.getDate() + 1) }
+  }
+  const saltos = new Set(focal.dias_salto ?? [])
+  const medios = new Set(focal.dias_medio ?? [])
+  const diasSemana = new Set(data.dias_semana ?? [1, 2, 3, 4, 5, 6, 7])
+  const feriados = new Set(data.feriados ?? [])
+  const laborable = (f: string) => diasSemana.has(isoDow(f)) && !feriados.has(f)
+  const ciclarDia = (f: string) => {
+    const s = [...saltos]; const m = [...medios]
+    if (saltos.has(f)) {                       // salto → medio día
+      onGuardarAct(focal.id, { dias_salto: s.filter(x => x !== f), dias_medio: [...m, f].sort() })
+    } else if (medios.has(f)) {                // medio día → normal
+      onGuardarAct(focal.id, { dias_salto: s, dias_medio: m.filter(x => x !== f) })
+    } else {                                   // normal → salto
+      onGuardarAct(focal.id, { dias_salto: [...s, f].sort(), dias_medio: m })
+    }
+  }
+
   // Tarjeta del grafo. Clic = traer esa actividad al foco: sus datos y sus
   // vínculos pasan a la franja de arriba, así nada se edita en dos sitios.
   const Tarjeta = ({ n, clr }: { n: Nodo; clr: 'azul' | 'verde' }) => {
@@ -813,13 +841,24 @@ function PanelDeps({ actId, data, grafo, caja, sups, onGrafo, onCerrar, onIr, on
           Es lo mínimo indispensable para programar (metrado, fechas, plazo,
           responsable y vínculos) sin tapar ni una columna de días del grid. */}
       <div className="flex items-center gap-2.5 px-3 overflow-x-auto flex-shrink-0 border-b border-k-border"
-        style={{ height: ALTO_DOCK_MIN }}>
+        style={{ height: ALTO_FRANJA }}>
         <span className={`w-2 h-2 rounded-full flex-shrink-0 ${ESTADO_DOT[focal.estado] ?? 'bg-zinc-500'}`}
           title={focal.estado} />
-        <div className="w-[190px] flex-shrink-0">
+        {/* La ETAPA (hito) es lo que dice qué parte de la partida se está
+            programando — sin ella dos filas de la misma partida se confunden. */}
+        <div className="w-[210px] flex-shrink-0">
           <p className="text-[12px] font-bold text-k-text truncate" title={focal.titulo}>{focal.titulo}</p>
-          <p className="text-[9px] text-k-text3 font-mono truncate">
-            #{focal.id}{focal.partida_codigo ? ` · 📌 ${focal.partida_codigo}` : ''}
+          <p className="text-[9px] truncate"
+            title={focal.partida_desc ? `📌 ${focal.partida_codigo} — ${focal.partida_desc}` : undefined}>
+            <span className="text-k-text3 font-mono">
+              #{focal.id}{focal.partida_codigo ? ` · 📌 ${focal.partida_codigo}` : ''}
+            </span>
+            {focal.hito_desc && (
+              <span className="text-violet-300/90"
+                title="Etapa (hito) de la partida: su avance alimenta ese hito en el % de Valor Ganado">
+                {' '}◆ {focal.hito_desc}{focal.hito_peso != null ? ` (${Math.round(focal.hito_peso * 100)}%)` : ''}
+              </span>
+            )}
           </p>
         </div>
         <CampoAct etiqueta={focal.und ? `Metrado (${focal.und})` : 'Metrado'} tipo="text" ancho="w-20"
@@ -889,6 +928,39 @@ function PanelDeps({ actId, data, grafo, caja, sups, onGrafo, onCerrar, onIr, on
           </button>
           <button onClick={onCerrar} title="Cerrar (Esc)" className="text-k-text3 hover:text-k-text px-1">✕</button>
         </div>
+      </div>
+
+      {/* ── Franja 2: los días del rango ──────────────────────────────
+          Estaban solo dentro del modal de la actividad; aquí se editan en el
+          mismo sitio que las fechas y el metrado (encargo de Jean). Clic cicla
+          se trabaja → ∅ salto → ◐ medio día, y el API re-prorratea al vuelo. */}
+      <div className="flex items-center gap-1.5 px-3 overflow-x-auto flex-shrink-0 border-b border-k-border"
+        style={{ height: ALTO_CHIPS }}>
+        <span className="text-[9px] uppercase font-bold text-k-text3 tracking-wide flex-shrink-0"
+          title="Clic en un día: se trabaja → ∅ salto (peso 0) → ◐ medio día (peso 0.5). El metrado se reparte solo entre lo que queda.">
+          Días del rango
+        </span>
+        {dias.length <= 1 ? (
+          <span className="text-[10px] text-k-text3">Un solo día: no hay nada que saltar.</span>
+        ) : dias.map(f => {
+          const salto = saltos.has(f)
+          const medio = medios.has(f)
+          const habil = laborable(f)
+          return (
+            <button key={f} onClick={() => ciclarDia(f)}
+              title={!habil ? 'Día no laborable del calendario del proyecto (ya no recibe metrado)'
+                : salto ? 'Salto ∅: no se trabaja (clic → medio día)'
+                : medio ? 'Medio día ◐: pesa 0.5 (clic → normal)'
+                : 'Se trabaja completo (clic → salto)'}
+              className={`text-[10px] px-1.5 py-1 rounded border font-mono flex-shrink-0 ${
+                salto ? 'border-red-500/40 bg-red-500/15 text-k-red line-through'
+                : medio ? 'border-sky-500/40 bg-sky-500/15 text-sky-300'
+                : !habil ? 'border-k-border bg-k-border/50 text-k-text3 line-through'
+                : 'border-k-border bg-k-raised text-k-text2 hover:brightness-125'}`}>
+              {medio ? '◐ ' : ''}{DIAS_1[isoDow(f) - 1]} {f.slice(8, 10)}
+            </button>
+          )
+        })}
       </div>
 
       {grafo && (
@@ -1155,12 +1227,15 @@ function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, 
         const saltos = new Set(a.dias_salto ?? [])
         const medios = new Set(a.dias_medio ?? [])
         const manuales = new Set(a.prog_manual ?? [])
-        // Resaltado de cadena: focal normal, antecesoras azul, sucesoras violeta, resto atenuado
+        // Resaltado de cadena: focal con anillo, antecesoras azul, sucesoras
+        // verde. El resto NO se atenúa (antes iba a opacity-30): con el dock
+        // abierto costaba ver justo las que aún no tienen vínculo, que son las
+        // que uno quiere agregar.
         const claseCadena = !cadena ? ''
           : cadena.focal === a.id ? 'ring-1 ring-inset ring-amber-500/50'
           : cadena.azules.has(a.id) ? 'bg-blue-500/10'
           : cadena.verdes.has(a.id) ? 'bg-green-500/10'
-          : 'opacity-30'
+          : ''
         const esPrimera = vincular.on && vincular.primera === a.id
         const iSel = sel.indexOf(a.id)
         const revisar = motivoRevisar(a)
