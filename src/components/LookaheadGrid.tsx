@@ -20,6 +20,7 @@ export interface ActGrid {
   fecha: string; fecha_fin: string
   otm_id?: string | null; partida_id?: number | null
   partida_codigo?: string | null; partida_desc?: string | null
+  partida_hh_presup?: number | null; partida_naturaleza?: string | null
   responsable?: string | null; supervisor_id?: string | null; supervisor_nombre?: string | null
   causa_nc?: string | null; causa_nc_cat?: string | null
   causa_nc_planner?: string | null; causa_nc_planner_cat?: string | null
@@ -71,6 +72,20 @@ const stick = (i: number, fijar: boolean): React.CSSProperties | undefined =>
 const ROTULO: React.CSSProperties = {
   position: 'sticky', left: 8, width: 'fit-content', maxWidth: '100%',
 }
+/** Dos problemas que hay que ver a la primera, ambos en rojo:
+ *  · metrado SIN partida → no se puede anotar el avance, no suma al valor
+ *    ganado y el PPC la cuenta como no cumplida aunque el trabajo se haga;
+ *  · partida sin HH presupuestadas → normalmente un ADICIONAL al que todavía
+ *    no le llegó el dato (se sabe al aprobarlo o al terminarlo). */
+const motivoRevisar = (a: ActGrid): string | null => {
+  if ((a.metrado_prog ?? 0) > 0 && !a.partida_id)
+    return 'Tiene metrado pero NO tiene partida: no se puede registrar su avance real, no suma al valor ganado y el PPC la contará como no cumplida.\nÁbrela y elige la partida, o bórrale el metrado si es una actividad de apoyo.'
+  if (a.partida_id && (a.partida_hh_presup ?? 0) <= 0)
+    return `A la partida${a.partida_naturaleza === 'ADICIONAL' ? ' (ADICIONAL)' : ''} le faltan las HH presupuestadas.\nHasta cargarlas, el trabajo consume horas sin ganar ninguna: el rendimiento sale castigado.\nCárgalas en Valor Ganado → Partidas cuando tengas el dato.`
+  return null
+}
+const porRevisar = (a: ActGrid) => motivoRevisar(a) !== null
+
 const H_SEM = 22
 // El borde de una celda `sticky` se va con el scroll cuando la tabla usa
 // border-collapse; el inset box-shadow lo reemplaza y no se despega.
@@ -107,6 +122,7 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
   const [fSup, setFSup] = useState('')
   const [fEstado, setFEstado] = useState('')
   const [soloRest, setSoloRest] = useState(false)
+  const [soloRevisar, setSoloRevisar] = useState(false)
   const [compacto, setCompacto] = useState(false)
   // Partidas compactadas y proyectos contraídos: viven aquí (no en el grupo)
   // para que «Contraer todo» pueda actuar sobre todos de una vez.
@@ -271,7 +287,7 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
   // Se normalizan tildes para que «liberacion» encuentre «Liberación».
   const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
   const q = norm(busca.trim())
-  const hayFiltro = !!(q || fSup || fEstado || soloRest)
+  const hayFiltro = !!(q || fSup || fEstado || soloRest || soloRevisar)
   const supervisores = useMemo(() => {
     const m = new Map<string, string>()
     for (const g of d?.grupos ?? []) {
@@ -289,13 +305,14 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
         if (fSup && (a.supervisor_id ?? '') !== fSup) return false
         if (fEstado && a.estado !== fEstado) return false
         if (soloRest && !(a.rest_pend ?? 0)) return false
+        if (soloRevisar && !porRevisar(a)) return false
         if (!q) return true
         return norm([a.titulo, a.partida_codigo, a.partida_desc, a.hito_desc,
                      a.supervisor_nombre, a.responsable, `#${a.id}`]
           .filter(Boolean).join(' ')).includes(q)
       }) }))
       .filter(g => g.actividades.length > 0)
-  }, [d, q, fSup, fEstado, soloRest, hayFiltro])
+  }, [d, q, fSup, fEstado, soloRest, soloRevisar, hayFiltro])
   const nTotal = (d?.grupos ?? []).reduce((s, g) => s + g.actividades.length, 0)
   const nVisible = grupos.reduce((s, g) => s + g.actividades.length, 0)
   const limpiarFiltros = () => { setBusca(''); setFSup(''); setFEstado(''); setSoloRest(false) }
@@ -417,6 +434,11 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
           title="Solo las actividades que todavía tienen restricciones sin liberar">
           <input type="checkbox" checked={soloRest} onChange={e => setSoloRest(e.target.checked)} className="accent-amber-500" />
           ⛔ Con restricción
+        </label>
+        <label className="flex items-center gap-1.5 text-xs text-k-text2 px-2.5 py-2 rounded-lg border border-k-border bg-k-raised cursor-pointer select-none"
+          title="Las que hay que revisar: con metrado pero sin partida (no se puede anotar su avance y el PPC las castiga), o con la partida sin presupuesto de HH cargado">
+          <input type="checkbox" checked={soloRevisar} onChange={e => setSoloRevisar(e.target.checked)} className="accent-red-500" />
+          🔴 Por revisar
         </label>
         <button onClick={contraerTodo} title="Compactar todas las partidas por etapas y contraer los proyectos"
           className="text-xs px-2.5 py-2 rounded-lg border border-k-border bg-k-raised text-k-text2 hover:bg-k-border">
@@ -1138,6 +1160,7 @@ function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, 
           : 'opacity-30'
         const esPrimera = vincular.on && vincular.primera === a.id
         const iSel = sel.indexOf(a.id)
+        const revisar = motivoRevisar(a)
         return (
           <tr key={a.id} className={`${a.estado === 'CANCELADO' ? 'opacity-50' : ''} ${claseCadena} ${esPrimera ? 'bg-amber-500/15' : ''}`}
             onMouseEnter={() => onHover((a.dep_total ?? 0) > 0 ? a.id : null)}
@@ -1168,6 +1191,10 @@ function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, 
               <div className={`flex items-center gap-1.5${color ? ' pl-2' : ''}`}>
                 <span className={`w-2 h-2 rounded-full flex-shrink-0 ${ESTADO_DOT[a.estado] ?? 'bg-zinc-500'}`} />
                 <span className="text-k-text leading-tight">{a.titulo}</span>
+                {revisar && (
+                  <span title={revisar} className="text-[9px] font-bold text-k-red flex-shrink-0
+                    px-1 rounded bg-red-500/15 border border-red-500/40 cursor-help">🔴</span>
+                )}
                 {(a.rest_pend ?? 0) > 0 && <span className="text-[9px] font-bold text-k-red flex-shrink-0">⛔{a.rest_pend}</span>}
                 {(a.dep_total ?? 0) > 0 && (
                   <button onClick={e => { e.stopPropagation(); onCadena(a.id) }}

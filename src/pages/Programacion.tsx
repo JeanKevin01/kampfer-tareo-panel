@@ -399,6 +399,7 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
   })
   const [error, setError] = useState('')
   const [showNC, setShowNC] = useState(false)
+  const [nuevaPartida, setNuevaPartida] = useState(false)
 
   // OJO: /ev/otms devuelve `otm_id` (no `id`) — usar otro nombre rompe el select.
   const otms = useQuery<{ otm_id: string; descripcion: string }[]>({
@@ -426,6 +427,13 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
       und: !f.und && p?.unidad ? p.unidad : f.und,
     }))
   }
+
+  // Trabajo de producción = metrado + partida. Sin partida el metrado es un
+  // espejismo: no hay dónde anotar el avance real (vive en la partida), no
+  // suma al valor ganado y el PPC la cuenta como NO CUMPLIDA al cerrar la
+  // semana aunque el trabajo se haya hecho. Se avisa acá y el API lo rechaza.
+  const metradoNum = form.metrado_prog.trim() === '' ? null : Number(form.metrado_prog)
+  const faltaPartida = !!metradoNum && !form.partida_id
 
   const guardar = useMutation({
     mutationFn: () => {
@@ -563,13 +571,37 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
             </select>
           </div>
           {form.otm_id && (
-            <select value={form.partida_id || ''} onChange={e => elegirPartida(Number(e.target.value) || 0)}
-              className={inputCls} title="Partida de control que se trabajará (1 actividad = 1 partida)">
-              <option value="">Sin partida específica (trabajo general de el proyecto)</option>
-              {(partidas.data ?? []).map(p => (
-                <option key={p.id} value={p.id}>{p.codigo} — {(p.descripcion ?? '').slice(0, 48)}</option>
-              ))}
-            </select>
+            <>
+              <select value={form.partida_id || ''}
+                onChange={e => {
+                  if (e.target.value === '__nueva') { setNuevaPartida(true); return }
+                  elegirPartida(Number(e.target.value) || 0)
+                }}
+                className={`${inputCls} ${faltaPartida ? 'border-red-500/70' : ''}`}
+                title="Partida de control que se trabajará (1 actividad = 1 partida)">
+                <option value="">Sin partida — solo para actividades de apoyo (sin metrado)</option>
+                {(partidas.data ?? []).map(p => (
+                  <option key={p.id} value={p.id}>{p.codigo} — {(p.descripcion ?? '').slice(0, 48)}</option>
+                ))}
+                <option value="__nueva">＋ Nueva partida (adicional no presupuestado)…</option>
+              </select>
+              {faltaPartida && (
+                <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-[11px] text-k-red">
+                  <b>Falta la partida.</b> Con metrado y sin partida no se puede registrar el avance
+                  real, la actividad no suma al valor ganado y el <b>PPC la contará como no
+                  cumplida</b> aunque el trabajo se haga. Elige una partida, crea el adicional, o
+                  borra el metrado si es una actividad de apoyo (reunión, traslado…).
+                </div>
+              )}
+              {nuevaPartida && (
+                <NuevaPartidaAdicional otmId={form.otm_id!} metrado={form.metrado_prog} und={form.und}
+                  onCancelar={() => setNuevaPartida(false)}
+                  onCreada={pid => {
+                    setNuevaPartida(false)
+                    partidas.refetch().then(() => setForm(f => ({ ...f, partida_id: pid })))
+                  }} />
+              )}
+            </>
           )}
           <div className="grid grid-cols-2 gap-2">
             <select value={form.supervisor_id ?? ''} onChange={e => setForm({ ...form, supervisor_id: e.target.value })}
@@ -583,7 +615,9 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
           <textarea placeholder="Descripción (alcance del día, metrados previstos…)" value={form.descripcion ?? ''}
             onChange={e => setForm({ ...form, descripcion: e.target.value })} rows={3} className={inputCls} />
           {error && <p className="text-k-red text-xs">{error}</p>}
-          <button onClick={() => guardar.mutate()} disabled={guardar.isPending || !form.titulo.trim()}
+          <button onClick={() => guardar.mutate()}
+            disabled={guardar.isPending || !form.titulo.trim() || faltaPartida}
+            title={faltaPartida ? 'Elige la partida o borra el metrado' : undefined}
             className="w-full bg-k-amber text-black font-bold text-sm py-2.5 rounded-lg disabled:opacity-40">
             {guardar.isPending ? 'Guardando…' : editar ? 'Guardar cambios' : 'Programar'}
           </button>
@@ -1556,6 +1590,91 @@ function PanelAlmacenamiento({ onCambio }: { onCambio: () => void }) {
         conservan siempre. El botón Purgar es solo para liberar disco antes de tiempo — imprime
         el <b>Reporte semanal</b> (PDF con fotos) antes: es tu archivo permanente.
       </p>
+    </div>
+  )
+}
+
+// ── Adicional no presupuestado ───────────────────────────────
+// Lo que el cliente pide en obra y no estaba en el presupuesto meta. Antes no
+// tenía dónde ir: el planner lo cargaba como actividad libre y quedaba sin
+// medir (y castigando el PPC). Ahora se crea su partida desde aquí mismo.
+//
+// Clave del negocio (Jean): en obra las HH del adicional NO se conocen todavía
+// — el dato llega cuando lo aprueban o cuando termina. Por eso el presupuesto
+// es OPCIONAL y, mientras falte, la partida queda marcada en ROJO en el
+// LookAhead para poder completarla en cuanto se tenga.
+function NuevaPartidaAdicional({ otmId, metrado, und, onCancelar, onCreada }: {
+  otmId: string; metrado: string; und: string
+  onCancelar: () => void; onCreada: (partidaId: number) => void
+}) {
+  const [f, setF] = useState({
+    codigo: '', descripcion: '', unidad: und || '', fase: '',
+    metrado_presup: metrado || '', hh_presup: '',
+  })
+  const [err, setErr] = useState('')
+  // La fase es la clave con la que el RO cruza costo ↔ meta: sin ella el
+  // adicional no aparecería en el resultado operativo por fase.
+  const fases = useQuery<{ codigo: string; nombre: string }[]>({
+    queryKey: ['fases-catalogo'],
+    queryFn: () => api('/ev/fases?proyecto_id=1'),
+  })
+  const crear = useMutation({
+    mutationFn: () => api<{ id: number }>('/ev/partidas', {
+      method: 'POST',
+      body: JSON.stringify({
+        codigo: f.codigo.trim(), otm_id: otmId, descripcion: f.descripcion.trim(),
+        unidad: f.unidad.trim(), fase: f.fase.trim(),
+        metrado_presup: Number(f.metrado_presup) || 0,
+        hh_presup: Number(f.hh_presup) || 0,      // 0 = todavía sin aprobar
+        naturaleza: 'ADICIONAL',
+        hitos: [{ numero: 1, descripcion: 'Ejecución', peso: 1, es_principal: true }],
+      }),
+    }),
+    onSuccess: r => onCreada(r.id),
+    onError: (e: Error) => setErr(e.message),
+  })
+  const listo = f.codigo.trim() && f.descripcion.trim() && f.unidad.trim() && f.fase.trim()
+  return (
+    <div className="rounded-lg border border-red-500/40 bg-red-500/5 px-3 py-2.5 space-y-2">
+      <p className="text-[11px] font-bold text-k-red">＋ Nueva partida — adicional no presupuestado</p>
+      <div className="grid grid-cols-2 gap-2">
+        <input placeholder="Código (ej. ADIC-01)" value={f.codigo}
+          onChange={e => setF({ ...f, codigo: e.target.value })} className={inputCls} />
+        <input placeholder="Unidad (m3, hh…)" value={f.unidad}
+          onChange={e => setF({ ...f, unidad: e.target.value })} className={inputCls} />
+      </div>
+      <input placeholder="Descripción del adicional" value={f.descripcion}
+        onChange={e => setF({ ...f, descripcion: e.target.value })} className={inputCls} />
+      <input placeholder="Fase (ej. EST, CIV…)" value={f.fase} list="fases-adic"
+        title="La fase es la clave con la que el Resultado Operativo cruza el costo con la meta"
+        onChange={e => setF({ ...f, fase: e.target.value })} className={inputCls} />
+      <datalist id="fases-adic">
+        {(fases.data ?? []).map(x => <option key={x.codigo} value={x.codigo}>{x.nombre}</option>)}
+      </datalist>
+      <div className="grid grid-cols-2 gap-2">
+        <input placeholder="Metrado" value={f.metrado_presup} inputMode="decimal"
+          onChange={e => setF({ ...f, metrado_presup: e.target.value })} className={inputCls} />
+        <input placeholder="HH presupuestadas (opcional)" value={f.hh_presup} inputMode="decimal"
+          title="Si el adicional todavía no está aprobado, déjalo vacío: la partida quedará marcada en rojo hasta que cargues el dato"
+          onChange={e => setF({ ...f, hh_presup: e.target.value })} className={inputCls} />
+      </div>
+      <p className="text-[10px] text-k-text3">
+        Si aún no tienes las <b>HH</b> (normal hasta que aprueben el adicional), déjalas vacías: la
+        partida queda <b className="text-k-red">en rojo</b> en el LookAhead para completarla después.
+        Mientras tanto el trabajo <b>sí se mide</b> — consume HH del tareo sin ganar ninguna, que es
+        lo que un adicional le hace al rendimiento.
+      </p>
+      {err && <p className="text-k-red text-xs">{err}</p>}
+      <div className="flex gap-2">
+        <button onClick={() => crear.mutate()} disabled={!listo || crear.isPending}
+          className="flex-1 bg-k-amber text-black font-bold text-xs py-2 rounded-lg disabled:opacity-40">
+          {crear.isPending ? 'Creando…' : 'Crear y usar esta partida'}
+        </button>
+        <button onClick={onCancelar}
+          className="px-3 text-xs rounded-lg border border-k-border text-k-text2 hover:bg-k-raised">
+          Cancelar
+        </button>
+      </div>
     </div>
   )
 }
