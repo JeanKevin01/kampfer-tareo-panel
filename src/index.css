@@ -36,6 +36,13 @@
     --k-plan: 56 189 248;   --k-alerta: 251 191 36;
     --k-wbs: 167 139 250;   --k-dinero: 45 212 191;
 
+    /* Rellenos SÓLIDOS de las barras del LookAhead. Los tonos de arriba son
+       para texto e iconos; una barra pintada con ellos al 20% se confunde con
+       el fondo. Estos son los del bloque de color, siempre con texto blanco
+       encima, y por eso son más oscuros que su token hermano. */
+    --k-plan-solido: 2 132 199;   --k-green-solido: 14 159 110;
+    --k-red-solido: 224 67 67;    --k-alerta-solido: 199 124 8;
+
     /* Paleta semántica de los módulos EV (árbol WBS, ISP, rendimientos).
        DEFAULT = tonos pastel optimizados para fondo OSCURO; en :root.claro se
        oscurecen para ser legibles sobre blanco (mismo hue, más contraste). */
@@ -125,6 +132,8 @@
        luminosidad para mantener el contraste. */
     --k-plan: 3 105 161;   --k-alerta: 180 83 9;
     --k-wbs: 109 40 217;   --k-dinero: 13 148 136;
+    --k-plan-solido: 3 105 161;   --k-green-solido: 5 150 105;
+    --k-red-solido: 220 38 38;    --k-alerta-solido: 180 83 9;
     /* Paleta EV oscurecida para fondo claro (mismo hue, contraste AA) */
     --nivel-1: #c0392b; --nivel-2: #0f766e; --nivel-3: #6d28d9; --nivel-4: #b45309;
     --pf-good: #0d9488; --pf-mid: #a16207;  --pf-bad: #dc2626;

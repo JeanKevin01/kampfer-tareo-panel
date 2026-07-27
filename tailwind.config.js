@@ -44,6 +44,11 @@ export default {
           alerta: 'rgb(var(--k-alerta) / <alpha-value>)',   // atención, aún no es problema
           wbs: 'rgb(var(--k-wbs) / <alpha-value>)',         // estructura: etapas, partidas
           dinero: 'rgb(var(--k-dinero) / <alpha-value>)',   // costo, venta, margen
+          // Rellenos sólidos de las barras (texto blanco encima).
+          'plan-solido': 'rgb(var(--k-plan-solido) / <alpha-value>)',
+          'green-solido': 'rgb(var(--k-green-solido) / <alpha-value>)',
+          'red-solido': 'rgb(var(--k-red-solido) / <alpha-value>)',
+          'alerta-solido': 'rgb(var(--k-alerta-solido) / <alpha-value>)',
         }
       },
       borderRadius: {

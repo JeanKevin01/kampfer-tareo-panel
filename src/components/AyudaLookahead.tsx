@@ -66,17 +66,18 @@ function Contenido({ tema }: { tema: Tema }) {
       </P>
       <H>El color de una celda</H>
       <Tabla cab={['Celda', 'Qué significa']} filas={[
-        [<Cel clase="border-k-plan/50 bg-k-plan/20 text-k-plan">120</Cel>,
+        [<Cel clase="border-transparent bg-k-plan-solido text-white">120</Cel>,
           <>PROGRAMADO. Es la <b>línea base</b>: el metrado meta repartido entre los días laborables
             del rango, saltando feriados, domingos y saltos ∅.</>],
-        [<Cel clase="border-green-500/50 bg-green-500/20 text-green-200">140 ✓</Cel>,
+        [<Cel clase="border-transparent bg-k-green-solido text-white">140 ✓</Cel>,
           <>Avance real <b>mayor</b> que lo programado ese día.</>],
-        [<Cel clase="border-amber-500/50 bg-amber-500/20 text-amber-200">120 ✓</Cel>,
+        [<Cel clase="border-transparent bg-k-alerta-solido text-white">120 ✓</Cel>,
           <>Avance real <b>igual</b> a lo programado.</>],
-        [<Cel clase="border-red-500/50 bg-red-500/20 text-red-200">80 ✓</Cel>,
+        [<Cel clase="border-transparent bg-k-red-solido text-white">80 ✓</Cel>,
           <>Avance real <b>menor</b>: ese día se quedó corto.</>],
-        [<Cel clase="border-k-border bg-k-border/60 text-k-text2">gris</Cel>,
-          <>Día no laborable: domingo, feriado del calendario del proyecto.</>],
+        [<Cel clase="border-k-border bg-k-border text-k-text2">gris</Cel>,
+          <>Día no laborable: domingo, feriado del calendario del proyecto. La banda baja por toda
+            la columna, así la semana se lee como semana.</>],
         [<Cel clase="border-k-border text-k-text3">∅</Cel>,
           <>Salto intencional de esa actividad (paro programado). No se le reparte metrado.</>],
         [<Cel clase="border-k-border text-k-text3">◐</Cel>, <>Medio día: pesa 0.5 al repartir.</>],

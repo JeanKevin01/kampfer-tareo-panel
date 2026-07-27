@@ -11,7 +11,7 @@ import { ChevronLeft, ChevronRight, Loader2, Printer, Search } from 'lucide-reac
 import { api } from '@/lib/api'
 import { CNC } from '@/lib/catalogos'
 import { lunesDe, iso } from '@/lib/semana'
-import { DIAS_1, fmtDia, fmtCorta, num, isoDow, clrReal, parseDeps, fmtDeps, runsDeFila } from '@/lib/lookahead'
+import { DIAS_1, fmtDia, fmtCorta, num, isoDow, clrRealTxt, parseDeps, fmtDeps, runsDeFila } from '@/lib/lookahead'
 import type { TipoDep } from '@/lib/lookahead'
 import CeldaDia from '@/components/CeldaDia'
 import AyudaLookahead from '@/components/AyudaLookahead'
@@ -587,9 +587,9 @@ export function LookaheadGrid({ onEditar, onProgramar }: {
               {(d?.fechas ?? []).map((f, i) => (
                 <th key={f} style={{
                   ...thSticky(H_SEM, 20),
-                  // La línea de HOY se suma al inset del sticky, no lo pisa
-                  // (si no, la cabecera pierde su borde al desplazarse).
-                  ...(f === hoy ? { boxShadow: 'inset 2px 0 0 rgb(var(--k-green)), inset 0 -1px 0 rgb(var(--k-border))' } : {}),
+                  // Mismo borde que las celdas, para que la línea de hoy arranque
+                  // en la cabecera y baje entera.
+                  ...(f === hoy ? { borderLeft: '3px solid rgb(var(--k-green))' } : {}),
                 }}
                   title={f === hoy ? 'Hoy' : feriados.has(f) ? 'Feriado / día no laborable' : !laborable(f) ? 'Día no laborable (calendario)' : ''}
                   className={`border-b border-k-border/60 px-0.5 py-0.5 text-[9px] font-bold min-w-[44px]
@@ -1568,7 +1568,7 @@ function EvalGrupo({ grupo, fechas, cumplimiento, restricciones, onCausaPlanner 
             {fechas.map(f => (
               <td key={f} className="border border-k-border/60 px-0.5 py-0.5 text-center text-[10px]">
                 {(a.prog[f] ?? 0) > 0 && <div className="text-k-plan">{num(a.prog[f])}</div>}
-                {a.real[f] != null && <div className={clrReal(a.real[f], a.prog[f]).replace(/bg-\S+/g, '')}>{num(a.real[f])}</div>}
+                {a.real[f] != null && <div className={clrRealTxt(a.real[f], a.prog[f])}>{num(a.real[f])}</div>}
               </td>
             ))}
             <td className={`${tdFijo} text-center font-mono font-bold text-k-plan`}>{comprom > 0 ? num(comprom) : '—'}</td>
