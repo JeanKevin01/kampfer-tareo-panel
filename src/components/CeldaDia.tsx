@@ -93,13 +93,21 @@ export default function CeldaDia({ prog, real, editable, esSalto, esMedio, labor
     )
   }
   // Lo que se ve en la casilla va recortado (cabe en 44 px); si el planner no
-  // toca nada, el texto sigue siendo ese y NO se guarda nada — así el recorte
-  // nunca pisa el valor exacto que hay detrás.
+  // toca nada NO se guarda nada — así el recorte nunca pisa el valor exacto que
+  // hay detrás. Lo que decide eso es si TECLEÓ (dataset.tocado), no si el texto
+  // cambió: la celda muestra el PROGRAMADO hasta que hay avance, y escribir el
+  // mismo número que el plan («hice lo previsto») es el caso más frecuente de
+  // todos — comparar contra el texto lo daba por «no editado» y no guardaba.
   const mostrado = valor != null && valor > 0 ? numCorto(valor) : ''
   const commit = (el: HTMLInputElement) => {
+    const tecleo = el.dataset.tocado === '1'
+    delete el.dataset.tocado
+    if (!tecleo) return
     const limpio = el.value.trim()
-    if (limpio === mostrado) return                 // no lo tocó
-    const v = limpio === '' ? null : Number(limpio)
+    // Si dejó el texto tal cual, vale el número EXACTO que hay detrás y no el
+    // recortado que se ve: teclear «41.7» sobre un 41.6667 no lo redondea.
+    const v = limpio === '' ? null
+      : limpio === mostrado && valor != null ? valor : Number(limpio)
     if (limpio !== '' && (Number.isNaN(v) || v! < 0)) { el.value = mostrado; return }
     if (modoProg) {
       // Replanificar el PROGRAMADO del día; vaciar libera la celda manual.
@@ -119,6 +127,7 @@ export default function CeldaDia({ prog, real, editable, esSalto, esMedio, labor
         {/* No controlado + key: al llegar el valor del servidor la celda se re-monta.
             El foco no cambia el fondo (taparía la barra): se marca con un anillo. */}
         <input key={`${prog ?? '-'}|${real ?? '-'}`} defaultValue={mostrado}
+          onInput={e => { (e.target as HTMLInputElement).dataset.tocado = '1' }}
           onBlur={e => commit(e.target)}
           onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
           className={`w-11 bg-transparent text-center text-[10px] tabular-nums py-0.5 outline-none
