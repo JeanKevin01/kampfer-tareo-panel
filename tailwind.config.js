@@ -39,6 +39,11 @@ export default {
           green: 'rgb(var(--k-green) / <alpha-value>)',
           red: 'rgb(var(--k-red) / <alpha-value>)',
           blue: 'rgb(var(--k-blue) / <alpha-value>)',
+          // Semánticos: un color = un significado (ver src/index.css).
+          plan: 'rgb(var(--k-plan) / <alpha-value>)',       // lo previsto
+          alerta: 'rgb(var(--k-alerta) / <alpha-value>)',   // atención, aún no es problema
+          wbs: 'rgb(var(--k-wbs) / <alpha-value>)',         // estructura: etapas, partidas
+          dinero: 'rgb(var(--k-dinero) / <alpha-value>)',   // costo, venta, margen
         }
       },
       borderRadius: {

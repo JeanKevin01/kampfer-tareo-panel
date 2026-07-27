@@ -237,7 +237,7 @@ export function ProgramarLote({ fechaBase, onClose, onCreado, onLibre }: {
                         <div className="text-k-text leading-tight">{p?.descripcion}</div>
                         <button onClick={() => desplegar(id)}
                           title="Programar una actividad por ETAPA (hito) con fechas propias; el diario de cada etapa alimenta su hito en el % EV"
-                          className={`mt-0.5 text-[10px] underline ${it.hitos ? 'text-violet-300' : 'text-k-blue'}`}>
+                          className={`mt-0.5 text-[10px] underline ${it.hitos ? 'text-k-wbs' : 'text-k-blue'}`}>
                           {it.hitos ? '◆ Desplegada por hitos (quitar)' : '◆ Desplegar por hitos…'}
                         </button>
                       </td>
@@ -267,7 +267,7 @@ export function ProgramarLote({ fechaBase, onClose, onCreado, onLibre }: {
                   )
                   const filasHitos = (it.hitos ?? []).map((h, i) => (
                     <tr key={`${id}-h${h.hito_id}`} className="border-t border-k-border/20 bg-violet-500/5">
-                      <td className="px-2 py-1 pl-6 text-violet-300 text-[10px]">
+                      <td className="px-2 py-1 pl-6 text-k-wbs text-[10px]">
                         ◆ {h.desc} <span className="text-k-text3">({Math.round(h.peso * 100)}%)</span>
                       </td>
                       <td className="px-2 py-1">

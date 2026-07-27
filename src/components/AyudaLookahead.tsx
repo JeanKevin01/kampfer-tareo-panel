@@ -212,7 +212,7 @@ function Contenido({ tema }: { tema: Tema }) {
       </P>
       <P>
         Debajo del nombre se lee de qué <b>partida</b> es y, si programa una etapa, cuál:
-        <b className="text-violet-300/90"> ◆ Transporte (20%)</b>. Con varias etapas de la misma
+        <b className="text-k-wbs"> ◆ Transporte (20%)</b>. Con varias etapas de la misma
         partida en pantalla, es lo único que las distingue.
       </P>
       <H>Los días del rango</H>

@@ -24,6 +24,18 @@
     --k-amber: 245 158 11; --k-amber2: 251 191 36;
     --k-green: 16 185 129; --k-red: 239 68 68;      --k-blue: 59 130 246;
 
+    /* Paleta SEMÁNTICA (tanda 1 del sistema de color, 2026-07-27).
+       La regla: un color = un significado, en los 20 módulos.
+         plan   → lo previsto (celda programada, línea base, meta, PROGRAMADO)
+         alerta → atención, todavía no es problema (real justo en el plan, PPC 60-75)
+         wbs    → estructura (etapas/hitos, cabeceras de partida, árbol)
+         dinero → costo, venta, margen, PU (todo el mundo del RO)
+       El ámbar queda reservado para la ACCIÓN principal y la marca; por eso se
+       agregan estos en vez de reutilizarlo. Son aditivos: nada existente cambia
+       de color hasta la tanda 2. */
+    --k-plan: 56 189 248;   --k-alerta: 251 191 36;
+    --k-wbs: 167 139 250;   --k-dinero: 45 212 191;
+
     /* Paleta semántica de los módulos EV (árbol WBS, ISP, rendimientos).
        DEFAULT = tonos pastel optimizados para fondo OSCURO; en :root.claro se
        oscurecen para ser legibles sobre blanco (mismo hue, más contraste). */
@@ -109,6 +121,10 @@
     --k-text: 21 27 39;    --k-text2: 88 98 116;    --k-text3: 135 145 162;
     --k-amber: 168 109 8;  --k-amber2: 184 119 12;
     --k-green: 5 150 105;  --k-red: 220 38 38;      --k-blue: 37 99 235;
+    /* Semánticos oscurecidos: sobre blanco el mismo hue necesita bajar de
+       luminosidad para mantener el contraste. */
+    --k-plan: 3 105 161;   --k-alerta: 180 83 9;
+    --k-wbs: 109 40 217;   --k-dinero: 13 148 136;
     /* Paleta EV oscurecida para fondo claro (mismo hue, contraste AA) */
     --nivel-1: #c0392b; --nivel-2: #0f766e; --nivel-3: #6d28d9; --nivel-4: #b45309;
     --pf-good: #0d9488; --pf-mid: #a16207;  --pf-bad: #dc2626;
@@ -131,6 +147,42 @@
   }
 }
 
+/* ── Jerarquía de botones (tanda 1 del sistema de color, 2026-07-27) ──
+   Antes toda cabecera era una fila de botones con el mismo borde y el mismo
+   gris: nada decía cuál se usa a diario y cuál una vez al mes, y un planner
+   nuevo no sabía por dónde empezar. Cuatro niveles, con una regla dura:
+
+     .btn-primario   UNA sola por pantalla — la acción que explica para qué
+                     existe el módulo. Es el ÚNICO uso del ámbar sólido.
+     .btn-secundario lo que se usa seguido pero no define la pantalla.
+     .btn-terciario  lo de una vez al mes (sin borde: no compite).
+     .btn-peligro    solo lo destructivo: eliminar, desactivar, purgar.
+
+   Se usan como `className="btn btn-secundario"`; `btn-sm` para barras densas.
+   Van en @layer components para que cualquier utilidad suelta del .tsx
+   (un w-full, un ml-auto) siga ganando sin tener que pelear especificidad. */
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 text-sm px-3 py-2
+           rounded-lg border border-transparent font-medium
+           transition-colors disabled:opacity-40 disabled:pointer-events-none;
+  }
+  .btn:focus-visible {
+    @apply outline-none ring-2 ring-k-amber ring-offset-2;
+    --tw-ring-offset-color: rgb(var(--k-void));
+  }
+  .btn-sm { @apply text-xs px-2.5 py-1.5 gap-1; }
+
+  .btn-primario   { @apply bg-k-amber text-black font-bold hover:brightness-110; }
+  .btn-secundario { @apply border-k-border bg-k-raised text-k-text2 hover:bg-k-border hover:text-k-text; }
+  .btn-terciario  { @apply text-k-text3 hover:bg-k-raised hover:text-k-text2; }
+  .btn-peligro    { @apply border-k-red/40 text-k-red hover:bg-k-red/10; }
+
+  /* Estado "activo" de un botón que abre/cierra un panel (Calendario laboral,
+     Almacenamiento…): se marca sin ascender de nivel. */
+  .btn-on { @apply border-k-amber/60 bg-k-amber/10 text-k-amber; }
+}
+
 /* ── Tema claro: textos de tono claro (300/400) → oscuros ──
    Estos colores semánticos (estado/aviso) se eligieron para contrastar sobre
    fondo OSCURO; sobre blanco quedan ilegibles. Aquí se oscurecen SOLO en modo
@@ -140,6 +192,9 @@
 :root.claro .text-amber-300,
 :root.claro .text-amber-400 { color: rgb(180 83 9 / var(--tw-text-opacity, 1)) }
 :root.claro .text-sky-300   { color: rgb(3 105 161 / var(--tw-text-opacity, 1)) }
+/* text-violet-300 ya no se usa: las etapas pasaron al token --k-wbs, que trae
+   su propio valor para el tema claro. Se deja el parche por si vuelve a
+   aparecer un violeta suelto. */
 :root.claro .text-violet-300 { color: rgb(109 40 217 / var(--tw-text-opacity, 1)) }
 :root.claro .text-purple-400 { color: rgb(126 34 206 / var(--tw-text-opacity, 1)) }
 :root.claro .text-red-200,

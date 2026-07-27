@@ -417,21 +417,20 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
         <input type="date" value={desde} title="Saltar a la semana de una fecha"
           onChange={e => { if (e.target.value) setDesde(iso(lunesDe(new Date(e.target.value + 'T12:00:00')))) }}
           className="bg-k-raised border border-k-border rounded-lg px-2 py-1.5 text-xs text-k-text2 outline-none" />
-        <button onClick={() => window.open(`/programacion/lookahead-imprimir?desde=${desde}&semanas=${nSemanas}`, '_blank')}
-          className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-k-border bg-k-raised text-k-text2 hover:bg-k-border">
-          <Printer size={14} /> Exportar PDF
-        </button>
         <button onClick={() => { setVincular(v => v.on ? { on: false, primera: null } : { on: true, primera: null }); setPanelDe(null) }}
           title="Vincular actividades con dos clics: primero la que va PRIMERO, luego la que sigue (FS). Esc para salir."
-          className={`flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border font-bold ${
-            vincular.on ? 'border-amber-500/60 bg-amber-500/15 text-k-amber' : 'border-k-border bg-k-raised text-k-text2 hover:bg-k-border'}`}>
+          className={`btn font-bold ${vincular.on ? 'btn-on' : 'btn-secundario'}`}>
           🔗 Vincular
         </button>
         <button onClick={() => setFijarCols(v => !v)}
           title="Inmovilizar también RESP…DESPUÉS DE al desplazarse a la derecha (la fila de fechas queda fija siempre)"
-          className={`flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border font-bold ${
-            fijarCols ? 'border-amber-500/60 bg-amber-500/15 text-k-amber' : 'border-k-border bg-k-raised text-k-text2 hover:bg-k-border'}`}>
+          className={`btn font-bold ${fijarCols ? 'btn-on' : 'btn-secundario'}`}>
           ⇥ Fijar columnas
+        </button>
+        <button onClick={() => window.open(`/programacion/lookahead-imprimir?desde=${desde}&semanas=${nSemanas}`, '_blank')}
+          title="Vista imprimible en A3 apaisado"
+          className="btn btn-terciario">
+          <Printer size={14} /> Exportar PDF
         </button>
         <label className="flex items-center gap-1.5 text-xs text-k-text2 px-2.5 py-2 rounded-lg border border-k-border bg-k-raised cursor-pointer select-none"
           title="Al pasar el mouse por una actividad vinculada se resalta su cadena: azul = antecesoras, verde = sucesoras">
@@ -439,9 +438,12 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
             className="accent-amber-500" />
           Mostrar relaciones
         </label>
+        {/* La ayuda va en azul (= información en la paleta semántica) y no en
+            gris: es la puerta de entrada del planner que abre esto por primera
+            vez, y en gris se perdía entre los demás controles. */}
         <button onClick={() => setAyuda(true)} title="Cómo se usa el LookAhead"
-          className="flex items-center justify-center w-8 h-8 rounded-full border border-k-border
-                     bg-k-raised text-k-text2 font-bold hover:bg-k-border hover:text-k-amber">?</button>
+          className="flex items-center justify-center w-8 h-8 rounded-full border font-bold
+                     border-k-blue/50 text-k-blue hover:bg-k-blue/10">?</button>
         {grid.isFetching && <Loader2 size={14} className="animate-spin text-k-text3" />}
         {desde < iso(lunesDe(new Date())) && (
           <span className="text-[11px] font-bold text-k-amber bg-amber-500/10 border border-amber-500/30 rounded-lg px-2.5 py-1.5">
@@ -496,18 +498,19 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
           <input type="checkbox" checked={soloRevisar} onChange={e => setSoloRevisar(e.target.checked)} className="accent-red-500" />
           🔴 Por revisar
         </label>
+        {/* Ajustes de vista: terciarios. No son acciones sobre la obra, son
+            cómo se mira la tabla — no deben competir con los filtros. */}
         <button onClick={contraerTodo} title="Compactar todas las partidas por etapas y contraer los proyectos"
-          className="text-xs px-2.5 py-2 rounded-lg border border-k-border bg-k-raised text-k-text2 hover:bg-k-border">
+          className="btn btn-sm btn-terciario">
           ⊟ Contraer todo
         </button>
         <button onClick={expandirTodo} title="Volver a mostrar todas las etapas y proyectos"
-          className="text-xs px-2.5 py-2 rounded-lg border border-k-border bg-k-raised text-k-text2 hover:bg-k-border">
+          className="btn btn-sm btn-terciario">
           ⊞ Expandir todo
         </button>
         <button onClick={() => setCompacto(v => !v)}
           title="Filas de una sola línea: el código de la partida y la etapa pasan al tooltip. Cabe el doble de actividades."
-          className={`text-xs px-2.5 py-2 rounded-lg border font-bold ${
-            compacto ? 'border-amber-500/60 bg-amber-500/15 text-k-amber' : 'border-k-border bg-k-raised text-k-text2 hover:bg-k-border'}`}>
+          className={`btn btn-sm font-bold ${compacto ? 'btn-on' : 'btn-terciario'}`}>
           ☰ Compacto
         </button>
         <span className="text-[11px] text-k-text3">
@@ -854,7 +857,7 @@ function PanelDeps({ actId, data, grafo, caja, sups, onGrafo, onCerrar, onIr, on
               #{focal.id}{focal.partida_codigo ? ` · 📌 ${focal.partida_codigo}` : ''}
             </span>
             {focal.hito_desc && (
-              <span className="text-violet-300/90"
+              <span className="text-k-wbs"
                 title="Etapa (hito) de la partida: su avance alimenta ese hito en el % de Valor Ganado">
                 {' '}◆ {focal.hito_desc}{focal.hito_peso != null ? ` (${Math.round(focal.hito_peso * 100)}%)` : ''}
               </span>
@@ -1299,7 +1302,7 @@ function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, 
                 </div>
               )}
               {!compacto && a.hito_desc && (
-                <div className="text-[9px] text-violet-300/90 pl-3.5 truncate max-w-[240px]"
+                <div className="text-[9px] text-k-wbs pl-3.5 truncate max-w-[240px]"
                   title="Etapa (hito) de la partida que programa esta actividad — su registro diario alimenta ese hito en el % EV">
                   ◆ Etapa: {a.hito_desc}{a.hito_peso != null ? ` (${Math.round(a.hito_peso * 100)}%)` : ''}
                 </div>

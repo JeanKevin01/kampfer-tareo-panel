@@ -155,7 +155,7 @@ export default function TabAvanceDiario({ otm }: { otm?: string }) {
                 filas.push(
                   <tr key={`e-${p.id}-${e.hito_id ?? 0}`}>
                     <td className="border border-k-border px-2 py-1 text-[10px] bg-k-surface sticky left-0 z-10">
-                      <span className={e.hito_id == null ? 'text-sky-300' : 'text-violet-300'}>
+                      <span className={e.hito_id == null ? 'text-sky-300' : 'text-k-wbs'}>
                         {e.hito_id == null ? '●' : '◆'} {etiqueta}
                       </span>
                     </td>

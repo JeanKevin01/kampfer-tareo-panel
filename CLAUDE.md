@@ -19,6 +19,14 @@ Nunca pushear sin `npm run build` verde en local.
   El monkey-patch de fetch se eliminó (Fase S 2026-07-19): `fetch` crudo solo con motivo
   documentado (ej. healthcheck del Monitor).
 - TanStack Query para data fetching en páginas nuevas.
+- **Color = significado** (`src/index.css`): `k-amber` acción/marca · `k-plan` lo previsto ·
+  `k-green` hecho y conforme · `k-alerta` atención · `k-red` problema · `k-wbs` estructura
+  (etapas/partidas) · `k-dinero` costo/venta/margen · `k-blue` información y ayuda. No inventar
+  colores sueltos de Tailwind para datos: si hace falta uno nuevo, es un token nuevo.
+- **Botones**: `btn` + `btn-primario` (UNA por pantalla) | `btn-secundario` | `btn-terciario` |
+  `btn-peligro`, más `btn-on` para el que abre un panel y `btn-sm` en barras densas. Si una
+  cabecera pasa de 4 botones, los de menos uso van dentro de `<MenuMas>`.
+  Regla: **página tocada = migrada** (igual que se hizo con `api<T>()`).
 - Commits convencionales `tipo(scope): descripción` en español.
 
 ## Estado conocido (plan vigente: PLAN_MAESTRO_CONSOLIDADO.md en `Analisis Claude/`)

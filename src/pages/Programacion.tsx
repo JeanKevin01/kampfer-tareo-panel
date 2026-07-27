@@ -13,6 +13,7 @@ import AltaPartidasLote from '@/components/maestros/AltaPartidasLote'
 import { ProgramarLote } from '@/components/ProgramarLote'
 import { CalendarioLaboral } from '@/components/CalendarioLaboral'
 import HistogramaMO from '@/components/HistogramaMO'
+import MenuMas from '@/components/MenuMas'
 
 const PROYECTO_ID = 1
 const DIAS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
@@ -141,40 +142,41 @@ export default function Programacion() {
           <h1 className="text-xl font-bold text-k-text">Programación de actividades</h1>
           <p className="text-k-text2 text-sm">Plan del planner + reportes con fotos desde campo, en el mismo calendario.</p>
         </div>
+        {/* Jerarquía de botones: UNA primaria (la acción que explica el módulo),
+            dos secundarias de uso diario y el resto —lo de una vez al mes—
+            dentro de «Más». Antes eran seis botones idénticos compitiendo. */}
         <div className="flex items-center gap-2">
-          <button onClick={() => setModalLote(lunes)}
-            className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg bg-k-amber text-black font-bold">
+          <button onClick={() => setModalLote(lunes)} className="btn btn-primario">
             <Plus size={14} /> Programar por partidas
           </button>
           {(porUbicar.data ?? []).length > 0 && (
             <button onClick={() => setVerUbicar(true)}
               title="Partidas creadas al programar que aún no tienen OTM, lugar en el WBS o HH"
-              className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-k-amber/60 bg-k-amber/10 text-k-amber font-bold">
+              className="btn btn-on font-bold">
               ⚑ Por ubicar ({(porUbicar.data ?? []).length})
             </button>
           )}
           <button onClick={() => setVerCalendario(v => !v)}
-            className={`flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border ${verCalendario ? 'border-k-amber text-k-amber' : 'border-k-border bg-k-raised text-k-text2 hover:bg-k-border'}`}>
+            title="Días de trabajo de la semana y feriados del proyecto"
+            className={`btn ${verCalendario ? 'btn-on' : 'btn-secundario'}`}>
             <CalendarDays size={14} /> Calendario laboral
-          </button>
-          <button onClick={() => setVerAlmacen(v => !v)}
-            className={`flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border ${verAlmacen ? 'border-k-amber text-k-amber' : 'border-k-border bg-k-raised text-k-text2 hover:bg-k-border'}`}>
-            <HardDrive size={14} /> Almacenamiento
           </button>
           <button onClick={() => setVerSustento(true)}
             title="Sustento de valorización: partes y fotos por partida"
-            className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-k-border bg-k-raised text-k-text2 hover:bg-k-border">
+            className="btn btn-secundario">
             <FileText size={14} /> Reporte por partida
           </button>
-          <button onClick={() => setVerParte(true)}
-            title="El parte diario tal como lo ve el supervisor (listo para copiar)"
-            className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-k-border bg-k-raised text-k-text2 hover:bg-k-border">
-            <ClipboardList size={14} /> Parte del día
-          </button>
-          <button onClick={() => window.open(`/programacion/imprimir?lunes=${lunes}`, '_blank')}
-            className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-k-border bg-k-raised text-k-text2 hover:bg-k-border">
-            <Printer size={14} /> Reporte semanal
-          </button>
+          <MenuMas items={[
+            { icono: <ClipboardList size={14} />, texto: 'Parte del día',
+              ayuda: 'El parte diario tal como lo ve el supervisor (listo para copiar)',
+              onClick: () => setVerParte(true) },
+            { icono: <Printer size={14} />, texto: 'Reporte semanal',
+              ayuda: 'Vista imprimible de la semana, con las fotos de campo',
+              onClick: () => window.open(`/programacion/imprimir?lunes=${lunes}`, '_blank') },
+            { icono: <HardDrive size={14} />, texto: 'Almacenamiento',
+              ayuda: 'Cuánto ocupan las fotos por semana y purga manual',
+              onClick: () => setVerAlmacen(v => !v), activo: verAlmacen },
+          ]} />
         </div>
       </div>
 
