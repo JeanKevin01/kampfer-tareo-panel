@@ -627,7 +627,7 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
           )}
           {nuevaPartida && (
             <NuevaPartida otmId={form.otm_id || null} metrado={form.metrado_prog} und={form.und}
-              padres={(partidas.data ?? []).filter(p => !p.fase)}
+              padres={partidas.data ?? []}
               onCancelar={() => setNuevaPartida(false)}
               onCreada={pid => {
                 setNuevaPartida(false)
@@ -1648,6 +1648,9 @@ function NuevaPartida({ otmId, metrado, und, padres, onCancelar, onCreada }: {
     naturaleza: 'CONTRACTUAL' as 'CONTRACTUAL' | 'ADICIONAL',
   })
   const [err, setErr] = useState('')
+  // El código propuesto se pisa cuando el planner escribe el suyo; a partir de
+  // ahí deja de recalcularse solo (si no, cambiar el padre le borraría lo tecleado).
+  const [codigoTocado, setCodigoTocado] = useState(false)
   const adicional = f.naturaleza === 'ADICIONAL'
   // La fase es la clave con la que el RO cruza costo ↔ meta: sin ella la
   // partida no aparecería en el resultado operativo por fase.
@@ -1655,11 +1658,25 @@ function NuevaPartida({ otmId, metrado, und, padres, onCancelar, onCreada }: {
     queryKey: ['fases-catalogo'],
     queryFn: () => api('/ev/fases?proyecto_id=1'),
   })
+  // Correlativo sugerido: el que le toca entre los hijos del padre elegido, o
+  // el siguiente de la serie ADIC-## si es adicional. Se recalcula al cambiar
+  // el padre o el tipo, que es justo lo que determina la numeración.
+  const sugerido = useQuery<{ codigo: string }>({
+    queryKey: ['siguiente-codigo', otmId, f.parent_codigo, f.naturaleza],
+    queryFn: () => api('/ev/partidas/siguiente-codigo?' + new URLSearchParams({
+      ...(otmId ? { otm: otmId } : {}),
+      ...(f.parent_codigo ? { parent_codigo: f.parent_codigo } : {}),
+      naturaleza: f.naturaleza,
+    })),
+  })
+  // Derivado durante el render (no en un efecto): el input muestra lo tecleado
+  // o, mientras nadie lo toque, la sugerencia vigente.
+  const codigo = codigoTocado ? f.codigo : (sugerido.data?.codigo ?? '')
   const crear = useMutation({
     mutationFn: () => api<{ id: number }>('/ev/partidas', {
       method: 'POST',
       body: JSON.stringify({
-        codigo: f.codigo.trim(), otm_id: otmId, descripcion: f.descripcion.trim(),
+        codigo: codigo.trim(), otm_id: otmId, descripcion: f.descripcion.trim(),
         unidad: f.unidad.trim(), fase: f.fase.trim(),
         parent_codigo: f.parent_codigo.trim() || null,
         metrado_presup: Number(f.metrado_presup) || 0,
@@ -1672,7 +1689,7 @@ function NuevaPartida({ otmId, metrado, und, padres, onCancelar, onCreada }: {
     onError: (e: Error) => setErr(e.message),
   })
   // Una partida olvidada SÍ tiene HH (están en el presupuesto): se exigen.
-  const listo = f.codigo.trim() && f.descripcion.trim() && f.unidad.trim() && f.fase.trim()
+  const listo = codigo.trim() && f.descripcion.trim() && f.unidad.trim() && f.fase.trim()
     && (adicional || Number(f.hh_presup) > 0)
   const borde = adicional ? 'border-red-500/40 bg-red-500/5' : 'border-k-border bg-k-raised/40'
   return (
@@ -1696,8 +1713,22 @@ function NuevaPartida({ otmId, metrado, und, padres, onCancelar, onCreada }: {
           : 'Está en el contrato pero no se cargó a la BD: es contractual y sus HH ya existen en tu presupuesto.'}
       </p>
       <div className="grid grid-cols-2 gap-2">
-        <input placeholder={adicional ? 'Código (ej. ADIC-01)' : 'Código del presupuesto'} value={f.codigo}
-          onChange={e => setF({ ...f, codigo: e.target.value })} className={inputCls} />
+        <div className="relative">
+          <input placeholder={adicional ? 'Código (ej. ADIC-01)' : 'Código del presupuesto'}
+            value={codigo}
+            title={codigoTocado
+              ? 'Código escrito a mano. El botón ↻ vuelve al correlativo sugerido.'
+              : `Correlativo sugerido${f.parent_codigo ? ` dentro de ${f.parent_codigo}` : ''}. Puedes escribir otro.`}
+            onChange={e => { setCodigoTocado(true); setF({ ...f, codigo: e.target.value }) }}
+            className={`${inputCls} ${codigoTocado ? '' : 'text-k-amber'} pr-7`} />
+          {codigoTocado && (
+            <button onClick={() => { setCodigoTocado(false); setF({ ...f, codigo: '' }) }}
+              title="Volver al correlativo sugerido"
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 text-k-text3 hover:text-k-amber text-xs">
+              ↻
+            </button>
+          )}
+        </div>
         <input placeholder="Unidad (m3, hh…)" value={f.unidad}
           onChange={e => setF({ ...f, unidad: e.target.value })} className={inputCls} />
       </div>
@@ -1867,7 +1898,7 @@ function BandejaPorUbicar({ onClose }: { onClose: () => void }) {
                       className={inputCls} disabled={!otm}
                       title="De qué partida cuelga en el árbol de Valor Ganado">
                       <option value="">Cuelga de… (raíz del WBS)</option>
-                      {(padresQ.data ?? []).filter(x => !x.fase && x.id !== p.id).map(x => (
+                      {(padresQ.data ?? []).filter(x => x.id !== p.id).map(x => (
                         <option key={x.id} value={x.codigo}>
                           {x.codigo} — {(x.descripcion ?? '').slice(0, 28)}
                         </option>
