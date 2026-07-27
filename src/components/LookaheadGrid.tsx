@@ -178,14 +178,19 @@ export function LookaheadGrid({ onEditar, onProgramar }: {
   // para que «Contraer todo» pueda actuar sobre todos de una vez.
   const [compactas, setCompactas] = useState<Set<number>>(new Set())
   const [contraidos, setContraidos] = useState<Set<string>>(new Set())
-  // Una actividad CUMPLIDA se resume en una barra; el planner puede abrirla
-  // para corregir un día (los errores de captura aparecen después).
-  const [expandidas, setExpandidas] = useState<Set<number>>(new Set())
-  const toggleExpandida = (id: number) => setExpandidas(prev => {
-    const s = new Set(prev)
-    if (s.has(id)) s.delete(id); else s.add(id)
-    return s
-  })
+  // Una actividad CERRADA se resume en una barra; el planner puede abrirla para
+  // corregir un día (los errores de captura aparecen después). Abrir el detalle
+  // es una MIRADA momentánea, no un estado que haya que ir deshaciendo fila por
+  // fila: solo una abierta a la vez, y tocar cualquier otra fila —o Esc— la
+  // vuelve a unir sola.
+  const [abierta, setAbierta] = useState<number | null>(null)
+  const verDetalle = (id: number | null) => setAbierta(v => (v === id ? null : id))
+  useEffect(() => {
+    if (abierta == null) return
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setAbierta(null) }
+    window.addEventListener('keydown', esc)
+    return () => window.removeEventListener('keydown', esc)
+  }, [abierta])
   const toggleCompacta = (pid: number) => setCompactas(prev => {
     const s = new Set(prev)
     if (s.has(pid)) s.delete(pid); else s.add(pid)
@@ -616,7 +621,7 @@ export function LookaheadGrid({ onEditar, onProgramar }: {
                 laborable={laborable} onEditar={onEditar} cadena={cadena}
                 fijar={fijarCols} sel={sel} onSel={toggleSel}
                 compacto={compacto}
-                expandidas={expandidas} onExpandir={toggleExpandida}
+                abierta={abierta} onAbrir={verDetalle}
                 compactas={compactas} onCompactar={toggleCompacta}
                 contraido={contraidos.has(g.otm_id ?? '-')}
                 onContraer={() => toggleContraido(g.otm_id ?? '-')}
@@ -1100,9 +1105,10 @@ interface PropsFila {
   onEncadenar: (ids: number[]) => void
   onDeps: (a: ActGrid, txt: string) => void
   onCampo: (id: number, patch: Record<string, unknown>) => void
-  /** actividades cumplidas que el planner abrió para ver el día a día */
-  expandidas: Set<number>
-  onExpandir: (id: number) => void
+  /** la ÚNICA actividad cerrada que está abierta en detalle (null = ninguna) */
+  abierta: number | null
+  /** con su id alterna; con null cierra la que hubiera */
+  onAbrir: (id: number | null) => void
 }
 
 function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, onReal, onProg, vincular, onPick, onPanel, onHover, compactas, onCompactar, contraido, onContraer, onEncadenar, ...fp }: {
@@ -1272,7 +1278,7 @@ function FilaPartidaCompacta({ acts, color, fechas, hoy, laborable, onToggle, fi
   )
 }
 
-function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, onReal, onProg, color, vincular, onPick, onPanel, onHover, fijar, compacto, sel, onSel, onDeps, onCampo, expandidas, onExpandir }: {
+function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, onReal, onProg, color, vincular, onPick, onPanel, onHover, fijar, compacto, sel, onSel, onDeps, onCampo, abierta, onAbrir }: {
   a: ActGrid; fechas: string[]; hoy: string
   laborable: (f: string) => boolean
   cadena: { focal: number; azules: Set<number>; verdes: Set<number> } | null
@@ -1285,7 +1291,7 @@ function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, 
   onHover: (id: number | null) => void
 } & Omit<PropsFila, 'onEncadenar'>) {
         const editable = a.estado !== 'CANCELADO'
-        const expandida = expandidas.has(a.id)
+        const expandida = abierta === a.id
         const saltos = new Set(a.dias_salto ?? [])
         const medios = new Set(a.dias_medio ?? [])
         const manuales = new Set(a.prog_manual ?? [])
@@ -1329,7 +1335,11 @@ function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, 
         const iSel = sel.indexOf(a.id)
         const revisar = motivoRevisar(a)
         return (
-          <tr key={a.id} className={`${a.estado === 'CANCELADO' ? 'opacity-50' : ''} ${claseCadena} ${esPrimera ? 'bg-amber-500/15' : ''}`}
+          <tr key={a.id} className={`${a.estado === 'CANCELADO' ? 'opacity-50' : ''} ${claseCadena} ${esPrimera ? 'bg-amber-500/15' : ''} ${
+              expandida ? 'ring-1 ring-inset ring-k-green/50 bg-k-green/5' : ''}`}
+            // Tocar CUALQUIER otra fila vuelve a unir la que estuviera abierta:
+            // el detalle es una mirada, no un modo en el que uno se queda.
+            onMouseDown={() => { if (!expandida && abierta != null) onAbrir(null) }}
             onMouseEnter={() => onHover((a.dep_total ?? 0) > 0 ? a.id : null)}
             onMouseLeave={() => onHover(null)}>
             {/* # — el identificador que se teclea en DESPUÉS DE. El clic lo
@@ -1382,13 +1392,14 @@ function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, 
                 {/* Cerrada: se resume en una barra. El botón dice que hay
                     detalle debajo, para que no parezca que se perdió. */}
                 {cerrada && (
-                  <button onClick={e => { e.stopPropagation(); onExpandir(a.id) }}
+                  <button onClick={e => { e.stopPropagation(); onAbrir(a.id) }}
                     title={expandida
-                      ? 'Volver a la barra resumen'
+                      ? 'Volver a la barra resumen (o toca otra fila, o pulsa Esc)'
                       : 'Ya no espera registros: se muestra como una barra con el saldo. Clic para ver y editar el detalle por día.'}
                     className={`text-[9px] font-bold flex-shrink-0 px-1 rounded hover:bg-k-raised ${
-                      enContra ? 'text-k-red' : 'text-k-green'}`}>
-                    {expandida ? '⊟' : '⊞'}
+                      expandida ? 'bg-k-green/15 text-k-green ring-1 ring-k-green/40'
+                        : enContra ? 'text-k-red' : 'text-k-green'}`}>
+                    {expandida ? '⊟ unir' : '⊞'}
                   </button>
                 )}
               </div>
@@ -1496,7 +1507,7 @@ function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, 
                   if (t) {
                     return (
                       <td key={f} colSpan={t.largo}
-                        onClick={() => onExpandir(a.id)}
+                        onClick={() => onAbrir(a.id)}
                         title={`${dictamen}\nEntre el ${fmtCorta(a.fecha)} y el ${fmtCorta(a.fecha_fin)}.`
                           + '\nClic para ver y editar el detalle por día.'}
                         className="relative border-b border-k-border/50 p-0 cursor-pointer">

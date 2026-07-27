@@ -84,9 +84,11 @@ function Contenido({ tema }: { tema: Tema }) {
             registraron todos los días y no se llegó al metrado.</>],
       ]} />
       <P>
-        Clic en la barra —o en el <b>⊞</b> del nombre— la abre para corregir un día; <b>⊟</b> vuelve
-        al resumen. Una actividad que <b>se sale del rango</b> de semanas que estás viendo se queda
-        en detalle: su resumen contaría días que no están a la vista.
+        Clic en la barra —o en el <b>⊞</b> del nombre— la abre para corregir un día. Vuelve a unirse
+        sola en cuanto <b>tocas otra fila</b>, y también con <b>⊟ unir</b> o la tecla <b>Esc</b>:
+        el detalle es una mirada, no un modo en el que uno se queda. Solo se abre una a la vez.
+        Una actividad que <b>se sale del rango</b> de semanas que estás viendo se queda en detalle:
+        su resumen contaría días que no están a la vista.
       </P>
       <H>El color de una celda</H>
       <Tabla cab={['Celda', 'Qué significa']} filas={[
