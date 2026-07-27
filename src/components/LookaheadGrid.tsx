@@ -5,7 +5,7 @@
 // ev_avances_diarios, la MISMA tabla del módulo de Valor Ganado).
 // EvaluacionSemanal = el formato "F030b - Planeamiento" (comprometido vs
 // alcanzado de la semana, con cumplimiento SI/NO y causa).
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { ChevronLeft, ChevronRight, Loader2, Printer, Search } from 'lucide-react'
 import { api } from '@/lib/api'
@@ -14,6 +14,7 @@ import { lunesDe, iso } from '@/lib/semana'
 import { DIAS_1, fmtDia, fmtCorta, num, isoDow, clrReal, parseDeps, fmtDeps } from '@/lib/lookahead'
 import type { TipoDep } from '@/lib/lookahead'
 import CeldaDia from '@/components/CeldaDia'
+import AyudaLookahead from '@/components/AyudaLookahead'
 
 export interface ActGrid {
   id: number; titulo: string; estado: string; descripcion?: string | null
@@ -123,6 +124,27 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
   const [panelDe, setPanelDe] = useState<number | null>(null)
   const [dockGrafo, setDockGrafo] = useState(true)
   const altoDock = panelDe == null ? 0 : dockGrafo ? ALTO_DOCK : ALTO_DOCK_MIN
+  // El dock se alinea con el CONTENIDO, no con la ventana: si arrancara en 0
+  // se metería debajo del menú lateral. Se mide la caja del módulo (y se
+  // vuelve a medir cuando el menú se pliega o despliega, que la cambia).
+  const cajaRef = useRef<HTMLDivElement>(null)
+  const [caja, setCaja] = useState({ left: 0, width: 0 })
+  useEffect(() => {
+    const el = cajaRef.current
+    if (!el) return
+    const medir = () => {
+      const r = el.getBoundingClientRect()
+      setCaja(c => (c.left === r.left && c.width === r.width ? c : { left: r.left, width: r.width }))
+    }
+    medir()
+    const ro = new ResizeObserver(medir)
+    ro.observe(el)
+    window.addEventListener('resize', medir)
+    return () => { ro.disconnect(); window.removeEventListener('resize', medir) }
+  }, [])
+  // Ayuda del módulo: vive en un modal («?») y no al pie, para no comerle
+  // pantalla a la cuadrícula (encargo de Jean).
+  const [ayuda, setAyuda] = useState(false)
   const [toast, setToast] = useState<{ msg: string; undo?: () => void; error?: boolean } | null>(null)
   // Mostrar relaciones: al pasar el mouse por una actividad vinculada se
   // resalta su cadena (azul = antecesoras, verde = sucesoras) sin hacer clic.
@@ -158,6 +180,12 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
     return s
   })
 
+  // Supervisores del padrón: el «responsable» de una actividad es uno de ellos
+  // (misma clave que usa la agenda de la app de campo).
+  const sups = useQuery<{ id: string; nombre: string }[]>({
+    queryKey: ['supervisores-lista'],
+    queryFn: () => api('/api/supervisores'),
+  })
   const grid = useQuery<GridResp>({
     queryKey: ['lookahead-grid', desde, nSemanas],
     queryFn: () => api(`/ev/programacion/lookahead-grid?proyecto_id=${PROYECTO_ID}&desde=${desde}&semanas=${nSemanas}`),
@@ -374,7 +402,7 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
   })()
 
   return (
-    <div className="space-y-3" style={{ paddingBottom: altoDock }}>
+    <div ref={cajaRef} className="space-y-3" style={{ paddingBottom: altoDock }}>
       <div className="flex items-center gap-2 flex-wrap">
         <button onClick={() => mover(-7)} className="p-1.5 rounded-lg border border-k-border text-k-text2 hover:bg-k-raised"><ChevronLeft size={15} /></button>
         <span className="text-sm font-bold text-k-text">LookAhead desde {fmtDia(desde)}</span>
@@ -409,6 +437,9 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
             className="accent-amber-500" />
           Mostrar relaciones
         </label>
+        <button onClick={() => setAyuda(true)} title="Cómo se usa el LookAhead"
+          className="flex items-center justify-center w-8 h-8 rounded-full border border-k-border
+                     bg-k-raised text-k-text2 font-bold hover:bg-k-border hover:text-k-amber">?</button>
         {grid.isFetching && <Loader2 size={14} className="animate-spin text-k-text3" />}
         {desde < iso(lunesDe(new Date())) && (
           <span className="text-[11px] font-bold text-k-amber bg-amber-500/10 border border-amber-500/30 rounded-lg px-2.5 py-1.5">
@@ -581,55 +612,6 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
           </tbody>
         </table>
       </div>
-      <p className="text-[11px] text-k-text3">
-        Celda <span className="text-sky-300 font-bold">celeste</span> = PROGRAMADO (línea base: el metrado
-        meta prorrateado entre los días laborables, saltando feriados y saltos ∅). Escribe encima el{' '}
-        <b>avance real del día</b> (hasta hoy): la celda queda ✓ registrada en{' '}
-        <span className="text-green-300 font-bold">verde</span> si avanzaste más,{' '}
-        <span className="text-amber-300 font-bold">ámbar</span> justo lo programado,{' '}
-        <span className="text-red-300 font-bold">rojo</span> menos — los días anteriores no se tocan y el{' '}
-        <b>saldo se re-prorratea en los días siguientes</b> para cumplir el meta en F.Fin. En los{' '}
-        <b>días futuros</b> escribir <b>replanifica</b> el día: la celda queda manual ✎ (protegida ante
-        re-prorrateos) y el resto se acomoda solo; vaciarla vuelve al prorrateo automático. El meta solo se
-        cambia abriendo la actividad. El real alimenta el avance diario de <b>Valor Ganado</b> (un solo dato).
-        Una partida <b>desplegada por etapas</b> se agrupa bajo una cabecera con su color de cadena:
-        clic en la cabecera para <b>compactarla en una sola fila</b> (suma el programado y el real de sus
-        etapas, solo lectura) y clic de nuevo para desplegarla y editar.
-      </p>
-      <p className="text-[11px] text-k-text3">
-        <b>Encontrar entre muchas</b>: el <b>buscador</b> filtra las filas por título, código o
-        descripción de la partida, etapa, responsable o <b>#</b> (ignora tildes). Combínalo con los
-        filtros de responsable, estado y <b>⛔ con restricción</b>. <b>⊟ Contraer todo</b> compacta
-        las partidas por etapas y pliega los proyectos — clic en la barra azul de un proyecto para
-        plegarlo suelto. <b>☰ Compacto</b> deja cada fila en una línea (el código y la etapa pasan
-        al tooltip) y cabe el doble. El LookAhead solo trae las actividades que <b>cruzan las
-        semanas visibles</b>, así que mover la ventana también acota.
-      </p>
-      <p className="text-[11px] text-k-text3">
-        <b>Editar sin abrir nada</b>: doble clic en METRADO, PLAZO, F.Inic, F.Fin o DESPUÉS DE.
-        El <b>PLAZO</b> es la duración en días hábiles (medio día = <b>0.5</b>, un salto ∅ = 0): al
-        escribirlo se recalcula la F.Fin conservando el inicio, y al mover la F.Inic la barra se
-        <b> desplaza sin estirarse</b>. Escribir la F.Fin a mano recalcula el plazo.
-      </p>
-      <p className="text-[11px] text-k-text3">
-        <b>Vincular</b> — tres formas, de la más rápida a la más visual: (1) escribir las antecesoras
-        en <b>DESPUÉS DE</b> como en Project — <code className="text-k-blue">12</code>,{' '}
-        <code className="text-k-blue">12FS+2</code>, <code className="text-k-blue">8;12SS-1</code> —
-        usando el <b>#</b> de la primera columna; (2) marcar filas con clic en el <b>#</b> y pulsar
-        <b> ⛓ FS/SS/FF</b>, o el botón <b>⛓ Encadenar etapas</b> de la cabecera de una partida;
-        (3) el botón <b>🔗 Vincular</b> de siempre (dos clics). Tipos: <b>FS</b> la sucesora arranca al
-        terminar la antecesora · <b>SS</b> arrancan juntas · <b>FF</b> terminan juntas; el número tras
-        el tipo es el <b>lag</b> en días hábiles (negativo = traslape). Mover una antecesora empuja a
-        sus sucesoras <b>conservando el plazo</b> de cada una, y nunca las adelanta.
-      </p>
-      <p className="text-[11px] text-k-text3">
-        <b>Dock de dependencias</b> — se abre abajo, a lo ancho, para no tapar ninguna columna de
-        días: en la franja superior se editan de un tirón <b>metrado, F.Inicio, F.Fin, plazo y
-        responsable</b> de la actividad en foco, y debajo se ve su red (antecesoras a la izquierda,
-        sucesoras a la derecha). Clic en una tarjeta para cambiar el <b>tipo y el lag</b> del vínculo,
-        <b> ⤢</b> para traer esa actividad a la franja de arriba, y <b>⌄ Solo datos</b> para plegar el
-        grafo cuando solo se quiere editar.
-      </p>
 
       {toast && (
         <div style={{ bottom: altoDock + 16 }}   // el toast sube por encima del dock
@@ -644,14 +626,15 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
         </div>
       )}
 
+      {ayuda && <AyudaLookahead onCerrar={() => setAyuda(false)} />}
+
       {panelDe != null && d && (
         <PanelDeps actId={panelDe} data={d}
           grafo={dockGrafo} onGrafo={() => setDockGrafo(v => !v)}
           onCerrar={() => { setPanelDe(null); setCadenaDe(null) }}
           onIr={id => { setPanelDe(id); setCadenaDe(id) }}
-          onCrear={(suc, pred, tipo, lag) => crearDep.mutate({ suc, pred, tipo, lag })}
-          onLag={(suc, pred, lag, tipo) => crearDep.mutate({ suc, pred, lag, tipo })}
-          onQuitar={depId => borrarDep.mutate(depId)}
+          caja={caja} sups={sups.data ?? []}
+          onDeps={(a, txt) => guardarDeps.mutate({ a, txt })}
           onGuardarAct={(id, patch) => editarAct.mutate({ id, patch })} />
       )}
     </div>
@@ -667,25 +650,19 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
 //                  metrado, F.Inicio, F.Fin, plazo y responsable.
 //   Grafo        → ● ANTECESORAS (azul) → actividad (ámbar) → ● SUCESORAS
 //                  (verde), de izquierda a derecha como una red CPM.
-//   Derecha      → crear vínculos (tipo + lag antes de elegir) y editar el
-//                  seleccionado. ⤢ trae esa actividad a la franja de arriba,
-//                  así los campos no se repiten en dos sitios.
-// «⌄ Solo datos» pliega el grafo y deja la franja de 52px.
+//   DESPUÉS DE   → una sola barra con la sintaxis de Project («12; 8FF-1»):
+//                  crea, cambia y quita varios vínculos de un tirón. Sustituye
+//                  al submódulo de botones FS/SS/FF que estaba a la derecha.
+// Clic en cualquier tarjeta del grafo = traer esa actividad a la franja (los
+// campos no se repiten en dos sitios). «⌄ Solo datos» pliega el grafo.
 // Enter o salir del campo guarda; el API re-prorratea y corre la cascada.
 
-// Los tres tipos de vínculo, explicados en obra y no en jerga de Project.
-const TIPO_AYUDA: Record<TipoDep, string> = {
-  FS: 'FS — la sucesora arranca cuando TERMINA la antecesora (+lag). El clásico.',
-  SS: 'SS — arranca cuando ARRANCA la antecesora (+lag). Para traslapes: «el encofrado entra 1 día después de que empiece el habilitado».',
-  FF: 'FF — no puede TERMINAR antes que la antecesora (+lag). «El curado no cierra antes que el vaciado».',
-}
+// Los tres tipos de vínculo están explicados en obra (no en jerga de Project)
+// en el modal de ayuda «?» → «Vincular actividades».
 
-interface DepSel {
-  dep_id: number; lag: number; tipo: TipoDep; predId: number; sucId: number
-  predTitulo: string; sucTitulo: string
-  nodoId: number          // la actividad de la tarjeta clicada (editable abajo)
-}
-interface Nodo { id: number; titulo: string; a?: ActGrid; dep: Omit<DepSel, 'nodoId'> | null }
+/** El vínculo que ata el nodo con el de al lado, solo para rotularlo. */
+interface DepVinc { tipo: TipoDep; lag: number }
+interface Nodo { id: number; titulo: string; a?: ActGrid; dep: DepVinc | null }
 
 // Campo editable con commit al salir (mismo patrón no-controlado de CeldaDia).
 /** Celda de la cuadrícula editable in-situ: doble clic (o Enter) escribe,
@@ -745,23 +722,17 @@ function CampoAct({ etiqueta, tipo, valor, onCommit, ancho }: {
   )
 }
 
-function PanelDeps({ actId, data, grafo, onGrafo, onCerrar, onIr, onCrear, onLag, onQuitar, onGuardarAct }: {
+function PanelDeps({ actId, data, grafo, caja, sups, onGrafo, onCerrar, onIr, onDeps, onGuardarAct }: {
   actId: number; data: GridResp
-  grafo: boolean; onGrafo: () => void
+  grafo: boolean
+  /** izquierda y ancho del contenido: el dock no se mete debajo del menú */
+  caja: { left: number; width: number }
+  sups: { id: string; nombre: string }[]
+  onGrafo: () => void
   onCerrar: () => void; onIr: (id: number) => void
-  onCrear: (suc: number, pred: number, tipo: TipoDep, lag: number) => void
-  onLag: (suc: number, pred: number, lag: number, tipo: TipoDep) => void
-  onQuitar: (depId: number) => void
+  onDeps: (a: ActGrid, txt: string) => void
   onGuardarAct: (id: number, patch: Record<string, unknown>) => void
 }) {
-  const [sel, setSel] = useState<DepSel | null>(null)
-  const [agregar, setAgregar] = useState<'pred' | 'suc' | null>(null)
-  const [busca, setBusca] = useState('')
-  // Tipo y lag con los que se creará el PRÓXIMO vínculo desde este panel.
-  // Antes siempre nacía FS y había que corregirlo después, aunque el motor
-  // entiende SS y FF desde 0034.
-  const [tipoNuevo, setTipoNuevo] = useState<TipoDep>('FS')
-  const [lagNuevo, setLagNuevo] = useState(0)
   const acts = data.grupos.flatMap(g => g.actividades)
   const porId = new Map(acts.map(a => [a.id, a]))
   const focal = porId.get(actId)
@@ -778,9 +749,7 @@ function PanelDeps({ actId, data, grafo, onGrafo, onCerrar, onIr, onCrear, onLag
     if (!ps.length) break
     nivelesUp.unshift(ps.map(p => ({
       id: p.id, titulo: p.titulo, a: porId.get(p.id),
-      dep: { dep_id: p.dep_id, lag: p.lag_dias, tipo: (p.tipo ?? 'FS') as TipoDep,
-             predId: p.id, sucId: abajo.id,
-             predTitulo: p.titulo, sucTitulo: abajo.titulo },
+      dep: { lag: p.lag_dias, tipo: (p.tipo ?? 'FS') as TipoDep },
     })))
     cur = ps.length === 1 ? porId.get(ps[0].id) : undefined
   }
@@ -796,38 +765,27 @@ function PanelDeps({ actId, data, grafo, onGrafo, onCerrar, onIr, onCrear, onLag
       const dp = sa?.predecesoras?.find(p => p.id === arriba.id)
       return {
         id, titulo: sa?.titulo ?? `#${id}`, a: sa,
-        dep: dp ? { dep_id: dp.dep_id, lag: dp.lag_dias, tipo: (dp.tipo ?? 'FS') as TipoDep,
-                    predId: arriba.id, sucId: id,
-                    predTitulo: arriba.titulo, sucTitulo: sa?.titulo ?? `#${id}` } : null,
+        dep: dp ? { lag: dp.lag_dias, tipo: (dp.tipo ?? 'FS') as TipoDep } : null,
       }
     }))
     cur = ids.length === 1 ? porId.get(ids[0]) : undefined
   }
 
-  const vinculadas = new Set([actId, ...(focal.predecesoras ?? []).map(p => p.id), ...(focal.sucesoras ?? [])])
-  const q = busca.trim().toLowerCase()
-  const candidatas = acts.filter(a => !vinculadas.has(a.id)
-    && (!q || a.titulo.toLowerCase().includes(q) || String(a.id) === q)).slice(0, 30)
-
-  // Tarjeta del grafo. Clic = seleccionar el vínculo (se edita a la derecha);
-  // ⤢ = traer esa actividad al foco, con lo que sus datos pasan a la franja
-  // editable de arriba (por eso aquí NO se repiten los campos).
+  // Tarjeta del grafo. Clic = traer esa actividad al foco: sus datos y sus
+  // vínculos pasan a la franja de arriba, así nada se edita en dos sitios.
   const Tarjeta = ({ n, clr }: { n: Nodo; clr: 'azul' | 'verde' }) => {
-    const activa = sel != null && n.dep != null && n.dep.dep_id === sel.dep_id
     const base = clr === 'azul'
       ? 'border-blue-500/50 bg-blue-500/10 hover:bg-blue-500/20'
       : 'border-green-500/50 bg-green-500/10 hover:bg-green-500/20'
     return (
-      <div onClick={() => n.dep && setSel(activa ? null : { ...n.dep, nodoId: n.id })}
-        title={n.dep ? 'Clic: editar el tipo de vínculo y el lag a la derecha · ⤢: editar los datos de esta actividad arriba' : 'Actividad fuera del rango visible del grid'}
-        className={`rounded-lg border px-2.5 py-1.5 cursor-pointer ${base} ${activa ? 'ring-2 ring-amber-400/70' : ''}`}>
+      <div onClick={() => n.a && onIr(n.id)}
+        title={n.a
+          ? `#${n.id} · clic para traerla a la franja de arriba y editarla`
+          : 'Actividad fuera del rango visible del grid'}
+        className={`rounded-lg border px-2.5 py-1.5 ${base} ${n.a ? 'cursor-pointer' : 'opacity-60'}`}>
         <div className="flex items-center gap-1">
+          <span className="font-mono text-[9px] text-k-text3 flex-shrink-0">#{n.id}</span>
           <span className="text-[11px] text-k-text truncate flex-1">{n.titulo}</span>
-          {n.a && (
-            <button onClick={e => { e.stopPropagation(); setSel(null); onIr(n.id) }}
-              title="Traer esta actividad al foco (sus datos pasan arriba, editables)"
-              className="text-[10px] text-k-text3 hover:text-k-text flex-shrink-0">⤢</button>
-          )}
         </div>
         <p className="text-[9px] text-k-text3">
           {n.dep?.tipo ?? 'FS'}{n.dep?.lag ? (n.dep.lag > 0 ? `+${n.dep.lag}` : n.dep.lag) : ''}
@@ -847,12 +805,13 @@ function PanelDeps({ actId, data, grafo, onGrafo, onCerrar, onIr, onCrear, onLag
   )
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-40 bg-k-surface border-t border-k-border shadow-2xl flex flex-col"
-      style={{ height: grafo ? ALTO_DOCK : ALTO_DOCK_MIN }}>
+    <div className="fixed bottom-0 z-40 bg-k-surface border-t border-l border-r border-k-border
+                    rounded-t-xl shadow-2xl flex flex-col"
+      style={{ height: grafo ? ALTO_DOCK : ALTO_DOCK_MIN, left: caja.left, width: caja.width }}>
 
       {/* ── Franja 1: la actividad en foco, TODA editable en una sola línea ──
           Es lo mínimo indispensable para programar (metrado, fechas, plazo,
-          responsable) sin tapar ni una columna de días del grid. */}
+          responsable y vínculos) sin tapar ni una columna de días del grid. */}
       <div className="flex items-center gap-2.5 px-3 overflow-x-auto flex-shrink-0 border-b border-k-border"
         style={{ height: ALTO_DOCK_MIN }}>
         <span className={`w-2 h-2 rounded-full flex-shrink-0 ${ESTADO_DOT[focal.estado] ?? 'bg-zinc-500'}`}
@@ -882,12 +841,45 @@ function PanelDeps({ actId, data, grafo, onGrafo, onCerrar, onIr, onCrear, onLag
             const p = Number(v)
             if (v !== '' && Number.isFinite(p) && p > 0) onGuardarAct(focal.id, { plazo_dias: p })
           }} />
-        <CampoAct etiqueta="Responsable" tipo="text" ancho="w-36" valor={focal.responsable ?? ''}
-          onCommit={v => onGuardarAct(focal.id, { responsable: v || null })} />
-
-        <span className="text-[10px] text-k-text3 flex-shrink-0 ml-1">
-          <b className="text-k-blue">{focal.predecesoras?.length ?? 0}</b> antec. ·{' '}
-          <b className="text-green-400">{focal.sucesoras?.length ?? 0}</b> suces.
+        {/* Responsable = el SUPERVISOR a cargo, elegido del padrón (encargo de
+            Jean: no un nombre suelto tecleado a mano). Es el mismo campo que
+            usa la agenda de la app de campo, así que escribirlo aquí le pone
+            la actividad en el teléfono. */}
+        <label className="flex items-center gap-1 flex-shrink-0 text-[9px] uppercase font-bold text-k-text3 tracking-wide">
+          Supervisor
+          <select value={focal.supervisor_id ?? ''}
+            onChange={e => onGuardarAct(focal.id, { supervisor_id: e.target.value || null })}
+            title="Supervisor a cargo: le aparece la actividad en su agenda de campo"
+            className="w-40 bg-k-void border border-k-border rounded-lg px-1.5 py-1
+                       text-[11px] normal-case tracking-normal text-k-text outline-none focus:border-k-amber">
+            <option value="">— sin asignar —</option>
+            {sups.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+          </select>
+        </label>
+        {/* Vínculos con la sintaxis de Project: varios de un tirón, con tipo y
+            lag firmado. Sustituye a los botones FS/SS/FF que estaban aparte. */}
+        <label className="flex items-center gap-1 flex-shrink-0 text-[9px] uppercase font-bold text-k-text3 tracking-wide">
+          Después de
+          <input key={`d${focal.id}:${fmtDeps(focal.predecesoras)}`}
+            defaultValue={fmtDeps(focal.predecesoras)}
+            placeholder="12; 8FF-1"
+            title={'Antecesoras como en Project, separadas por ; —\n'
+              + '12 → después de terminar la 12 (FS)\n'
+              + '12FS+2 → 2 días hábiles después de terminar la 12\n'
+              + '8SS-1 → arranca 1 día ANTES de que arranque la 8 (traslape)\n'
+              + '8FF → no termina antes que la 8\n'
+              + 'Borrar un número quita ese vínculo. Enter guarda.'}
+            onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+            onBlur={e => {
+              const v = e.target.value.trim()
+              if (v !== fmtDeps(focal.predecesoras)) onDeps(focal, v)
+            }}
+            className="w-40 bg-k-void border border-k-border rounded-lg px-1.5 py-1 font-mono
+                       text-[11px] normal-case tracking-normal text-k-text outline-none focus:border-k-amber" />
+        </label>
+        <span className="text-[10px] text-k-text3 flex-shrink-0"
+          title="Cuántas actividades dependen de esta">
+          → <b className="text-green-400">{focal.sucesoras?.length ?? 0}</b> suces.
         </span>
         <div className="ml-auto flex items-center gap-1.5 flex-shrink-0 pl-2">
           <button onClick={onGrafo}
@@ -902,7 +894,8 @@ function PanelDeps({ actId, data, grafo, onGrafo, onCerrar, onIr, onCrear, onLag
       {grafo && (
         <div className="flex-1 flex min-h-0">
           {/* ── Grafo horizontal: se lee como una red CPM, antecesoras a la
-              izquierda y sucesoras a la derecha. ── */}
+              izquierda y sucesoras a la derecha. Es SOLO vista y navegación:
+              los vínculos se escriben arriba, en DESPUÉS DE. ── */}
           <div className="flex-1 overflow-auto px-3 py-2">
             <div className="flex items-stretch gap-1.5 w-max min-w-full h-full">
               {nivelesUp.length === 0 && (
@@ -918,7 +911,10 @@ function PanelDeps({ actId, data, grafo, onGrafo, onCerrar, onIr, onCrear, onLag
               ))}
               <div className="flex flex-col justify-center w-[180px] flex-shrink-0">
                 <div className="rounded-lg border-2 border-amber-400/70 bg-amber-500/15 px-2.5 py-1.5">
-                  <p className="text-[11px] font-bold text-k-amber truncate">{focal.titulo}</p>
+                  <div className="flex items-center gap-1">
+                    <span className="font-mono text-[9px] text-k-amber/70 flex-shrink-0">#{focal.id}</span>
+                    <p className="text-[11px] font-bold text-k-amber truncate">{focal.titulo}</p>
+                  </div>
                   <p className="text-[9px] text-k-text3">
                     {fmtCorta(focal.fecha)} → {fmtCorta(focal.fecha_fin)}
                     {focal.metrado_prog != null ? ` · ${focal.metrado_prog}${focal.und ? ` ${focal.und}` : ''}` : ''}
@@ -939,117 +935,6 @@ function PanelDeps({ actId, data, grafo, onGrafo, onCerrar, onIr, onCrear, onLag
             </div>
           </div>
 
-          {/* ── Columna derecha: crear vínculos y editar el seleccionado ── */}
-          <div className="w-[290px] flex-shrink-0 border-l border-k-border px-3 py-2 overflow-y-auto space-y-1.5">
-            <div className="flex gap-1.5">
-              <button onClick={() => { setAgregar(v => v === 'pred' ? null : 'pred'); setBusca('') }}
-                className={`flex-1 text-[10px] px-2 py-1 rounded border font-bold ${
-                  agregar === 'pred' ? 'border-blue-500/50 bg-blue-500/15 text-k-blue' : 'border-k-border text-k-text2 hover:bg-k-raised'}`}>
-                + antecesora
-              </button>
-              <button onClick={() => { setAgregar(v => v === 'suc' ? null : 'suc'); setBusca('') }}
-                className={`flex-1 text-[10px] px-2 py-1 rounded border font-bold ${
-                  agregar === 'suc' ? 'border-green-500/50 bg-green-500/15 text-green-400' : 'border-k-border text-k-text2 hover:bg-k-raised'}`}>
-                + sucesora
-              </button>
-            </div>
-
-            {agregar && (
-              <div className="space-y-1.5">
-                {/* Tipo y lag ANTES de elegir: el vínculo nace como se quiere, sin
-                    tener que corregirlo después. */}
-                <div className="flex items-center gap-1.5">
-                  <div className="flex gap-0.5 bg-k-void border border-k-border rounded-lg p-0.5">
-                    {(['FS', 'SS', 'FF'] as TipoDep[]).map(t => (
-                      <button key={t} onClick={() => setTipoNuevo(t)} title={TIPO_AYUDA[t]}
-                        className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                          tipoNuevo === t ? 'bg-k-amber text-black' : 'text-k-text3 hover:text-k-text'}`}>
-                        {t}
-                      </button>
-                    ))}
-                  </div>
-                  <input value={lagNuevo} inputMode="numeric" title="Días hábiles de espera (puede ser negativo para traslapar)"
-                    onChange={e => setLagNuevo(Number(e.target.value) || 0)}
-                    className="w-12 bg-k-void border border-k-border rounded px-1.5 py-1 text-[11px] text-k-text text-center outline-none focus:border-k-amber" />
-                  <span className="text-[10px] text-k-text3">lag</span>
-                </div>
-                <p className="text-[9px] text-k-text3">{TIPO_AYUDA[tipoNuevo]}</p>
-                <input value={busca} onChange={e => setBusca(e.target.value)} autoFocus
-                  placeholder={`Buscar la ${agregar === 'pred' ? 'antecesora (la de ANTES)' : 'sucesora (la de DESPUÉS)'}…`}
-                  className="w-full bg-k-void border border-k-border rounded-lg px-2 py-1.5 text-[11px] text-k-text outline-none focus:border-k-amber" />
-                <div className="space-y-1">
-                  {candidatas.map(cand => (
-                    <button key={cand.id}
-                      onClick={() => {
-                        if (agregar === 'pred') onCrear(actId, cand.id, tipoNuevo, lagNuevo)
-                        else onCrear(cand.id, actId, tipoNuevo, lagNuevo)
-                        setAgregar(null)
-                      }}
-                      className="w-full text-left text-[11px] text-k-text2 rounded-lg border border-k-border px-2 py-1.5 hover:bg-k-raised">
-                      {cand.titulo}
-                      <span className="text-k-text3 block text-[9px]">{cand.otm_id ?? ''} · {fmtCorta(cand.fecha)} → {fmtCorta(cand.fecha_fin)}</span>
-                    </button>
-                  ))}
-                  {candidatas.length === 0 && <p className="text-[10px] text-k-text3">Sin actividades en el rango visible que coincidan.</p>}
-                </div>
-              </div>
-            )}
-
-            {!agregar && sel && (
-              <div className="rounded-xl border border-k-border bg-k-raised/40 px-2.5 py-2 space-y-1.5">
-                <p className="text-[11px] text-k-text2 leading-tight">
-                  <b className="text-k-blue">{sel.predTitulo}</b>
-                  <span className="text-k-text3"> → </span>
-                  <b className="text-green-400">{sel.sucTitulo}</b>
-                </p>
-                <div className="flex items-center gap-1.5">
-                  {/* Editable: el motor entiende SS y FF desde 0034 y cambiar el
-                      tipo reprograma la sucesora sobre el vínculo nuevo. */}
-                  <div className="flex gap-0.5 bg-k-void border border-k-border rounded-lg p-0.5">
-                    {(['FS', 'SS', 'FF'] as TipoDep[]).map(t => (
-                      <button key={t} title={TIPO_AYUDA[t]}
-                        onClick={() => { if (t !== sel.tipo) onLag(sel.sucId, sel.predId, sel.lag, t) }}
-                        className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                          sel.tipo === t ? 'bg-k-amber text-black' : 'text-k-text3 hover:text-k-text'}`}>
-                        {t}
-                      </button>
-                    ))}
-                  </div>
-                  <input key={`${sel.dep_id}:${sel.lag}`} defaultValue={sel.lag} inputMode="numeric"
-                    title="Días hábiles de espera; negativo traslapa las actividades"
-                    onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
-                    onBlur={e => {
-                      const v = Number(e.target.value)
-                      if (Number.isFinite(v) && v !== sel.lag) onLag(sel.sucId, sel.predId, v, sel.tipo)
-                    }}
-                    className="w-12 bg-k-void border border-k-border rounded px-1.5 py-0.5 text-[11px] text-k-text text-center outline-none focus:border-k-amber" />
-                  <span className="text-[10px] text-k-text3">días de lag</span>
-                </div>
-                <p className="text-[9px] text-k-text3">{TIPO_AYUDA[sel.tipo]}</p>
-                <div className="flex gap-1.5">
-                  {sel.nodoId !== actId && (
-                    <button onClick={() => { setSel(null); onIr(sel.nodoId) }}
-                      title="Editar arriba el metrado, las fechas y el responsable de esa actividad"
-                      className="flex-1 text-[10px] font-bold px-2 py-1.5 rounded-lg border border-k-border text-k-text2 hover:bg-k-raised">
-                      ⤢ Editar esa actividad
-                    </button>
-                  )}
-                  <button onClick={() => { onQuitar(sel.dep_id); setSel(null) }}
-                    className="flex-1 text-[10px] font-bold px-2 py-1.5 rounded-lg border border-red-500/40 text-k-red hover:bg-red-500/10">
-                    🗑 Quitar vínculo
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {!agregar && !sel && (
-              <p className="text-[10px] text-k-text3 leading-snug">
-                Clic en una tarjeta del grafo para <b>editar su vínculo</b> (tipo y lag), o <b>⤢</b> para
-                traer esa actividad arriba y editar sus datos. Mover una antecesora empuja a sus
-                sucesoras conservando el plazo, nunca las adelanta.
-              </p>
-            )}
-          </div>
         </div>
       )}
     </div>
@@ -1286,9 +1171,17 @@ function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, 
             {/* # — el identificador que se teclea en DESPUÉS DE. El clic lo
                 marca para encadenar en bloque (el orden de marcado es el de
                 la secuencia). */}
-            <td className={`border border-k-border px-1 py-1 text-center align-middle cursor-pointer
-                  select-none hover:bg-k-raised ${iSel >= 0 ? 'bg-blue-500/25' : 'bg-k-raised/60'}`}
-              style={stick(0, true)} onClick={() => onSel(a.id)}
+            {/* Fondo OPACO: con `bg-k-raised/60` las columnas de fechas se
+                transparentaban por debajo al desplazarse y el # se volvía
+                ilegible. El marcado de selección se pinta con un inset
+                box-shadow encima, que no obliga a destapar el fondo. */}
+            <td className="border border-k-border px-1 py-1 text-center align-middle cursor-pointer
+                  select-none bg-k-raised hover:brightness-125"
+              style={{
+                ...stick(0, true), zIndex: 12,
+                ...(iSel >= 0 ? { boxShadow: 'inset 0 0 0 99px rgba(59,130,246,0.25)' } : {}),
+              }}
+              onClick={() => onSel(a.id)}
               title={iSel >= 0
                 ? `Marcada en la posición ${iSel + 1} de la secuencia — clic para desmarcar`
                 : `Actividad #${a.id} — este es el número que se teclea en DESPUÉS DE.\nClic para marcarla y encadenarla con otras.\nPara saltar a ella, escribe #${a.id} en el buscador.`}>
