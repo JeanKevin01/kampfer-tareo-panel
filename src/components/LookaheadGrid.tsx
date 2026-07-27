@@ -96,6 +96,11 @@ const motivoRevisar = (a: ActGrid): string | null => {
 const porRevisar = (a: ActGrid) => motivoRevisar(a) !== null
 
 const H_SEM = 22
+// Dock inferior de dependencias: plegado deja solo la franja de datos
+// editables; desplegado agrega el grafo. El grid se acorta lo mismo que mide,
+// así nunca queda una fila tapada.
+const ALTO_DOCK = 244
+const ALTO_DOCK_MIN = 52
 // El borde de una celda `sticky` se va con el scroll cuando la tabla usa
 // border-collapse; el inset box-shadow lo reemplaza y no se despega.
 const thSticky = (top: number, z = 30): React.CSSProperties => ({
@@ -111,8 +116,13 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
   const [cadenaDe, setCadenaDe] = useState<number | null>(null)
   // Modo Vincular (clic-clic): 1er clic = la que va PRIMERO, 2º = la que sigue.
   const [vincular, setVincular] = useState<{ on: boolean; primera: number | null }>({ on: false, primera: null })
-  // Panel lateral de dependencias de una actividad (clic en 🔗 o en un chip PRED).
+  // Panel de dependencias de una actividad (clic en 🔗 o en un chip PRED).
+  // Va abajo, a lo ancho: así el grid conserva TODAS sus columnas de días y se
+  // ven las fechas y los metrados mientras se edita (encargo de Jean). El grafo
+  // se pliega para dejar solo la franja de datos editables.
   const [panelDe, setPanelDe] = useState<number | null>(null)
+  const [dockGrafo, setDockGrafo] = useState(true)
+  const altoDock = panelDe == null ? 0 : dockGrafo ? ALTO_DOCK : ALTO_DOCK_MIN
   const [toast, setToast] = useState<{ msg: string; undo?: () => void; error?: boolean } | null>(null)
   // Mostrar relaciones: al pasar el mouse por una actividad vinculada se
   // resalta su cadena (azul = antecesoras, verde = sucesoras) sin hacer clic.
@@ -184,7 +194,8 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
     },
     onError: (e: Error) => setToast({ msg: e.message, error: true }),
   })
-  // Edición rápida desde el panel lateral: metrado / F.Inicio / F.Fin.
+  // Edición rápida desde el dock de dependencias: metrado / fechas / plazo /
+  // responsable.
   // El PUT re-prorratea y dispara la cascada FS si el rango cambió.
   const editarAct = useMutation({
     mutationFn: ({ id, patch }: { id: number; patch: Record<string, unknown> }) =>
@@ -363,7 +374,7 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
   })()
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3" style={{ paddingBottom: altoDock }}>
       <div className="flex items-center gap-2 flex-wrap">
         <button onClick={() => mover(-7)} className="p-1.5 rounded-lg border border-k-border text-k-text2 hover:bg-k-raised"><ChevronLeft size={15} /></button>
         <span className="text-sm font-bold text-k-text">LookAhead desde {fmtDia(desde)}</span>
@@ -499,7 +510,7 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
       )}
 
       <div className="overflow-auto rounded-xl border border-k-border"
-        style={{ maxHeight: 'calc(100vh - 250px)' }}>
+        style={{ maxHeight: `calc(100vh - ${250 + altoDock}px)` }}>
         <table className="border-collapse w-max min-w-full">
           <thead>
             <tr style={{ height: H_SEM }}>
@@ -611,9 +622,18 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
         el tipo es el <b>lag</b> en días hábiles (negativo = traslape). Mover una antecesora empuja a
         sus sucesoras <b>conservando el plazo</b> de cada una, y nunca las adelanta.
       </p>
+      <p className="text-[11px] text-k-text3">
+        <b>Dock de dependencias</b> — se abre abajo, a lo ancho, para no tapar ninguna columna de
+        días: en la franja superior se editan de un tirón <b>metrado, F.Inicio, F.Fin, plazo y
+        responsable</b> de la actividad en foco, y debajo se ve su red (antecesoras a la izquierda,
+        sucesoras a la derecha). Clic en una tarjeta para cambiar el <b>tipo y el lag</b> del vínculo,
+        <b> ⤢</b> para traer esa actividad a la franja de arriba, y <b>⌄ Solo datos</b> para plegar el
+        grafo cuando solo se quiere editar.
+      </p>
 
       {toast && (
-        <div className={`fixed bottom-4 right-4 z-50 flex items-center gap-3 rounded-xl border px-4 py-2.5 text-sm shadow-2xl ${
+        <div style={{ bottom: altoDock + 16 }}   // el toast sube por encima del dock
+          className={`fixed right-4 z-50 flex items-center gap-3 rounded-xl border px-4 py-2.5 text-sm shadow-2xl ${
           toast.error ? 'border-red-500/50 bg-red-950 text-red-200' : 'border-k-border bg-k-surface text-k-text'}`}>
           {toast.msg}
           {toast.undo && (
@@ -626,6 +646,7 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
 
       {panelDe != null && d && (
         <PanelDeps actId={panelDe} data={d}
+          grafo={dockGrafo} onGrafo={() => setDockGrafo(v => !v)}
           onCerrar={() => { setPanelDe(null); setCadenaDe(null) }}
           onIr={id => { setPanelDe(id); setCadenaDe(id) }}
           onCrear={(suc, pred, tipo, lag) => crearDep.mutate({ suc, pred, tipo, lag })}
@@ -637,12 +658,20 @@ export function LookaheadGrid({ onEditar }: { onEditar: (a: ActGrid) => void }) 
   )
 }
 
-// ── Panel «Dependencias» (grafo estilo Panel Maestro, elección de Jean) ──
-// Cadena visual: ● PREDECESORAS (azul) ↓ actividad seleccionada (ámbar) ↓
-// ● SUCESORAS (verde). Clic en una tarjeta = ver/editar ese vínculo en
-// «Detalles de la dependencia»; ⤢ = centrar el grafo en esa actividad.
-// El metrado y las fechas de la actividad se editan aquí mismo (Enter o
-// salir del campo guarda; el API re-prorratea y corre la cascada FS).
+// ── Dock «Dependencias» (grafo estilo Panel Maestro, elección de Jean) ──
+// Va ABAJO y a lo ancho, no como cajón lateral: el cajón de 360px tapaba los
+// últimos días del LookAhead, y Jean necesita ver las fechas y los metrados
+// mientras edita. Vertical se paga más barato (unas filas) que horizontal
+// (columnas de días enteras).
+//   Franja fija  → la actividad en foco con TODO lo editable en una línea:
+//                  metrado, F.Inicio, F.Fin, plazo y responsable.
+//   Grafo        → ● ANTECESORAS (azul) → actividad (ámbar) → ● SUCESORAS
+//                  (verde), de izquierda a derecha como una red CPM.
+//   Derecha      → crear vínculos (tipo + lag antes de elegir) y editar el
+//                  seleccionado. ⤢ trae esa actividad a la franja de arriba,
+//                  así los campos no se repiten en dos sitios.
+// «⌄ Solo datos» pliega el grafo y deja la franja de 52px.
+// Enter o salir del campo guarda; el API re-prorratea y corre la cascada.
 
 // Los tres tipos de vínculo, explicados en obra y no en jerga de Project.
 const TIPO_AYUDA: Record<TipoDep, string> = {
@@ -696,24 +725,29 @@ function CeldaEdit({ valor, texto, tipo, onCommit, titulo, clase, placeholder }:
   )
 }
 
-function CampoAct({ etiqueta, tipo, valor, onCommit }: {
+function CampoAct({ etiqueta, tipo, valor, onCommit, ancho }: {
   etiqueta: string; tipo: 'text' | 'date'; valor: string
   onCommit: (v: string) => void
+  /** clase de ancho del input; en la franja del dock cada dato pide el suyo */
+  ancho?: string
 }) {
   return (
-    <label className="text-[9px] text-k-text3 flex flex-col gap-0.5 min-w-0">
+    <label className="flex items-center gap-1 flex-shrink-0
+                      text-[9px] uppercase font-bold text-k-text3 tracking-wide">
       {etiqueta}
       <input key={valor} type={tipo} defaultValue={valor}
         inputMode={tipo === 'text' ? 'decimal' : undefined}
         onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
         onBlur={e => { const v = e.target.value.trim(); if (v !== valor) onCommit(v) }}
-        className="w-full bg-k-void border border-k-border rounded-lg px-1.5 py-1 text-[11px] text-k-text outline-none focus:border-k-amber" />
+        className={`${ancho ?? 'w-20'} bg-k-void border border-k-border rounded-lg px-1.5 py-1
+                    text-[11px] normal-case tracking-normal text-k-text outline-none focus:border-k-amber`} />
     </label>
   )
 }
 
-function PanelDeps({ actId, data, onCerrar, onIr, onCrear, onLag, onQuitar, onGuardarAct }: {
+function PanelDeps({ actId, data, grafo, onGrafo, onCerrar, onIr, onCrear, onLag, onQuitar, onGuardarAct }: {
   actId: number; data: GridResp
+  grafo: boolean; onGrafo: () => void
   onCerrar: () => void; onIr: (id: number) => void
   onCrear: (suc: number, pred: number, tipo: TipoDep, lag: number) => void
   onLag: (suc: number, pred: number, lag: number, tipo: TipoDep) => void
@@ -775,6 +809,9 @@ function PanelDeps({ actId, data, onCerrar, onIr, onCrear, onLag, onQuitar, onGu
   const candidatas = acts.filter(a => !vinculadas.has(a.id)
     && (!q || a.titulo.toLowerCase().includes(q) || String(a.id) === q)).slice(0, 30)
 
+  // Tarjeta del grafo. Clic = seleccionar el vínculo (se edita a la derecha);
+  // ⤢ = traer esa actividad al foco, con lo que sus datos pasan a la franja
+  // editable de arriba (por eso aquí NO se repiten los campos).
   const Tarjeta = ({ n, clr }: { n: Nodo; clr: 'azul' | 'verde' }) => {
     const activa = sel != null && n.dep != null && n.dep.dep_id === sel.dep_id
     const base = clr === 'azul'
@@ -782,13 +819,13 @@ function PanelDeps({ actId, data, onCerrar, onIr, onCrear, onLag, onQuitar, onGu
       : 'border-green-500/50 bg-green-500/10 hover:bg-green-500/20'
     return (
       <div onClick={() => n.dep && setSel(activa ? null : { ...n.dep, nodoId: n.id })}
-        title={n.dep ? 'Clic: ver los datos de esta actividad y su vínculo en «Detalles de la dependencia»' : 'Actividad fuera del rango visible del grid'}
-        className={`rounded-lg border px-2.5 py-1.5 cursor-pointer flex-1 min-w-[130px] ${base} ${activa ? 'ring-2 ring-amber-400/70' : ''}`}>
+        title={n.dep ? 'Clic: editar el tipo de vínculo y el lag a la derecha · ⤢: editar los datos de esta actividad arriba' : 'Actividad fuera del rango visible del grid'}
+        className={`rounded-lg border px-2.5 py-1.5 cursor-pointer ${base} ${activa ? 'ring-2 ring-amber-400/70' : ''}`}>
         <div className="flex items-center gap-1">
           <span className="text-[11px] text-k-text truncate flex-1">{n.titulo}</span>
           {n.a && (
             <button onClick={e => { e.stopPropagation(); setSel(null); onIr(n.id) }}
-              title="Centrar el grafo en esta actividad"
+              title="Traer esta actividad al foco (sus datos pasan arriba, editables)"
               className="text-[10px] text-k-text3 hover:text-k-text flex-shrink-0">⤢</button>
           )}
         </div>
@@ -799,215 +836,222 @@ function PanelDeps({ actId, data, onCerrar, onIr, onCrear, onLag, onQuitar, onGu
       </div>
     )
   }
+  // Una columna del grafo horizontal (las actividades en paralelo se apilan).
+  const Columna = ({ nodos, clr }: { nodos: Nodo[]; clr: 'azul' | 'verde' }) => (
+    <div className="flex flex-col justify-center gap-1 w-[168px] flex-shrink-0">
+      {nodos.map(n => <Tarjeta key={n.id} n={n} clr={clr} />)}
+    </div>
+  )
+  const Flecha = ({ clr }: { clr: 'azul' | 'verde' }) => (
+    <div className={`flex items-center text-sm flex-shrink-0 ${clr === 'azul' ? 'text-k-blue' : 'text-green-400'}`}>→</div>
+  )
 
   return (
-    <div className="fixed inset-y-0 right-0 z-40 w-[360px] bg-k-surface border-l border-k-border shadow-2xl flex flex-col">
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-k-border">
-        <p className="text-sm font-bold text-k-text">Dependencias</p>
-        <button onClick={onCerrar} className="ml-auto text-k-text3 hover:text-k-text">✕</button>
+    <div className="fixed inset-x-0 bottom-0 z-40 bg-k-surface border-t border-k-border shadow-2xl flex flex-col"
+      style={{ height: grafo ? ALTO_DOCK : ALTO_DOCK_MIN }}>
+
+      {/* ── Franja 1: la actividad en foco, TODA editable en una sola línea ──
+          Es lo mínimo indispensable para programar (metrado, fechas, plazo,
+          responsable) sin tapar ni una columna de días del grid. */}
+      <div className="flex items-center gap-2.5 px-3 overflow-x-auto flex-shrink-0 border-b border-k-border"
+        style={{ height: ALTO_DOCK_MIN }}>
+        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${ESTADO_DOT[focal.estado] ?? 'bg-zinc-500'}`}
+          title={focal.estado} />
+        <div className="w-[190px] flex-shrink-0">
+          <p className="text-[12px] font-bold text-k-text truncate" title={focal.titulo}>{focal.titulo}</p>
+          <p className="text-[9px] text-k-text3 font-mono truncate">
+            #{focal.id}{focal.partida_codigo ? ` · 📌 ${focal.partida_codigo}` : ''}
+          </p>
+        </div>
+        <CampoAct etiqueta={focal.und ? `Metrado (${focal.und})` : 'Metrado'} tipo="text" ancho="w-20"
+          valor={focal.metrado_prog != null ? String(focal.metrado_prog) : ''}
+          onCommit={v => {
+            if (v === '') { onGuardarAct(focal.id, { metrado_prog: null }); return }
+            const m = Number(v)
+            if (Number.isFinite(m) && m >= 0) onGuardarAct(focal.id, { metrado_prog: m })
+          }} />
+        <CampoAct etiqueta="F. Inicio" tipo="date" ancho="w-[126px]" valor={focal.fecha}
+          onCommit={v => { if (v) onGuardarAct(focal.id, { fecha: v }) }} />
+        <CampoAct etiqueta="F. Fin" tipo="date" ancho="w-[126px]" valor={focal.fecha_fin}
+          onCommit={v => { if (v) onGuardarAct(focal.id, { fecha_fin: v }) }} />
+        {/* El plazo manda sobre el fin: escribirlo recalcula F.Fin con el
+            calendario del proyecto (0034). */}
+        <CampoAct etiqueta="Plazo (d)" tipo="text" ancho="w-14"
+          valor={focal.plazo_dias != null ? String(focal.plazo_dias) : ''}
+          onCommit={v => {
+            const p = Number(v)
+            if (v !== '' && Number.isFinite(p) && p > 0) onGuardarAct(focal.id, { plazo_dias: p })
+          }} />
+        <CampoAct etiqueta="Responsable" tipo="text" ancho="w-36" valor={focal.responsable ?? ''}
+          onCommit={v => onGuardarAct(focal.id, { responsable: v || null })} />
+
+        <span className="text-[10px] text-k-text3 flex-shrink-0 ml-1">
+          <b className="text-k-blue">{focal.predecesoras?.length ?? 0}</b> antec. ·{' '}
+          <b className="text-green-400">{focal.sucesoras?.length ?? 0}</b> suces.
+        </span>
+        <div className="ml-auto flex items-center gap-1.5 flex-shrink-0 pl-2">
+          <button onClick={onGrafo}
+            title={grafo ? 'Plegar el grafo y dejar solo esta franja de datos' : 'Ver el grafo de dependencias'}
+            className="text-[10px] font-bold px-2 py-1 rounded-lg border border-k-border text-k-text2 hover:bg-k-raised">
+            {grafo ? '⌄ Solo datos' : '⌃ Ver grafo'}
+          </button>
+          <button onClick={onCerrar} title="Cerrar (Esc)" className="text-k-text3 hover:text-k-text px-1">✕</button>
+        </div>
       </div>
-      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
 
-        <div>
-          <p className="text-[10px] text-k-text3 mb-1">Actividad seleccionada</p>
-          <div className="rounded-xl border border-amber-500/50 bg-amber-500/10 px-3 py-2 space-y-1.5">
-            <div className="flex items-center gap-1.5">
-              <span className={`w-2 h-2 rounded-full flex-shrink-0 ${ESTADO_DOT[focal.estado] ?? 'bg-zinc-500'}`} />
-              <p className="text-[12px] font-bold text-k-text truncate">{focal.titulo}</p>
-            </div>
-            {focal.partida_codigo && (
-              <p className="text-[9px] text-k-text3 font-mono">📌 {focal.partida_codigo}{focal.und ? ` · ${focal.und}` : ''}</p>
-            )}
-            {/* Todo lo que define la actividad, editable sin salir del panel:
-                antes había que cerrarlo e ir a la fila del grid o al modal. */}
-            <div className="grid grid-cols-3 gap-1.5">
-              <CampoAct etiqueta={`Metrado${focal.und ? ` (${focal.und})` : ''}`} tipo="text"
-                valor={focal.metrado_prog != null ? String(focal.metrado_prog) : ''}
-                onCommit={v => {
-                  if (v === '') { onGuardarAct(focal.id, { metrado_prog: null }); return }
-                  const m = Number(v)
-                  if (Number.isFinite(m) && m >= 0) onGuardarAct(focal.id, { metrado_prog: m })
-                }} />
-              <CampoAct etiqueta="F. Inicio" tipo="date" valor={focal.fecha}
-                onCommit={v => { if (v) onGuardarAct(focal.id, { fecha: v }) }} />
-              <CampoAct etiqueta="F. Fin" tipo="date" valor={focal.fecha_fin}
-                onCommit={v => { if (v) onGuardarAct(focal.id, { fecha_fin: v }) }} />
-            </div>
-            <div className="grid grid-cols-3 gap-1.5">
-              {/* El plazo manda sobre el fin: escribirlo recalcula F.Fin con el
-                  calendario del proyecto (0034). */}
-              <CampoAct etiqueta="Plazo (d)" tipo="text"
-                valor={focal.plazo_dias != null ? String(focal.plazo_dias) : ''}
-                onCommit={v => {
-                  const p = Number(v)
-                  if (v !== '' && Number.isFinite(p) && p > 0) onGuardarAct(focal.id, { plazo_dias: p })
-                }} />
-              <div className="col-span-2">
-                <CampoAct etiqueta="Responsable" tipo="text" valor={focal.responsable ?? ''}
-                  onCommit={v => onGuardarAct(focal.id, { responsable: v || null })} />
+      {grafo && (
+        <div className="flex-1 flex min-h-0">
+          {/* ── Grafo horizontal: se lee como una red CPM, antecesoras a la
+              izquierda y sucesoras a la derecha. ── */}
+          <div className="flex-1 overflow-auto px-3 py-2">
+            <div className="flex items-stretch gap-1.5 w-max min-w-full h-full">
+              {nivelesUp.length === 0 && (
+                <div className="flex items-center w-[168px] flex-shrink-0 text-[10px] text-k-text3">
+                  Sin antecesoras: puede arrancar cuando se quiera.
+                </div>
+              )}
+              {nivelesUp.map((nivel, i) => (
+                <Fragment key={`u${i}`}>
+                  <Columna nodos={nivel} clr="azul" />
+                  <Flecha clr="azul" />
+                </Fragment>
+              ))}
+              <div className="flex flex-col justify-center w-[180px] flex-shrink-0">
+                <div className="rounded-lg border-2 border-amber-400/70 bg-amber-500/15 px-2.5 py-1.5">
+                  <p className="text-[11px] font-bold text-k-amber truncate">{focal.titulo}</p>
+                  <p className="text-[9px] text-k-text3">
+                    {fmtCorta(focal.fecha)} → {fmtCorta(focal.fecha_fin)}
+                    {focal.metrado_prog != null ? ` · ${focal.metrado_prog}${focal.und ? ` ${focal.und}` : ''}` : ''}
+                  </p>
+                </div>
               </div>
+              {nivelesDown.map((nivel, i) => (
+                <Fragment key={`d${i}`}>
+                  <Flecha clr="verde" />
+                  <Columna nodos={nivel} clr="verde" />
+                </Fragment>
+              ))}
+              {nivelesDown.length === 0 && (
+                <div className="flex items-center w-[168px] flex-shrink-0 text-[10px] text-k-text3 pl-2">
+                  Nada depende de esta actividad.
+                </div>
+              )}
             </div>
           </div>
-        </div>
 
-        <div>
-          <p className="text-[10px] uppercase font-bold text-k-blue mb-1.5">● Predecesoras</p>
-          {nivelesUp.length === 0 && (
-            <p className="text-[11px] text-k-text3 mb-1.5">Ninguna: puede arrancar cuando se quiera.</p>
-          )}
-          <div className="space-y-1">
-            {nivelesUp.map((nivel, i) => (
-              <Fragment key={`u${i}`}>
-                <div className="flex gap-1 flex-wrap">
-                  {nivel.map(n => <Tarjeta key={n.id} n={n} clr="azul" />)}
-                </div>
-                <div className="text-center text-sm leading-none text-k-blue">↓</div>
-              </Fragment>
-            ))}
-            <div className="rounded-lg border-2 border-amber-400/70 bg-amber-500/15 px-2.5 py-1.5">
-              <p className="text-[11px] font-bold text-k-amber truncate">{focal.titulo}</p>
-              <p className="text-[9px] text-k-text3">{fmtCorta(focal.fecha)} → {fmtCorta(focal.fecha_fin)}</p>
+          {/* ── Columna derecha: crear vínculos y editar el seleccionado ── */}
+          <div className="w-[290px] flex-shrink-0 border-l border-k-border px-3 py-2 overflow-y-auto space-y-1.5">
+            <div className="flex gap-1.5">
+              <button onClick={() => { setAgregar(v => v === 'pred' ? null : 'pred'); setBusca('') }}
+                className={`flex-1 text-[10px] px-2 py-1 rounded border font-bold ${
+                  agregar === 'pred' ? 'border-blue-500/50 bg-blue-500/15 text-k-blue' : 'border-k-border text-k-text2 hover:bg-k-raised'}`}>
+                + antecesora
+              </button>
+              <button onClick={() => { setAgregar(v => v === 'suc' ? null : 'suc'); setBusca('') }}
+                className={`flex-1 text-[10px] px-2 py-1 rounded border font-bold ${
+                  agregar === 'suc' ? 'border-green-500/50 bg-green-500/15 text-green-400' : 'border-k-border text-k-text2 hover:bg-k-raised'}`}>
+                + sucesora
+              </button>
             </div>
-          </div>
-          <p className="text-[10px] uppercase font-bold text-green-400 mt-2 mb-1.5">● Sucesoras</p>
-          {nivelesDown.length === 0 && (
-            <p className="text-[11px] text-k-text3">Nada depende de esta actividad.</p>
-          )}
-          <div className="space-y-1">
-            {nivelesDown.map((nivel, i) => (
-              <Fragment key={`d${i}`}>
-                <div className="text-center text-sm leading-none text-green-400">↓</div>
-                <div className="flex gap-1 flex-wrap">
-                  {nivel.map(n => <Tarjeta key={n.id} n={n} clr="verde" />)}
-                </div>
-              </Fragment>
-            ))}
-          </div>
-        </div>
 
-        <div>
-          <div className="flex gap-1.5 mb-1.5">
-            <button onClick={() => { setAgregar(v => v === 'pred' ? null : 'pred'); setBusca('') }}
-              className={`text-[10px] px-2 py-1 rounded border font-bold ${
-                agregar === 'pred' ? 'border-blue-500/50 bg-blue-500/15 text-k-blue' : 'border-k-border text-k-text2 hover:bg-k-raised'}`}>
-              + antecesora
-            </button>
-            <button onClick={() => { setAgregar(v => v === 'suc' ? null : 'suc'); setBusca('') }}
-              className={`text-[10px] px-2 py-1 rounded border font-bold ${
-                agregar === 'suc' ? 'border-green-500/50 bg-green-500/15 text-green-400' : 'border-k-border text-k-text2 hover:bg-k-raised'}`}>
-              + sucesora
-            </button>
-          </div>
-          {agregar && (
-            <div className="space-y-1.5">
-              {/* Tipo y lag ANTES de elegir: el vínculo nace como se quiere, sin
-                  tener que corregirlo después. */}
-              <div className="flex items-center gap-1.5">
-                <div className="flex gap-0.5 bg-k-void border border-k-border rounded-lg p-0.5">
-                  {(['FS', 'SS', 'FF'] as TipoDep[]).map(t => (
-                    <button key={t} onClick={() => setTipoNuevo(t)}
-                      title={TIPO_AYUDA[t]}
-                      className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                        tipoNuevo === t ? 'bg-k-amber text-black' : 'text-k-text3 hover:text-k-text'}`}>
-                      {t}
+            {agregar && (
+              <div className="space-y-1.5">
+                {/* Tipo y lag ANTES de elegir: el vínculo nace como se quiere, sin
+                    tener que corregirlo después. */}
+                <div className="flex items-center gap-1.5">
+                  <div className="flex gap-0.5 bg-k-void border border-k-border rounded-lg p-0.5">
+                    {(['FS', 'SS', 'FF'] as TipoDep[]).map(t => (
+                      <button key={t} onClick={() => setTipoNuevo(t)} title={TIPO_AYUDA[t]}
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          tipoNuevo === t ? 'bg-k-amber text-black' : 'text-k-text3 hover:text-k-text'}`}>
+                        {t}
+                      </button>
+                    ))}
+                  </div>
+                  <input value={lagNuevo} inputMode="numeric" title="Días hábiles de espera (puede ser negativo para traslapar)"
+                    onChange={e => setLagNuevo(Number(e.target.value) || 0)}
+                    className="w-12 bg-k-void border border-k-border rounded px-1.5 py-1 text-[11px] text-k-text text-center outline-none focus:border-k-amber" />
+                  <span className="text-[10px] text-k-text3">lag</span>
+                </div>
+                <p className="text-[9px] text-k-text3">{TIPO_AYUDA[tipoNuevo]}</p>
+                <input value={busca} onChange={e => setBusca(e.target.value)} autoFocus
+                  placeholder={`Buscar la ${agregar === 'pred' ? 'antecesora (la de ANTES)' : 'sucesora (la de DESPUÉS)'}…`}
+                  className="w-full bg-k-void border border-k-border rounded-lg px-2 py-1.5 text-[11px] text-k-text outline-none focus:border-k-amber" />
+                <div className="space-y-1">
+                  {candidatas.map(cand => (
+                    <button key={cand.id}
+                      onClick={() => {
+                        if (agregar === 'pred') onCrear(actId, cand.id, tipoNuevo, lagNuevo)
+                        else onCrear(cand.id, actId, tipoNuevo, lagNuevo)
+                        setAgregar(null)
+                      }}
+                      className="w-full text-left text-[11px] text-k-text2 rounded-lg border border-k-border px-2 py-1.5 hover:bg-k-raised">
+                      {cand.titulo}
+                      <span className="text-k-text3 block text-[9px]">{cand.otm_id ?? ''} · {fmtCorta(cand.fecha)} → {fmtCorta(cand.fecha_fin)}</span>
                     </button>
                   ))}
+                  {candidatas.length === 0 && <p className="text-[10px] text-k-text3">Sin actividades en el rango visible que coincidan.</p>}
                 </div>
-                <input value={lagNuevo} inputMode="numeric" title="Días hábiles de espera (puede ser negativo para traslapar)"
-                  onChange={e => setLagNuevo(Number(e.target.value) || 0)}
-                  className="w-14 bg-k-void border border-k-border rounded px-1.5 py-1 text-[11px] text-k-text text-center outline-none focus:border-k-amber" />
-                <span className="text-[10px] text-k-text3">días de lag</span>
               </div>
-              <p className="text-[9px] text-k-text3">{TIPO_AYUDA[tipoNuevo]}</p>
-              <input value={busca} onChange={e => setBusca(e.target.value)} autoFocus
-                placeholder={`Buscar la ${agregar === 'pred' ? 'antecesora (la que va ANTES)' : 'sucesora (la que va DESPUÉS)'}…`}
-                className="w-full bg-k-void border border-k-border rounded-lg px-2 py-1.5 text-[11px] text-k-text outline-none focus:border-k-amber" />
-              <div className="max-h-44 overflow-y-auto space-y-1">
-                {candidatas.map(cand => (
-                  <button key={cand.id}
-                    onClick={() => {
-                      if (agregar === 'pred') onCrear(actId, cand.id, tipoNuevo, lagNuevo)
-                      else onCrear(cand.id, actId, tipoNuevo, lagNuevo)
-                      setAgregar(null)
-                    }}
-                    className="w-full text-left text-[11px] text-k-text2 rounded-lg border border-k-border px-2 py-1.5 hover:bg-k-raised">
-                    {cand.titulo}
-                    <span className="text-k-text3 block text-[9px]">{cand.otm_id ?? ''} · {fmtCorta(cand.fecha)} → {fmtCorta(cand.fecha_fin)}</span>
-                  </button>
-                ))}
-                {candidatas.length === 0 && <p className="text-[10px] text-k-text3">Sin actividades en el rango visible que coincidan.</p>}
-              </div>
-            </div>
-          )}
-        </div>
+            )}
 
-        {sel && (
-          <div className="rounded-xl border border-k-border bg-k-raised/40 px-3 py-2.5 space-y-1.5">
-            <p className="text-[10px] uppercase font-bold text-k-text3">Detalles de la dependencia</p>
-            {(() => {
-              const actSel = porId.get(sel.nodoId)
-              if (!actSel) return null
-              return (
-                <div className="rounded-lg border border-k-border bg-k-void/40 px-2.5 py-2 space-y-1.5">
-                  <p className="text-[11px] font-bold text-k-text truncate">{actSel.titulo}</p>
-                  <div className="grid grid-cols-3 gap-1.5">
-                    <CampoAct etiqueta={`Metrado${actSel.und ? ` (${actSel.und})` : ''}`} tipo="text"
-                      valor={actSel.metrado_prog != null ? String(actSel.metrado_prog) : ''}
-                      onCommit={v => {
-                        if (v === '') { onGuardarAct(actSel.id, { metrado_prog: null }); return }
-                        const m = Number(v)
-                        if (Number.isFinite(m) && m >= 0) onGuardarAct(actSel.id, { metrado_prog: m })
-                      }} />
-                    <CampoAct etiqueta="F. Inicio" tipo="date" valor={actSel.fecha}
-                      onCommit={v => { if (v) onGuardarAct(actSel.id, { fecha: v }) }} />
-                    <CampoAct etiqueta="F. Fin" tipo="date" valor={actSel.fecha_fin}
-                      onCommit={v => { if (v) onGuardarAct(actSel.id, { fecha_fin: v }) }} />
+            {!agregar && sel && (
+              <div className="rounded-xl border border-k-border bg-k-raised/40 px-2.5 py-2 space-y-1.5">
+                <p className="text-[11px] text-k-text2 leading-tight">
+                  <b className="text-k-blue">{sel.predTitulo}</b>
+                  <span className="text-k-text3"> → </span>
+                  <b className="text-green-400">{sel.sucTitulo}</b>
+                </p>
+                <div className="flex items-center gap-1.5">
+                  {/* Editable: el motor entiende SS y FF desde 0034 y cambiar el
+                      tipo reprograma la sucesora sobre el vínculo nuevo. */}
+                  <div className="flex gap-0.5 bg-k-void border border-k-border rounded-lg p-0.5">
+                    {(['FS', 'SS', 'FF'] as TipoDep[]).map(t => (
+                      <button key={t} title={TIPO_AYUDA[t]}
+                        onClick={() => { if (t !== sel.tipo) onLag(sel.sucId, sel.predId, sel.lag, t) }}
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          sel.tipo === t ? 'bg-k-amber text-black' : 'text-k-text3 hover:text-k-text'}`}>
+                        {t}
+                      </button>
+                    ))}
                   </div>
+                  <input key={`${sel.dep_id}:${sel.lag}`} defaultValue={sel.lag} inputMode="numeric"
+                    title="Días hábiles de espera; negativo traslapa las actividades"
+                    onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+                    onBlur={e => {
+                      const v = Number(e.target.value)
+                      if (Number.isFinite(v) && v !== sel.lag) onLag(sel.sucId, sel.predId, v, sel.tipo)
+                    }}
+                    className="w-12 bg-k-void border border-k-border rounded px-1.5 py-0.5 text-[11px] text-k-text text-center outline-none focus:border-k-amber" />
+                  <span className="text-[10px] text-k-text3">días de lag</span>
                 </div>
-              )
-            })()}
-            <p className="text-[11px] text-k-text2">
-              {sel.predTitulo} <span className="text-k-text3">→</span> {sel.sucTitulo}
-            </p>
-            <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[11px] items-center">
-              <span className="text-k-text3">Tipo</span>
-              {/* Editable: el motor entiende SS y FF desde 0034 y cambiar el
-                  tipo reprograma la sucesora sobre el vínculo nuevo. */}
-              <div className="flex gap-0.5 bg-k-void border border-k-border rounded-lg p-0.5 w-fit">
-                {(['FS', 'SS', 'FF'] as TipoDep[]).map(t => (
-                  <button key={t} title={TIPO_AYUDA[t]}
-                    onClick={() => { if (t !== sel.tipo) onLag(sel.sucId, sel.predId, sel.lag, t) }}
-                    className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                      sel.tipo === t ? 'bg-k-amber text-black' : 'text-k-text3 hover:text-k-text'}`}>
-                    {t}
+                <p className="text-[9px] text-k-text3">{TIPO_AYUDA[sel.tipo]}</p>
+                <div className="flex gap-1.5">
+                  {sel.nodoId !== actId && (
+                    <button onClick={() => { setSel(null); onIr(sel.nodoId) }}
+                      title="Editar arriba el metrado, las fechas y el responsable de esa actividad"
+                      className="flex-1 text-[10px] font-bold px-2 py-1.5 rounded-lg border border-k-border text-k-text2 hover:bg-k-raised">
+                      ⤢ Editar esa actividad
+                    </button>
+                  )}
+                  <button onClick={() => { onQuitar(sel.dep_id); setSel(null) }}
+                    className="flex-1 text-[10px] font-bold px-2 py-1.5 rounded-lg border border-red-500/40 text-k-red hover:bg-red-500/10">
+                    🗑 Quitar vínculo
                   </button>
-                ))}
+                </div>
               </div>
-              <span className="text-k-text3">Lag</span>
-              <span className="flex items-center gap-1.5 text-k-text2">
-                <input key={`${sel.dep_id}:${sel.lag}`} defaultValue={sel.lag} inputMode="numeric"
-                  title="Días hábiles de espera; negativo traslapa las actividades"
-                  onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
-                  onBlur={e => {
-                    const v = Number(e.target.value)
-                    if (Number.isFinite(v) && v !== sel.lag) onLag(sel.sucId, sel.predId, v, sel.tipo)
-                  }}
-                  className="w-12 bg-k-void border border-k-border rounded px-1.5 py-0.5 text-[11px] text-k-text text-center outline-none focus:border-k-amber" />
-                días
-              </span>
-            </div>
-            <p className="text-[9px] text-k-text3">{TIPO_AYUDA[sel.tipo]}</p>
-            <button onClick={() => { onQuitar(sel.dep_id); setSel(null) }}
-              className="w-full text-[10px] font-bold px-2 py-1.5 rounded-lg border border-red-500/40 text-k-red hover:bg-red-500/10">
-              🗑 Quitar este vínculo
-            </button>
+            )}
+
+            {!agregar && !sel && (
+              <p className="text-[10px] text-k-text3 leading-snug">
+                Clic en una tarjeta del grafo para <b>editar su vínculo</b> (tipo y lag), o <b>⤢</b> para
+                traer esa actividad arriba y editar sus datos. Mover una antecesora empuja a sus
+                sucesoras conservando el plazo, nunca las adelanta.
+              </p>
+            )}
           </div>
-        )}
-      </div>
-      <p className="px-4 py-2 text-[9px] text-k-text3 border-t border-k-border">
-        FS: la sucesora arranca al terminar la antecesora (+lag). Mover una antecesora
-        empuja a sus sucesoras automáticamente, nunca las adelanta.
-      </p>
+        </div>
+      )}
     </div>
   )
 }
