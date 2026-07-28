@@ -1,13 +1,19 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  Calendar, CheckCircle, XCircle, Clock, Hash, Mail,
+  Calendar, CheckCircle, XCircle, Clock, Hash, Mail, Grid3X3,
   Loader2, Users, Search, X, ChevronDown, ChevronUp, UserPlus,
 } from 'lucide-react'
+import { Link } from 'react-router-dom'
 
 import { api, ApiError } from '@/lib/api'
+import { TabsPagina } from '@/components/TabsPagina'
+import { useTab, type TabDef } from '@/lib/tabs'
+import MatrizSupervisores from '@/pages/MatrizSupervisores'
 
 interface Supervisor  { id: string; nombre: string; email?: string }
+/** Respuesta del alta: trae el acceso a la app solo si acaba de crearlo. */
+interface AltaSup { nombre: string; usuario?: string | null; password?: string | null }
 interface Registro    { id: number; supervisor_id: string; otm_id: string; trab_id: string; hh: number | null }
 interface Trabajador  { id: string; nombre: string; cargo: string; activo: boolean }
 interface CuaItem     { trab_id: string; nombre: string; cargo: string }
@@ -154,29 +160,31 @@ function CuadrillaPanel({ supId, supNombre }: { supId: string; supNombre: string
 }
 
 // ── Componente principal ──────────────────────────────────────
+const TABS: TabDef[] = [
+  { id: 'estado', label: 'Estado del día', icon: Calendar },
+  { id: 'matriz', label: 'Reportes por semana', icon: Grid3X3 },
+]
+
 export default function Supervisores() {
-  const qc = useQueryClient()
+  const [tab, setTab] = useTab(TABS)
+  return (
+    <div className="space-y-5">
+      <TabsPagina tabs={TABS} activo={tab} onCambiar={setTab} />
+      {tab === 'estado' && <PanelEstadoDia />}
+      {tab === 'matriz' && <MatrizSupervisores />}
+    </div>
+  )
+}
+
+function PanelEstadoDia() {
   const [fecha, setFecha]           = useState(hoy)
   const [editando, setEditando]     = useState<string | null>(null)
   const [showNuevo, setShowNuevo]   = useState(false)
-  const [nuevoNombre, setNuevoNombre] = useState('')
-  const [nuevoEmail, setNuevoEmail]   = useState('')
 
   const { data: supervisores = [], isLoading: loadSup } = useQuery<Supervisor[]>({
     queryKey: ['supervisores'],
     queryFn: () => api<Supervisor[]>('/api/supervisores'),
     staleTime: 5 * 60 * 1000,
-  })
-
-  const crearSupervisor = useMutation({
-    mutationFn: () => api('/admin/supervisor', {
-      method: 'POST',
-      body: JSON.stringify({ nombre: nuevoNombre, email: nuevoEmail }),
-    }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['supervisores'] })
-      setNuevoNombre(''); setNuevoEmail(''); setShowNuevo(false)
-    },
   })
 
   const { data: registros = [], isLoading: loadReg } = useQuery<Registro[]>({
@@ -219,36 +227,7 @@ export default function Supervisores() {
         </div>
       </div>
 
-      {/* Formulario nuevo supervisor */}
-      {showNuevo && (
-        <div className="bg-k-surface border border-amber-500/20 rounded-xl p-4 flex flex-wrap items-end gap-3">
-          <div className="flex-1 min-w-[200px]">
-            <label className="block text-[10px] font-bold text-k-text3 uppercase tracking-wide mb-1.5">Nombre completo</label>
-            <input value={nuevoNombre} onChange={e => setNuevoNombre(e.target.value)}
-              placeholder="Ej: MAMANI CCOPA DAVID"
-              className="w-full bg-k-raised border border-k-border rounded-lg px-3 py-2.5 text-sm text-k-text outline-none focus:border-k-amber transition-colors" />
-          </div>
-          <div className="flex-1 min-w-[200px]">
-            <label className="block text-[10px] font-bold text-k-text3 uppercase tracking-wide mb-1.5">Email (opcional)</label>
-            <input value={nuevoEmail} onChange={e => setNuevoEmail(e.target.value)}
-              placeholder="correo@kampfer.pe"
-              className="w-full bg-k-raised border border-k-border rounded-lg px-3 py-2.5 text-sm text-k-text outline-none focus:border-k-amber transition-colors" />
-          </div>
-          <button onClick={() => crearSupervisor.mutate()}
-            disabled={!nuevoNombre.trim() || crearSupervisor.isPending}
-            className="flex items-center gap-2 bg-k-amber hover:bg-k-amber2 disabled:opacity-40 text-black font-bold text-sm px-4 py-2.5 rounded-lg transition-colors">
-            {crearSupervisor.isPending ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />}
-            Guardar
-          </button>
-          <button onClick={() => setShowNuevo(false)}
-            className="flex items-center gap-2 bg-k-raised border border-k-border text-k-text2 font-bold text-sm px-4 py-2.5 rounded-lg hover:bg-k-border transition-colors">
-            <X size={14} />
-          </button>
-          {crearSupervisor.isError && (
-            <p className="text-xs text-k-red w-full">{(crearSupervisor.error as ApiError).message}</p>
-          )}
-        </div>
-      )}
+      {showNuevo && <NombrarSupervisor onCerrar={() => setShowNuevo(false)} />}
 
       {/* KPIs */}
       <div className="grid grid-cols-4 gap-4">
@@ -367,12 +346,155 @@ export default function Supervisores() {
 
       <div className="bg-k-raised border border-k-border rounded-xl p-4">
         <p className="text-[11px] text-k-text3 leading-relaxed">
-          <span className="text-k-amber font-bold">ℹ️ Para agregar nuevos supervisores: </span>
-          usa el botón <span className="font-mono text-k-text">+ Nuevo supervisor</span> de esta
-          página (formato ID <span className="font-mono text-k-text">SUP-006</span>). La
-          administración directa de la base de datos debe hacerse solo desde la red interna.
+          <span className="text-k-amber font-bold">ℹ️ Supervisor = un rol, no otra persona. </span>
+          Todo el que reporta está antes en el padrón de <b className="text-k-text2">Trabajadores</b>;
+          nombrarlo aquí le agrega el rol y su acceso a la app. Escribir el nombre a mano crea una
+          segunda ficha de la misma persona, y a partir de ahí sus HH viven en dos sitios.
         </p>
       </div>
+    </div>
+  )
+}
+
+// ── Nombrar supervisor: se elige del padrón ──────────────────
+// Antes se escribía el nombre a mano y eso creaba una ficha nueva. El camino
+// natural es al revés: el supervisor ya es personal del proyecto, así que se
+// busca y se le da el rol. El alta libre sigue existiendo —hace falta para un
+// externo— pero deja de ser lo primero que se puede hacer.
+function NombrarSupervisor({ onCerrar }: { onCerrar: () => void }) {
+  const qc = useQueryClient()
+  const [busq, setBusq] = useState('')
+  const [email, setEmail] = useState('')
+  const [libre, setLibre] = useState(false)
+  const [acceso, setAcceso] = useState<AltaSup | null>(null)
+
+  const { data: trabajadores = [] } = useQuery<Trabajador[]>({
+    queryKey: ['trabajadores'],
+    queryFn: () => api<Trabajador[]>('/admin/trabajadores'),
+  })
+  const { data: fichas = [] } = useQuery<{ trabajador_id?: string | null }[]>({
+    queryKey: ['supervisores-all'],
+    queryFn: () => api<{ trabajador_id?: string | null }[]>('/admin/supervisores'),
+  })
+  const yaSup = useMemo(
+    () => new Set(fichas.map(f => f.trabajador_id).filter(Boolean) as string[]), [fichas])
+
+  const q = busq.trim().toUpperCase()
+  const resultados = useMemo(() => {
+    if (q.length < 2) return []
+    return trabajadores
+      .filter(t => t.activo && !yaSup.has(t.id) &&
+        (t.nombre.toUpperCase().includes(q) || t.cargo.toUpperCase().includes(q) || t.id === q))
+      .slice(0, 8)
+  }, [q, trabajadores, yaSup])
+
+  const guardar = (body: object) => api<AltaSup>('/admin/supervisor' + (libre ? '' : '/desde-trabajador'),
+    { method: 'POST', body: JSON.stringify(body) })
+  const nombrar = useMutation({
+    mutationFn: guardar,
+    onSuccess: (r) => {
+      qc.invalidateQueries({ queryKey: ['supervisores'] })
+      qc.invalidateQueries({ queryKey: ['supervisores-all'] })
+      qc.invalidateQueries({ queryKey: ['trabajadores'] })
+      setAcceso(r); setBusq(''); setEmail(''); setLibre(false)
+    },
+  })
+
+  if (acceso) return (
+    <div className="bg-k-surface border border-green-500/30 rounded-xl p-4 flex items-start gap-3">
+      <CheckCircle size={16} className="text-k-green mt-0.5 flex-shrink-0" />
+      <div className="flex-1 text-sm text-k-text2">
+        <b className="text-k-text">{acceso.nombre}</b> ya es supervisor.
+        {acceso.usuario ? <> Su acceso a la app: usuario{' '}
+          <b className="font-mono text-k-amber">{acceso.usuario}</b> · clave{' '}
+          <b className="font-mono text-k-amber">{acceso.password}</b>.
+          <span className="block text-[11px] text-k-text3 mt-0.5">
+            Anótalo ahora: la clave no se puede volver a consultar.
+          </span></> : <> Ya tenía acceso a la app; conserva su usuario y su clave.</>}
+      </div>
+      <button onClick={() => { setAcceso(null); onCerrar() }}
+        className="text-k-text3 hover:text-k-text"><X size={16} /></button>
+    </div>
+  )
+
+  return (
+    <div className="bg-k-surface border border-amber-500/20 rounded-xl p-4 space-y-3">
+      <div className="flex items-center gap-2">
+        <p className="text-[11px] font-bold text-k-text3 uppercase tracking-widest flex-1">
+          Elige a quién nombrar supervisor
+        </p>
+        <button onClick={onCerrar} className="text-k-text3 hover:text-k-text"><X size={15} /></button>
+      </div>
+
+      <div className="relative">
+        <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-k-text3 pointer-events-none" />
+        <input value={busq} onChange={e => { setBusq(e.target.value); setLibre(false) }} autoFocus
+          placeholder="Buscar en el padrón por nombre, cargo o ID…"
+          className="w-full bg-k-raised border border-k-border rounded-lg pl-9 pr-4 py-2.5 text-sm text-k-text placeholder:text-k-text3 outline-none focus:border-k-amber transition-colors" />
+      </div>
+
+      {resultados.length > 0 && (
+        <div className="bg-k-raised border border-k-border rounded-lg overflow-hidden">
+          {resultados.map(t => (
+            <div key={t.id} className="flex items-center gap-3 px-3 py-2.5 border-b border-k-border last:border-0 hover:bg-k-border/30 transition-colors">
+              <div className="flex-1 min-w-0">
+                <span className="font-mono text-[10px] text-k-amber mr-2">{t.id}</span>
+                <span className="text-sm font-medium text-k-text">{t.nombre}</span>
+                <span className="text-[10px] text-k-text3 ml-2">{t.cargo}</span>
+              </div>
+              <button onClick={() => nombrar.mutate({ trabajador_id: t.id })}
+                disabled={nombrar.isPending}
+                className="flex items-center gap-1 text-[11px] font-bold text-k-green bg-green-500/10 border border-green-500/20 hover:bg-green-500/20 disabled:opacity-40 px-2.5 py-1 rounded-lg transition-colors">
+                <UserPlus size={12} /> Nombrar supervisor
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* No está en el padrón: el camino correcto es registrarlo como
+          trabajador. El alta libre queda como salida para un externo. */}
+      {q.length >= 2 && resultados.length === 0 && (
+        <div className="bg-k-raised border border-dashed border-k-border rounded-lg px-4 py-3 space-y-2">
+          <p className="text-sm text-k-text2">
+            <b className="text-k-text">«{busq.trim()}»</b> no está en el padrón de trabajadores.
+          </p>
+          <p className="text-[11px] text-k-text3">
+            Regístralo primero en <b className="text-k-text2">Trabajadores</b> (ahí eliges si es
+            directo o indirecto y puedes marcarlo como supervisor de una vez). Si ya está y no
+            aparece, puede que sea supervisor o esté dado de baja.
+          </p>
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            <Link to="/trabajadores" className="btn btn-secundario btn-sm">
+              <Users size={13} /> Ir a Trabajadores
+            </Link>
+            {!libre ? (
+              <button onClick={() => setLibre(true)} className="text-[11px] text-k-text3 hover:text-k-amber underline">
+                Es alguien externo: registrarlo solo como supervisor
+              </button>
+            ) : (
+              <>
+                <input value={email} onChange={e => setEmail(e.target.value)}
+                  placeholder="correo@kampfer.pe (opcional)"
+                  className="bg-k-void border border-k-border rounded-lg px-3 py-2 text-sm text-k-text outline-none focus:border-k-amber" />
+                <button onClick={() => nombrar.mutate({ nombre: busq.trim().toUpperCase(), email })}
+                  disabled={nombrar.isPending}
+                  className="btn btn-primario btn-sm">
+                  {nombrar.isPending ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle size={13} />}
+                  Registrar «{busq.trim().toUpperCase()}»
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {q.length > 0 && q.length < 2 && (
+        <p className="text-[11px] text-k-text3">Escribe al menos dos letras.</p>
+      )}
+      {nombrar.isError && (
+        <p className="text-xs text-k-red">{(nombrar.error as ApiError).message}</p>
+      )}
     </div>
   )
 }

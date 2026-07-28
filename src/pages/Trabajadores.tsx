@@ -19,7 +19,12 @@ import ImpresionQR from '@/pages/ImpresionQR'
 
 interface Trabajador {
   id: string; nombre: string; cargo: string; dni?: string; activo: boolean
+  tipo?: string
 }
+/** Lo que devuelve el alta cuando además crea el acceso a la app de campo. */
+interface AltaOk { nombre: string; usuario?: string | null; password?: string | null }
+
+const FORM_VACIO = { nombre: '', cargo: '', dni: '', tipo: 'DIRECTO', es_supervisor: false }
 
 const TABS: TabDef[] = [
   { id: 'personal',  label: 'Personal',     icon: Users },
@@ -46,8 +51,11 @@ function PanelPersonal() {
   const [search, setSearch]         = useState('')
   const [cargoFilter, setCargoFilter] = useState('TODOS')
   const [showModal, setShowModal]   = useState(false)
-  const [form, setForm]             = useState({ nombre: '', cargo: '', dni: '' })
+  // Los mismos campos que pide el importador de Excel: dar de alta a mano no
+  // puede dejar a medias una ficha que el Excel sí completa.
+  const [form, setForm]             = useState({ ...FORM_VACIO })
   const [formError, setFormError]   = useState('')
+  const [alta, setAlta]             = useState<AltaOk | null>(null)
 
   const { data: trabajadores = [], isLoading } = useQuery<Trabajador[]>({
     queryKey: ['trabajadores'],
@@ -55,11 +63,15 @@ function PanelPersonal() {
   })
 
   const addMutation = useMutation({
-    mutationFn: (d: { nombre: string; cargo: string; dni: string }) =>
-      api('/admin/trabajador', { method: 'POST', body: JSON.stringify(d) }),
-    onSuccess: () => {
+    mutationFn: (d: typeof FORM_VACIO) =>
+      api<AltaOk>('/admin/trabajador', { method: 'POST', body: JSON.stringify(d) }),
+    onSuccess: (r) => {
       qc.invalidateQueries({ queryKey: ['trabajadores'] })
-      setShowModal(false); setForm({ nombre: '', cargo: '', dni: '' }); setFormError('')
+      qc.invalidateQueries({ queryKey: ['supervisores'] })
+      // Si de paso quedó como supervisor, su acceso a la app se muestra UNA
+      // vez: la clave inicial no se vuelve a poder consultar.
+      setAlta(r?.usuario ? r : null)
+      setShowModal(false); setForm({ ...FORM_VACIO }); setFormError('')
     },
     onError: (e: Error) => setFormError(e.message),
   })
@@ -84,11 +96,29 @@ function PanelPersonal() {
 
   const handleSubmit = () => {
     if (!form.nombre.trim() || !form.cargo.trim()) { setFormError('Nombre y cargo son obligatorios'); return }
-    addMutation.mutate({ nombre: form.nombre.toUpperCase(), cargo: form.cargo.toUpperCase(), dni: form.dni })
+    addMutation.mutate({ ...form,
+      nombre: form.nombre.toUpperCase(), cargo: form.cargo.toUpperCase() })
   }
 
   return (
     <div className="space-y-5">
+
+      {/* El acceso a la app se muestra UNA vez: la clave inicial no se puede
+          volver a consultar (queda hasheada). */}
+      {alta && (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3 flex items-start gap-3">
+          <CheckCircle size={16} className="text-k-amber mt-0.5 flex-shrink-0" />
+          <div className="flex-1 text-sm text-k-text2">
+            <b className="text-k-text">{alta.nombre}</b> quedó registrado con acceso de supervisor.
+            Usuario <b className="text-k-amber font-mono">{alta.usuario}</b> · clave{' '}
+            <b className="text-k-amber font-mono">{alta.password}</b>.
+            <span className="block text-[11px] text-k-text3 mt-0.5">
+              Anótalo ahora: la clave no se puede volver a consultar. La cambia él al entrar.
+            </span>
+          </div>
+          <button onClick={() => setAlta(null)} className="text-k-text3 hover:text-k-text"><X size={16} /></button>
+        </div>
+      )}
 
       {/* Header */}
       <div className="flex items-center justify-between">
@@ -133,19 +163,19 @@ function PanelPersonal() {
           <table className="w-full">
             <thead>
               <tr className="bg-k-raised border-b border-k-border">
-                {['ID','Nombre','Cargo','DNI','Estado','Acción'].map((h, i) => (
-                  <th key={h} className={`px-4 py-3 text-[11px] font-bold text-k-text3 uppercase tracking-wider ${i === 5 ? 'text-right' : 'text-left'}`}>{h}</th>
+                {['ID','Nombre','Cargo','Tipo','DNI','Estado','Acción'].map((h, i) => (
+                  <th key={h} className={`px-4 py-3 text-[11px] font-bold text-k-text3 uppercase tracking-wider ${i === 6 ? 'text-right' : 'text-left'}`}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {isLoading && (
-                <tr><td colSpan={6} className="px-4 py-10 text-center text-k-text3 text-sm">
+                <tr><td colSpan={7} className="px-4 py-10 text-center text-k-text3 text-sm">
                   <Loader2 size={16} className="animate-spin inline mr-2" />Cargando trabajadores…
                 </td></tr>
               )}
               {!isLoading && filtered.length === 0 && (
-                <tr><td colSpan={6} className="px-4 py-10 text-center text-k-text3 text-sm">
+                <tr><td colSpan={7} className="px-4 py-10 text-center text-k-text3 text-sm">
                   Sin resultados para ese filtro
                 </td></tr>
               )}
@@ -158,6 +188,17 @@ function PanelPersonal() {
                     </span>
                   </td>
                   <td className="px-4 py-3"><span className="text-xs text-k-text2">{t.cargo}</span></td>
+                  <td className="px-4 py-3">
+                    <span title={(t.tipo ?? 'DIRECTO') === 'INDIRECTO'
+                      ? 'Personal de staff: sus HH van a gastos generales'
+                      : 'Personal de campo: sus HH van al costo directo'}
+                      className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded border cursor-help ${
+                        (t.tipo ?? 'DIRECTO') === 'INDIRECTO'
+                          ? 'text-k-blue bg-blue-500/10 border-blue-500/20'
+                          : 'text-k-text2 bg-k-raised border-k-border'}`}>
+                      {(t.tipo ?? 'DIRECTO') === 'INDIRECTO' ? 'Indirecto' : 'Directo'}
+                    </span>
+                  </td>
                   <td className="px-4 py-3"><span className="font-mono text-xs text-k-text3">{t.dni || '—'}</span></td>
                   <td className="px-4 py-3">
                     {t.activo
@@ -210,12 +251,51 @@ function PanelPersonal() {
                 <div key={f.key}>
                   <label className="text-[11px] font-bold text-k-text3 uppercase tracking-wider block mb-1.5">{f.label}</label>
                   <input type="text" placeholder={f.placeholder}
-                    value={form[f.key as keyof typeof form]}
+                    value={form[f.key as 'nombre' | 'cargo' | 'dni']}
                     onChange={e => setForm(p => ({ ...p, [f.key]: e.target.value }))}
                     maxLength={f.key === 'dni' ? 8 : undefined}
                     className="w-full bg-k-raised border border-k-border2 rounded-lg px-4 py-2.5 text-sm text-k-text placeholder:text-k-text3 outline-none focus:border-k-amber transition-colors" />
                 </div>
               ))}
+
+              {/* Directo / indirecto: separa el costo de campo del de staff en
+                  el Resultado Operativo, así que no puede quedar al azar. */}
+              <div>
+                <label className="text-[11px] font-bold text-k-text3 uppercase tracking-wider block mb-1.5">
+                  Tipo de personal *
+                </label>
+                <select value={form.tipo}
+                  onChange={e => setForm(p => ({ ...p, tipo: e.target.value }))}
+                  className="w-full bg-k-raised border border-k-border2 rounded-lg px-4 py-2.5 text-sm text-k-text outline-none focus:border-k-amber transition-colors">
+                  <option value="DIRECTO">Directo — personal de campo</option>
+                  <option value="INDIRECTO">Indirecto — personal de staff</option>
+                </select>
+                <p className="text-[11px] text-k-text3 mt-1.5">
+                  {form.tipo === 'DIRECTO'
+                    ? 'Ejecuta las partidas en obra: sus HH van al costo directo.'
+                    : 'Oficina técnica, supervisión, apoyo: sus HH van a gastos generales.'}
+                </p>
+              </div>
+
+              {/* Ser supervisor es un ROL encima de la ficha, no otra persona. */}
+              <label className="flex items-start gap-2.5 cursor-pointer bg-k-raised border border-k-border2 rounded-lg px-4 py-3">
+                <input type="checkbox" checked={form.es_supervisor}
+                  onChange={e => setForm(p => ({
+                    ...p, es_supervisor: e.target.checked,
+                    // Quien reporta es staff; sigue siendo cambiable a mano.
+                    tipo: e.target.checked ? 'INDIRECTO' : p.tipo,
+                  }))}
+                  className="accent-k-amber mt-0.5" />
+                <span>
+                  <span className="text-sm text-k-text font-medium">¿Reporta desde la app? (supervisor)</span>
+                  <span className="block text-[11px] text-k-text3 mt-0.5">
+                    {form.es_supervisor
+                      ? 'Se le crea su acceso a la app de campo con la clave inicial 1234.'
+                      : 'No — es lo habitual. Marcarlo solo si va a tomar el tareo en obra.'}
+                  </span>
+                </span>
+              </label>
+
               {formError && (
                 <p className="text-k-red text-xs bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{formError}</p>
               )}
