@@ -1,4 +1,6 @@
-// Reporte de PPC (Last Planner) — vista imprimible para el cliente / archivo.
+// Reporte de PPC (Last Planner) — vista imprimible PARA OFICINA / gerencia.
+// El del cliente es otro documento (`PpcCliente.tsx`): aquí sí van las
+// categorías de no cumplimiento, que son el diagnóstico interno.
 // Página 1 (vertical): resumen del submódulo «PPC · Causas» — KPIs, PPC
 // semanal, Pareto de causas, restricciones y PPC por supervisor (últimas N
 // semanas). Páginas siguientes (horizontal): el DETALLE por semana del rango
@@ -10,6 +12,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
 import { api } from '@/lib/api'
 import { lunesDe, iso } from '@/lib/semana'
+import { tendenciaPPC } from '@/lib/tendencia'
 import BrandDoc from '@/components/print/BrandDoc'
 
 interface Restriccion { cat: string; detalle: string; fecha: string }
@@ -163,14 +166,7 @@ export default function PpcPrint() {
       <div className="pp-sec">PPC semanal <small>(comprometido vs alcanzado — sano ≥ 75%)</small></div>
       {d.semanal.length === 0
         ? <p className="pp-vacio">Aún no hay actividades programadas en el periodo.</p>
-        : d.semanal.map(w => (
-          <div key={w.lunes} className="pp-row">
-            <span className="pp-row-lbl" style={{ width: 54 }}>{fmtDia(w.lunes)}</span>
-            <span className="pp-bar"><span style={{ width: `${Math.round((w.ppc ?? 0) * 100)}%`, background: ppcHex(w.ppc) }} /></span>
-            <span className="pp-row-val" style={{ width: 42, color: ppcHex(w.ppc) }}>{pct(w.ppc)}</span>
-            <span className="pp-row-lbl" style={{ width: 46, textAlign: 'right' }}>{w.cumplidas}/{w.comprometidas}</span>
-          </div>
-        ))}
+        : <HistogramaPPC semanal={d.semanal} />}
 
       <div className="pp-sec">Causas de no cumplimiento <small>(Pareto)</small></div>
       {d.cnc.length === 0
@@ -220,6 +216,79 @@ export default function PpcPrint() {
           cncGrid={cncGrid} cncCat={cncCat} restPorAct={restPorAct} />
       ))}
     </BrandDoc>
+  )
+}
+
+// ── Histograma del PPC con línea de tendencia ────────────────
+// Para el dueño de la empresa el dato no es el porcentaje de una semana suelta
+// sino hacia dónde va: un 68% subiendo desde 50% y un 68% cayendo desde 85% se
+// gestionan al revés. Barras = cada semana; recta = mínimos cuadrados sobre las
+// semanas con veredicto; punteada = la meta lean del 75%.
+function HistogramaPPC({ semanal }: {
+  semanal: { lunes: string; comprometidas: number; cumplidas: number; ppc: number | null }[]
+}) {
+  const W = 640, H = 190, PAD_L = 26, PAD_B = 26, PAD_T = 14
+  const x0 = PAD_L, y0 = H - PAD_B, ancho = W - PAD_L - 8, alto = H - PAD_B - PAD_T
+  const n = semanal.length
+  const paso = ancho / Math.max(n, 1)
+  const barra = Math.min(paso * 0.62, 34)
+  const yDe = (v: number) => y0 - v * alto
+  const cx = (i: number) => x0 + paso * i + paso / 2
+
+  const t = tendenciaPPC(semanal.map(w => w.ppc))
+  const rotulo = Math.max(1, Math.ceil(n / 13))    // no apiñar 26 fechas
+
+  return (
+    <>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto' }} role="img"
+        aria-label="Histograma del PPC semanal con línea de tendencia">
+        {[0, 0.25, 0.5, 0.75, 1].map(v => (
+          <g key={v}>
+            <line x1={x0} y1={yDe(v)} x2={W - 8} y2={yDe(v)}
+              stroke={v === 0.75 ? '#0a7d4f' : '#e4e8ee'} strokeWidth={v === 0 ? 1 : 0.8}
+              strokeDasharray={v === 0.75 ? '4 3' : undefined} />
+            <text x={x0 - 5} y={yDe(v) + 3} textAnchor="end" fontSize="7.5" fill="#8a93a1">
+              {v * 100}
+            </text>
+          </g>
+        ))}
+        {semanal.map((w, i) => {
+          const v = w.ppc ?? 0
+          const h = Math.max(v * alto, w.ppc == null ? 0 : 1.5)
+          return (
+            <g key={w.lunes}>
+              <rect x={cx(i) - barra / 2} y={y0 - h} width={barra} height={h}
+                fill={ppcHex(w.ppc)} opacity={0.85} rx={2} />
+              {w.ppc != null && (
+                <text x={cx(i)} y={y0 - h - 4} textAnchor="middle" fontSize="7.5"
+                  fontWeight={700} fill={ppcHex(w.ppc)}>{pct(w.ppc)}</text>
+              )}
+              {i % rotulo === 0 && (
+                <text x={cx(i)} y={y0 + 10} textAnchor="middle" fontSize="7" fill="#8a93a1">
+                  {fmtDia(w.lunes)}
+                </text>
+              )}
+              <text x={cx(i)} y={y0 + 19} textAnchor="middle" fontSize="6.5" fill="#c9cfd8">
+                {w.cumplidas}/{w.comprometidas}
+              </text>
+            </g>
+          )
+        })}
+        {t && (
+          <line x1={cx(t.desde)} y1={yDe(t.yDesde)} x2={cx(t.hasta)} y2={yDe(t.yHasta)}
+            stroke="#24406b" strokeWidth={1.6} strokeDasharray="6 3" />
+        )}
+      </svg>
+      <p style={{ fontSize: 10, color: 'var(--tinta2)', marginTop: 2 }}>
+        Barras: PPC de cada semana (debajo, cumplidas/comprometidas). Línea punteada verde: meta
+        lean del 75%.{' '}
+        {t
+          ? <>Línea azul: <b>tendencia</b> — {t.puntosPorSemana > 0 ? `sube ${t.puntosPorSemana}`
+            : t.puntosPorSemana < 0 ? `baja ${Math.abs(t.puntosPorSemana)}` : 'estable, 0'} punto
+            {Math.abs(t.puntosPorSemana) !== 1 ? 's' : ''} por semana.</>
+          : 'Con tres semanas con veredicto se dibuja además la línea de tendencia.'}
+      </p>
+    </>
   )
 }
 

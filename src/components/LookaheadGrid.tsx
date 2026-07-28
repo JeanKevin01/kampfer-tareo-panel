@@ -1542,23 +1542,20 @@ function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, 
 }
 
 // ── F030b: evaluación de la semana (comprometido vs alcanzado) ──
-export function EvaluacionSemanal() {
-  const qc = useQueryClient()
-  const [lunes, setLunes] = useState(() => iso(lunesDe(new Date())))
+export function EvaluacionSemanal({ lunes, onLunes }: {
+  /** La manda el tab: arriba (cierre) y aquí abajo se mira SIEMPRE la misma
+   *  semana. Ver dos fechas distintas en la misma pantalla no es tener dos
+   *  vistas, es una contradicción. */
+  lunes: string
+  onLunes: (lunes: string) => void
+}) {
   const grid = useQuery<GridResp>({
     queryKey: ['lookahead-grid', lunes, 1],
     queryFn: () => api(`/ev/programacion/lookahead-grid?proyecto_id=${PROYECTO_ID}&desde=${lunes}&semanas=1`),
   })
-  // Causa de no cumplimiento según el PLANNER (separada de la de campo).
-  const causaPlanner = useMutation({
-    mutationFn: ({ actId, cat, detalle }: { actId: number; cat: string | null; detalle: string | null }) =>
-      api(`/ev/programacion/actividades/${actId}`, {
-        method: 'PUT',
-        body: JSON.stringify({ causa_nc_planner_cat: cat, causa_nc_planner: detalle }),
-      }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['lookahead-grid'] }),
-    onError: (e: Error) => alert(e.message),
-  })
+  // La causa del PLANNER se escribe UNA vez, arriba en el cierre de la semana:
+  // aquí solo se lee lo de campo. Tenerla en dos sitios invitaba a escribir dos
+  // textos distintos para el mismo hecho, que es peor que no tener ninguno.
   // Restricciones reportadas desde campo en esa semana (0032): la actividad
   // se hizo, pero algo le bajó el rendimiento. No afectan el PPC.
   const fin = useMemo(() => {
@@ -1571,7 +1568,7 @@ export function EvaluacionSemanal() {
   const restPorAct = ppc.data?.restricciones ?? {}
 
   const mover = (dias: number) => {
-    const d = new Date(lunes + 'T12:00:00'); d.setDate(d.getDate() + dias); setLunes(iso(lunesDe(d)))
+    const d = new Date(lunes + 'T12:00:00'); d.setDate(d.getDate() + dias); onLunes(iso(lunesDe(d)))
   }
   const d = grid.data
   const fechas = d?.fechas ?? []
@@ -1615,18 +1612,16 @@ export function EvaluacionSemanal() {
               <th className={thBase}>ALCANZ.</th>
               <th className={thBase}>CUMPL.</th>
               <th className={`${thBase} text-left min-w-[160px]`}>CAUSA (CAMPO)</th>
-              <th className={`${thBase} text-left min-w-[200px]`}>CAUSA (PLANNER)</th>
               <th className={`${thBase} text-left min-w-[190px]`}>RESTRICCIONES</th>
             </tr>
           </thead>
           <tbody>
             {(d?.grupos ?? []).map(g => (
               <EvalGrupo key={g.otm_id ?? '-'} grupo={g} fechas={fechas} cumplimiento={cumplimiento}
-                restricciones={restPorAct}
-                onCausaPlanner={(actId, cat, detalle) => causaPlanner.mutate({ actId, cat, detalle })} />
+                restricciones={restPorAct} />
             ))}
             {(d?.grupos ?? []).length === 0 && !grid.isLoading && (
-              <tr><td colSpan={9 + fechas.length} className="px-4 py-6 text-center text-k-text3">Semana sin actividades programadas.</td></tr>
+              <tr><td colSpan={8 + fechas.length} className="px-4 py-6 text-center text-k-text3">Semana sin actividades programadas.</td></tr>
             )}
           </tbody>
         </table>
@@ -1637,8 +1632,8 @@ export function EvaluacionSemanal() {
         COMPROM. = metrado comprometido de la semana · ALCANZ. = metrado real registrado (avance diario del EV).
         CUMPL. es <b>automático</b>: SI apenas lo alcanzado iguala o supera lo comprometido (aunque la semana
         siga corriendo); NO recién cuando la semana cerró sin llegar; «…» = en curso. Marcar NO CUMPLIDA a
-        mano (con causa) manda sobre el cálculo. CAUSA (CAMPO) la reporta el supervisor; CAUSA (PLANNER) la
-        depura oficina — en el Pareto de PPC·Causas manda la del planner y, si no existe, cuenta la de campo.
+        mano (con causa) manda sobre el cálculo. CAUSA (CAMPO) la reporta el supervisor; la del <b>planner</b>
+        se escribe arriba, al cerrar la semana — ahí manda sobre la de campo y es la que va a los reportes.
         RESTRICCIONES son las que el supervisor reportó desde campo <b>aunque la actividad sí se haya hecho</b>
         (algo le bajó el rendimiento): no afectan el PPC y tienen su propio Pareto en PPC·Causas.
       </p>
@@ -1646,16 +1641,15 @@ export function EvaluacionSemanal() {
   )
 }
 
-function EvalGrupo({ grupo, fechas, cumplimiento, restricciones, onCausaPlanner }: {
+function EvalGrupo({ grupo, fechas, cumplimiento, restricciones }: {
   grupo: GridResp['grupos'][number]; fechas: string[]
   cumplimiento: (a: ActGrid, comprom: number, alcanz: number) => string[]
   restricciones: Record<string, { cat: string; detalle: string; fecha: string }[]>
-  onCausaPlanner: (actId: number, cat: string | null, detalle: string | null) => void
 }) {
   return (
     <>
       <tr>
-        <td colSpan={9 + fechas.length} className="border border-k-border px-2 py-1 font-bold bg-blue-500/15 text-k-blue">
+        <td colSpan={8 + fechas.length} className="border border-k-border px-2 py-1 font-bold bg-blue-500/15 text-k-blue">
           {grupo.otm_id ?? 'Sin OTM'}{grupo.otm_desc ? ` — ${grupo.otm_desc}` : ''}
         </td>
       </tr>
@@ -1689,21 +1683,6 @@ function EvalGrupo({ grupo, fechas, cumplimiento, restricciones, onCausaPlanner 
               {a.estado === 'NO_CUMPLIDA'
                 ? `${CNC[a.causa_nc_cat ?? ''] ?? ''}${a.causa_nc ? ` — ${a.causa_nc}` : ''}`
                 : ''}
-            </td>
-            <td className="border border-k-border px-1 py-0.5">
-              <div className="flex gap-1 items-center">
-                <select value={a.causa_nc_planner_cat ?? ''}
-                  onChange={e => onCausaPlanner(a.id, e.target.value || null, a.causa_nc_planner ?? null)}
-                  className="bg-k-raised border border-k-border rounded px-1 py-0.5 text-[10px] text-k-text2 outline-none max-w-[110px]">
-                  <option value="">—</option>
-                  {Object.entries(CNC).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                </select>
-                <input key={a.causa_nc_planner ?? ''} defaultValue={a.causa_nc_planner ?? ''}
-                  placeholder="detalle…"
-                  onBlur={e => { const v = e.target.value.trim() || null; if (v !== (a.causa_nc_planner ?? null)) onCausaPlanner(a.id, a.causa_nc_planner_cat ?? null, v) }}
-                  onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
-                  className="bg-transparent border-b border-k-border/60 text-[10px] text-k-text2 outline-none w-24 focus:border-k-amber" />
-              </div>
             </td>
             {/* Restricciones que reportó el supervisor aunque el trabajo SÍ se hizo */}
             <td className={`${tdFijo} text-amber-300/90`}>

@@ -1289,7 +1289,10 @@ function PanelPPC() {
     por_supervisor: { supervisor_id: string; nombre?: string; comprometidas: number; cumplidas: number; ppc: number | null }[]
   }
   const [nSem, setNSem] = useState(8)
-  const [verExport, setVerExport] = useState(false)
+  const [verExport, setVerExport] = useState<'cliente' | 'oficina' | null>(null)
+  // UNA semana para todo el tab: el cierre de arriba y la evaluación de abajo
+  // miran lo mismo. Arranca en la PASADA, que es la que toca cerrar.
+  const [lunes, setLunes] = useState(() => iso(lunesDe(new Date(Date.now() - 7 * 864e5))))
   const ppc = useQuery<Resp>({
     queryKey: ['ppc', nSem],
     queryFn: () => api(`/ev/programacion/ppc?proyecto_id=${PROYECTO_ID}&semanas=${nSem}`),
@@ -1307,25 +1310,39 @@ function PanelPPC() {
 
   return (
     <div className="space-y-4">
+      {/* Lo que se ENTREGA va arriba: son dos documentos distintos porque son
+          dos lectores distintos. Al cliente se le explica el caso; «falta de
+          materiales» o «falta de mano de obra» es diagnóstico interno. */}
+      <div className="flex items-center justify-end gap-2 flex-wrap">
+        {ppc.isFetching && <Loader2 size={14} className="animate-spin text-k-text3 mr-auto" />}
+        <button onClick={() => setVerExport('cliente')} className="btn btn-secundario btn-sm"
+          title="Avance día a día, cumplimiento de la semana y la explicación que escribió el planner. Sin categorías internas.">
+          <Printer size={14} /> Reporte para el cliente
+        </button>
+        <button onClick={() => setVerExport('oficina')} className="btn btn-secundario btn-sm"
+          title="Tendencia del PPC, Pareto de causas, restricciones y detalle por partidas. Para la gerencia y la oficina técnica.">
+          <Printer size={14} /> Reporte para oficina
+        </button>
+      </div>
+
       {/* Cierre de la semana: congela el PPC (y es la reunión del Last Planner:
           revisar, poner causa a lo que no salió, cerrar). */}
-      <CierreSemana proyectoId={PROYECTO_ID} />
+      {/* key = la semana: cambiarla tira los ajustes sin cerrar, que eran de la
+          semana anterior. */}
+      <CierreSemana key={lunes} proyectoId={PROYECTO_ID} lunes={lunes} onLunes={setLunes} />
 
-      {/* F030b: la evaluación semanal comprometido vs alcanzado */}
-      <EvaluacionSemanal />
+      {/* F030b: la evaluación semanal comprometido vs alcanzado — la MISMA
+          semana que el cierre de arriba. */}
+      <EvaluacionSemanal lunes={lunes} onLunes={setLunes} />
 
       <div className="flex items-center gap-2">
         <select value={nSem} onChange={e => setNSem(Number(e.target.value))} className={inputCls}>
           {[4, 8, 12, 26].map(n => <option key={n} value={n}>Últimas {n} semanas</option>)}
         </select>
-        {ppc.isFetching && <Loader2 size={14} className="animate-spin text-k-text3" />}
-        <button onClick={() => setVerExport(true)}
-          title="Reporte de PPC (resumen + detalle semanal por partidas) listo para PDF"
-          className="ml-auto flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-k-border bg-k-raised text-k-text2 hover:border-k-amber">
-          <Printer size={14} /> Reporte PDF
-        </button>
+        <span className="text-[11px] text-k-text3">para los indicadores de abajo</span>
       </div>
-      {verExport && <ModalPpcExport nSem={nSem} onClose={() => setVerExport(false)} />}
+      {verExport && <ModalPpcExport destino={verExport} nSem={nSem} lunes={lunes}
+        onClose={() => setVerExport(null)} />}
 
       {/* KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
@@ -1438,29 +1455,43 @@ function PanelPPC() {
   )
 }
 
-// Exportar el reporte de PPC: resumen (últimas N semanas) + detalle por semana
-// del rango elegido (páginas horizontales con la tabla F030b por partidas).
-function ModalPpcExport({ nSem, onClose }: { nSem: number; onClose: () => void }) {
+// Exportar el reporte de PPC. Son DOS documentos, no dos formatos del mismo:
+//   · cliente — avance día a día, si se cumplió el compromiso y la explicación
+//     que escribió el planner. Nunca la categoría interna: al cliente no se le
+//     entrega «falta de materiales» ni «falta de mano de obra».
+//   · oficina — tendencia del PPC, Pareto de causas (con categorías),
+//     restricciones y detalle por partidas. Para el dueño y la oficina técnica.
+function ModalPpcExport({ destino, nSem, lunes, onClose }: {
+  destino: 'cliente' | 'oficina'
+  nSem: number
+  /** La semana que se está revisando arriba: el reporte del cliente arranca ahí. */
+  lunes: string
+  onClose: () => void
+}) {
+  const cliente = destino === 'cliente'
   const [conDetalle, setConDetalle] = useState(true)
-  const [desde, setDesde] = useState(() => iso(lunesDe(new Date())))
+  const [desde, setDesde] = useState(() => (cliente ? lunes : iso(lunesDe(new Date()))))
   const [hasta, setHasta] = useState(() => {
-    const d = lunesDe(new Date()); const f = new Date(d); f.setDate(f.getDate() + 6); return iso(f)
+    const f = new Date((cliente ? lunes : iso(lunesDe(new Date()))) + 'T12:00:00')
+    f.setDate(f.getDate() + 6); return iso(f)
   })
   const semanas = Math.max(1, Math.round(
     (new Date(hasta + 'T12:00:00').getTime() - new Date(desde + 'T12:00:00').getTime()) / (7 * 864e5)) + 1)
 
   const abrir = () => {
-    let url = `/programacion/ppc-imprimir?semanas=${nSem}`
-    if (conDetalle) url += `&desde=${desde}&hasta=${hasta}`
+    const url = cliente
+      ? `/programacion/ppc-cliente?desde=${desde}&hasta=${hasta}`
+      : `/programacion/ppc-imprimir?semanas=${nSem}${conDetalle ? `&desde=${desde}&hasta=${hasta}` : ''}`
     window.open(url, '_blank')
     onClose()
   }
 
-  // Presets: rango que termina el domingo de ESTA semana y arranca `nWeeks`
-  // semanas atrás (nWeeks=1 → solo esta semana).
+  // Presets: rango que termina el domingo de la semana de referencia y arranca
+  // `nWeeks` semanas atrás (nWeeks=1 → solo esa semana).
   const rango = (nWeeks: number) => {
-    const dgo = lunesDe(new Date()); dgo.setDate(dgo.getDate() + 6)
-    const lun = lunesDe(new Date()); lun.setDate(lun.getDate() - (nWeeks - 1) * 7)
+    const base = cliente ? new Date(lunes + 'T12:00:00') : new Date()
+    const dgo = lunesDe(base); dgo.setDate(dgo.getDate() + 6)
+    const lun = lunesDe(base); lun.setDate(lun.getDate() - (nWeeks - 1) * 7)
     setDesde(iso(lun)); setHasta(iso(dgo))
   }
 
@@ -1468,24 +1499,30 @@ function ModalPpcExport({ nSem, onClose }: { nSem: number; onClose: () => void }
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={onClose}>
       <div className="bg-k-surface border border-k-border rounded-xl p-5 w-[480px]" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-1">
-          <h2 className="font-bold text-k-text flex items-center gap-2"><Printer size={16} className="text-k-amber" /> Reporte de PPC</h2>
+          <h2 className="font-bold text-k-text flex items-center gap-2"><Printer size={16} className="text-k-amber" />
+            {cliente ? 'Reporte para el cliente' : 'Reporte para oficina'}</h2>
           <button onClick={onClose} className="text-k-text3 hover:text-k-text"><X size={18} /></button>
         </div>
         <p className="text-xs text-k-text3 mb-4">
-          La <b>hoja 1</b> es el resumen (KPIs, PPC semanal, Pareto) de las últimas {nSem} semanas.
-          Las <b>hojas siguientes</b> (horizontales) muestran el detalle de partidas por semana del
-          rango que elijas: comprometido vs alcanzado, cumplimiento y causas.
+          {cliente ? <>Una hoja por semana: el avance <b>día a día</b>, lo que se hizo en la semana,
+            si se cumplió el compromiso y la <b>explicación</b> que escribió el planner. Sin
+            categorías internas de no cumplimiento.</>
+            : <>La <b>hoja 1</b> es el tablero de gerencia: tendencia del PPC, Pareto de causas y
+              restricciones de las últimas {nSem} semanas. Las <b>hojas siguientes</b> (horizontales)
+              son el detalle por partidas del rango que elijas.</>}
         </p>
 
-        <label className="flex items-center gap-2 text-sm text-k-text2 mb-3 cursor-pointer">
-          <input type="checkbox" checked={conDetalle} onChange={e => setConDetalle(e.target.checked)} className="accent-k-amber" />
-          Incluir detalle semanal por partidas
-        </label>
+        {!cliente && (
+          <label className="flex items-center gap-2 text-sm text-k-text2 mb-3 cursor-pointer">
+            <input type="checkbox" checked={conDetalle} onChange={e => setConDetalle(e.target.checked)} className="accent-k-amber" />
+            Incluir detalle semanal por partidas
+          </label>
+        )}
 
-        {conDetalle && (
+        {(cliente || conDetalle) && (
           <>
             <div className="flex gap-1.5 mb-2 flex-wrap">
-              {([['Esta semana', 1], ['Últimas 2', 2], ['Últimas 4', 4], ['Últimas 8', 8]] as const).map(([l, n]) => (
+              {([[cliente ? 'Esa semana' : 'Esta semana', 1], ['Últimas 2', 2], ['Últimas 4', 4], ['Últimas 8', 8]] as const).map(([l, n]) => (
                 <button key={l} onClick={() => rango(n)}
                   className="text-[11px] px-2.5 py-1 rounded-lg border border-k-border text-k-text3 hover:border-k-amber">{l}</button>
               ))}
@@ -1503,7 +1540,8 @@ function ModalPpcExport({ nSem, onClose }: { nSem: number; onClose: () => void }
               </div>
             </div>
             <p className="text-[10px] text-k-text3 mb-4">
-              {semanas > 8 ? 'Máximo 8 semanas de detalle: se recortará el rango.' : `${semanas} semana${semanas !== 1 ? 's' : ''} de detalle (una hoja horizontal por semana).`}
+              {semanas > 8 ? 'Máximo 8 semanas: se recortará el rango.'
+                : `${semanas} semana${semanas !== 1 ? 's' : ''} (una hoja por semana).`}
             </p>
           </>
         )}

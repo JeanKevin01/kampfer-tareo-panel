@@ -19,12 +19,20 @@ interface ActCierre {
   actividad_id: number
   titulo: string
   supervisor_nombre?: string | null
+  unidad?: string | null
   comprometido: number
   alcanzado: number
   cumplida: boolean
   no_planificada: boolean
   causa_cat?: string | null
   causa?: string | null
+}
+/** Lo que campo dejó escrito esa semana. Referencia para redactar, no dato del
+ *  indicador: la causa que reportó el supervisor el día que no salió y las
+ *  restricciones que anotó aunque el trabajo sí se hiciera. */
+interface CampoRef {
+  causa?: { cat?: string | null; detalle?: string | null } | null
+  restricciones?: { cat: string; detalle: string; fecha: string }[]
 }
 interface Cierre {
   cerrada: boolean
@@ -39,6 +47,7 @@ interface Cierre {
   no_planificadas: number
   ppc: number | null
   actividades: ActCierre[]
+  campo?: Record<string, CampoRef>
   cnc_catalogo: Record<string, string>
   cierre_dia?: number
   cierre_semana_siguiente?: boolean
@@ -50,10 +59,15 @@ type Ajuste = { cumplida?: boolean; no_planificada?: boolean; causa_cat?: string
 const DIAS = ['', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
 const inputCls = 'bg-k-raised border border-k-border rounded-lg px-2 py-1.5 text-xs text-k-text outline-none focus:border-k-amber'
 
-export default function CierreSemana({ proyectoId = 1 }: { proyectoId?: number }) {
+export default function CierreSemana({ proyectoId = 1, lunes, onLunes }: {
+  proyectoId?: number
+  /** La semana la manda el tab: el cierre y la evaluación semanal de abajo
+   *  miran SIEMPRE la misma. Dos fechas distintas en la misma pantalla no son
+   *  dos vistas, son una contradicción. */
+  lunes: string
+  onLunes: (lunes: string) => void
+}) {
   const qc = useQueryClient()
-  // Arranca en la semana PASADA: es la que toca cerrar.
-  const [lunes, setLunes] = useState(() => iso(lunesDe(new Date(Date.now() - 7 * 864e5))))
   const [ajustes, setAjustes] = useState<Record<number, Ajuste>>({})
   const [err, setErr] = useState('')
   const [verConfig, setVerConfig] = useState(false)
@@ -63,10 +77,12 @@ export default function CierreSemana({ proyectoId = 1 }: { proyectoId?: number }
     queryFn: () => api(`/ev/programacion/cierre-semana?lunes=${lunes}&proyecto_id=${proyectoId}`),
   })
   const d = q.data
+  // Los ajustes sin guardar pertenecen a la semana que se estaba revisando: el
+  // padre remonta este bloque con `key={lunes}` y se van con ella.
   const irA = (delta: number) => {
     const f = new Date(lunes + 'T12:00:00')
     f.setDate(f.getDate() + delta * 7)
-    setLunes(iso(lunesDe(f))); setAjustes({}); setErr('')
+    onLunes(iso(lunesDe(f)))
   }
   const refrescar = () => {
     setAjustes({}); setErr('')
@@ -126,6 +142,11 @@ export default function CierreSemana({ proyectoId = 1 }: { proyectoId?: number }
     : v >= 0.75 ? 'text-k-green' : v >= 0.5 ? 'text-k-alerta' : 'text-k-red')
   // Sin causa no hay aprendizaje: el Pareto se alimenta de aquí.
   const sinCausa = comprometidas.filter(a => !a.cumplida && !a.causa_cat).length
+  // Y sin DETALLE el cliente no recibe explicación: en su reporte no va la
+  // categoría («Falta de materiales» es para oficina), va este texto.
+  const sinDetalle = comprometidas.filter(a => !a.cumplida && !(a.causa ?? '').trim()).length
+  const campo = d?.campo ?? {}
+  const und = (a: ActCierre) => (a.unidad ? ` ${a.unidad}` : '')
 
   return (
     <div className="bg-k-surface border border-k-border rounded-xl">
@@ -238,8 +259,14 @@ export default function CierreSemana({ proyectoId = 1 }: { proyectoId?: number }
         {err && <p className="text-k-red text-xs">{err}</p>}
         {!d?.cerrada && sinCausa > 0 && (
           <p className="text-[11px] text-k-alerta">
-            <b>{sinCausa}</b> sin causa. Ponérsela ahora es lo que hace útil el Pareto — después
+            <b>{sinCausa}</b> sin categoría. Ponerla ahora es lo que hace útil el Pareto — después
             nadie se acuerda de por qué no salió.
+          </p>
+        )}
+        {!d?.cerrada && sinDetalle > 0 && (
+          <p className="text-[11px] text-k-text3">
+            <b className="text-k-text2">{sinDetalle}</b> sin explicación escrita: saldrán en blanco
+            en el reporte del cliente. La categoría no se le entrega — a él se le explica el caso.
           </p>
         )}
 
@@ -280,11 +307,12 @@ export default function CierreSemana({ proyectoId = 1 }: { proyectoId?: number }
                       </div>
                     </td>
                     <td className="px-2 py-1.5 text-right font-mono text-k-text2 tabular-nums">
-                      {a.comprometido}
+                      {a.comprometido > 0 ? `${a.comprometido}${und(a)}` : '—'}
                     </td>
                     <td className={`px-2 py-1.5 text-right font-mono tabular-nums ${
-                      a.alcanzado >= a.comprometido ? 'text-k-green' : 'text-k-red'}`}>
-                      {a.alcanzado}
+                      a.comprometido <= 0 ? 'text-k-text3'
+                        : a.alcanzado >= a.comprometido ? 'text-k-green' : 'text-k-red'}`}>
+                      {a.comprometido > 0 ? `${a.alcanzado}${und(a)}` : '—'}
                     </td>
                     <td className="px-2 py-1.5 text-center">
                       <input type="checkbox" checked={a.cumplida} disabled={d?.cerrada}
@@ -296,6 +324,14 @@ export default function CierreSemana({ proyectoId = 1 }: { proyectoId?: number }
                         materiales» a secas: quiere saber qué material, desde
                         cuándo y qué se hizo. Los dos, no uno u otro. */}
                     <td className="px-2 py-1.5">
+                      {/* Lo que campo escribió va SIEMPRE, cumpla o no: si el
+                          supervisor reportó una restricción, el planner tiene
+                          que verla aquí y no ir a buscarla a otra pantalla. */}
+                      <RefCampo r={campo[String(a.actividad_id)]} cnc={d?.cnc_catalogo ?? {}}
+                        onUsar={d?.cerrada ? undefined : (cat, texto) => set(a.actividad_id, {
+                          ...(cat && !a.causa_cat ? { causa_cat: cat } : {}),
+                          causa: [a.causa, texto].filter(Boolean).join(' · '),
+                        })} />
                       {a.cumplida ? <span className="text-k-text3">—</span> : d?.cerrada ? (
                         <div className="leading-tight">
                           <div className="text-k-text2">
@@ -308,14 +344,14 @@ export default function CierreSemana({ proyectoId = 1 }: { proyectoId?: number }
                           <select className={`${inputCls} w-full`}
                             value={a.causa_cat ?? ''}
                             onChange={e => set(a.actividad_id, { causa_cat: e.target.value })}>
-                            <option value="">¿Por qué no salió?</option>
+                            <option value="">¿Por qué no salió? (interno)</option>
                             {Object.entries(d?.cnc_catalogo ?? {}).map(([k, v]) => (
                               <option key={k} value={k}>{v}</option>
                             ))}
                           </select>
                           <input className={`${inputCls} w-full`} value={a.causa ?? ''}
-                            placeholder="Detalle para el cliente: qué pasó exactamente…"
-                            title="Va en el reporte. La categoría cuenta para el Pareto; esto es lo que explica el caso."
+                            placeholder="Explicación para el cliente: qué pasó exactamente…"
+                            title="Esto es lo único que ve el cliente. La categoría queda para el Pareto de oficina."
                             onChange={e => set(a.actividad_id, { causa: e.target.value })} />
                         </div>
                       )}
@@ -327,6 +363,15 @@ export default function CierreSemana({ proyectoId = 1 }: { proyectoId?: number }
           </div>
         )}
 
+        {filas.length > 0 && (
+          <p className="text-[10px] text-k-text3 leading-relaxed">
+            <b className="text-k-text2">Categoría</b> = para el Pareto de oficina (contar lo que se
+            repite). <b className="text-k-text2">Explicación</b> = lo único que ve el cliente.
+            Lo que está en ámbar es lo que reportaron desde campo: «usar» lo copia a la explicación
+            para no reescribirlo.
+          </p>
+        )}
+
         {d?.cerrada && d.cerrado_en && (
           <p className="text-[10px] text-k-text3">
             Congelada el {d.cerrado_en.slice(0, 10)}
@@ -334,6 +379,45 @@ export default function CierreSemana({ proyectoId = 1 }: { proyectoId?: number }
           </p>
         )}
       </div>
+    </div>
+  )
+}
+
+// ── Lo que reportaron desde campo esa semana ─────────────────
+// El supervisor ya escribió por qué no salió el trabajo o qué lo frenó. Que el
+// planner tenga que ir a buscarlo a otra pantalla es cómo se acaba escribiendo
+// «no se pudo avanzar» en el reporte del cliente.
+function RefCampo({ r, cnc, onUsar }: {
+  r?: CampoRef
+  cnc: Record<string, string>
+  /** Ausente = la semana está cerrada: se lee, no se copia. */
+  onUsar?: (cat: string | null, texto: string) => void
+}) {
+  if (!r) return null
+  const et = (c?: string | null) => (c ? cnc[c] ?? c : '')
+  const lineas: string[] = []
+  if (r.causa?.detalle || r.causa?.cat) {
+    const c = et(r.causa.cat)
+    lineas.push(r.causa.detalle ? `${r.causa.detalle}${c ? ` (${c})` : ''}` : c)
+  }
+  for (const x of r.restricciones ?? []) {
+    const c = et(x.cat)
+    lineas.push(`${x.detalle || c}${x.detalle && c ? ` (${c})` : ''} · ${fmtDia(x.fecha)}`)
+  }
+  if (!lineas.length) return null
+  // Para copiar va solo el texto de campo, no las etiquetas ni las fechas: la
+  // explicación del cliente se redacta, no se pega en jerga interna.
+  const texto = [r.causa?.detalle, ...(r.restricciones ?? []).map(x => x.detalle)]
+    .map(t => (t ?? '').trim()).filter(Boolean).join(' · ')
+
+  return (
+    <div className="mb-1 text-[10px] text-k-alerta/90 leading-tight">
+      {lineas.map((l, i) => <div key={i}>⚠ {l}</div>)}
+      {onUsar && texto && (
+        <button onClick={() => onUsar(r.causa?.cat ?? null, texto)}
+          title="Copia lo que escribió campo a la explicación del cliente"
+          className="text-k-text3 hover:text-k-amber underline">usar</button>
+      )}
     </div>
   )
 }
