@@ -42,6 +42,24 @@ const num = (v: number) => (Math.round(v * 10) / 10).toString()
 
 const RANGOS = [['4 semanas', 4], ['8 semanas', 8], ['12 semanas', 12]] as const
 
+/** El total, columna por columna — las mismas que salen en el Excel. */
+type Tot = Celda & { dias: number }
+const TOT_COLS: { k: string; label: string; ayuda: string; color: string; valor: (t: Tot) => number }[] = [
+  { k: 'hh', label: 'HH total', color: 'text-k-text font-bold',
+    ayuda: 'Horas-hombre que tareó en el periodo', valor: t => t.hh },
+  { k: 'dias', label: 'Días', color: 'text-k-text2',
+    ayuda: 'Días con reporte (cualquier señal, no solo HH)', valor: t => t.dias },
+  { k: 'fotos', label: 'Fotos', color: 'text-k-green',
+    ayuda: 'Fotos subidas desde campo', valor: t => t.fotos },
+  { k: 'rest', label: 'Restric.', color: 'text-k-alerta',
+    ayuda: 'Restricciones que reportó', valor: t => t.rest },
+  { k: 'nc', label: 'No se hizo', color: 'text-k-red',
+    ayuda: 'Actividades que marcó como no ejecutadas', valor: t => t.nc },
+]
+
+/** ¿La celda trae sustento, o son las horas peladas? */
+const conSustento = (c: Celda) => c.desc || c.fotos > 0 || c.rest > 0 || c.nc > 0
+
 export default function MatrizSupervisores() {
   const [semanas, setSemanas] = useState(4)
   const { desde, hasta } = useMemo(() => {
@@ -124,8 +142,12 @@ export default function MatrizSupervisores() {
                     Sem. del {fmtDia(s.lunes)}
                   </th>
                 ))}
-                <th rowSpan={2} className="border border-k-border bg-k-raised px-2 py-1.5 text-[10px] font-bold uppercase text-k-text3">
-                  Total
+                {/* El total desglosado, columna por columna — como sale en el
+                    Excel. Amontonado en una sola celda no se podía comparar
+                    una fila con otra. */}
+                <th colSpan={TOT_COLS.length}
+                  className="border border-k-border bg-k-raised px-2 py-1 text-[10px] font-bold uppercase text-k-text3">
+                  Total del periodo
                 </th>
               </tr>
               <tr>
@@ -135,16 +157,22 @@ export default function MatrizSupervisores() {
                     {diaLetra(f)}<br /><span className="font-normal">{f.slice(8, 10)}</span>
                   </th>
                 ))}
+                {TOT_COLS.map(c => (
+                  <th key={c.k} title={c.ayuda}
+                    className="border border-k-border bg-k-raised px-2 py-1 text-[9px] font-bold uppercase text-k-text3 whitespace-nowrap cursor-help">
+                    {c.label}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
               {q.isLoading && (
-                <tr><td colSpan={fechas.length + 2} className="px-4 py-10 text-center text-k-text3">
+                <tr><td colSpan={fechas.length + 1 + TOT_COLS.length} className="px-4 py-10 text-center text-k-text3">
                   <Loader2 size={15} className="animate-spin inline mr-2" />Armando la matriz…
                 </td></tr>
               )}
               {!q.isLoading && filas.length === 0 && (
-                <tr><td colSpan={fechas.length + 2} className="px-4 py-10 text-center text-k-text3">
+                <tr><td colSpan={fechas.length + 1 + TOT_COLS.length} className="px-4 py-10 text-center text-k-text3">
                   No hay supervisores activos.
                 </td></tr>
               )}
@@ -157,14 +185,15 @@ export default function MatrizSupervisores() {
                     </span>
                   </td>
                   {fechas.map(fe => <CeldaDia key={fe} c={f.celdas[fe]} maxHH={maxHH} finde={esFinde(fe)} />)}
-                  <td className="border border-k-border px-2 py-1.5 text-right bg-k-raised/40">
-                    <div className="font-mono font-bold text-k-text tabular-nums">{num(f.tot.hh)}</div>
-                    <div className="text-[9px] text-k-text3 whitespace-nowrap">
-                      {f.tot.fotos > 0 && <>📷 {f.tot.fotos} </>}
-                      {f.tot.rest > 0 && <>⚠ {f.tot.rest} </>}
-                      {f.tot.nc > 0 && <>✕ {f.tot.nc}</>}
-                    </div>
-                  </td>
+                  {TOT_COLS.map(c => {
+                    const v = c.valor(f.tot)
+                    return (
+                      <td key={c.k} className="border border-k-border px-2 py-1.5 text-right bg-k-raised/40">
+                        <span className={`font-mono tabular-nums ${
+                          v ? c.color : 'text-k-text3'}`}>{v ? num(v) : '0'}</span>
+                      </td>
+                    )
+                  })}
                 </tr>
               ))}
             </tbody>
@@ -177,6 +206,109 @@ export default function MatrizSupervisores() {
           <span className="flex items-center gap-1"><AlertTriangle size={11} className="text-k-alerta" /> reportó restricciones</span>
           <span className="flex items-center gap-1"><XCircle size={11} className="text-k-red" /> marcó «no se hizo»</span>
           <span>Celda vacía = ese día no mandó nada.</span>
+        </div>
+      </div>
+
+      {filas.length > 0 && <Graficos filas={filas} semanas={d?.semanas ?? []} fechas={fechas} />}
+    </div>
+  )
+}
+
+// ── El historial de un vistazo ───────────────────────────────
+// La cuadrícula responde «qué pasó tal día»; estas dos barras responden las
+// preguntas que uno se hace al mirarla: ¿estamos reportando más o menos que
+// antes?, ¿quién manda el parte completo y quién solo las horas?
+function Graficos({ filas, semanas, fechas }: {
+  filas: Fila[]; semanas: { lunes: string; n: number }[]; fechas: string[]
+}) {
+  // Días-supervisor con reporte por semana, separando los que traen sustento.
+  const porSemana = useMemo(() => {
+    const idx = new Map<string, string>()      // fecha → lunes de su semana
+    let i = 0
+    for (const s of semanas) { for (let k = 0; k < s.n; k++) idx.set(fechas[i++], s.lunes) }
+    const acc = new Map<string, { full: number; solo: number }>()
+    for (const s of semanas) acc.set(s.lunes, { full: 0, solo: 0 })
+    for (const f of filas) {
+      for (const [fecha, c] of Object.entries(f.celdas)) {
+        const a = acc.get(idx.get(fecha) ?? '')
+        if (!a) continue
+        if (conSustento(c)) a.full++; else a.solo++
+      }
+    }
+    return semanas.map(s => ({ lunes: s.lunes, ...acc.get(s.lunes)! }))
+  }, [filas, semanas, fechas])
+
+  const porSup = useMemo(() => filas.map(f => {
+    const celdas = Object.values(f.celdas)
+    const full = celdas.filter(conSustento).length
+    return { nombre: f.nombre, full, solo: celdas.length - full, dias: celdas.length }
+  }).sort((a, b) => b.dias - a.dias), [filas])
+
+  const maxSem = Math.max(1, ...porSemana.map(s => s.full + s.solo))
+  const maxSup = Math.max(1, ...porSup.map(s => s.dias))
+  const totFull = porSup.reduce((s, x) => s + x.full, 0)
+  const totDias = porSup.reduce((s, x) => s + x.dias, 0)
+
+  return (
+    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+      <div className="bg-k-surface border border-k-border rounded-xl p-4">
+        <p className="text-xs font-bold text-k-text mb-1">
+          Reportes por semana <span className="text-k-text3 font-normal">(días-supervisor)</span>
+        </p>
+        <p className="text-[10px] text-k-text3 mb-3">
+          Si la barra baja, esa semana se reportó menos. Lo verde trae sustento
+          —descripción, fotos o restricciones—; lo ámbar son las horas peladas.
+        </p>
+        <div className="flex items-end gap-2 h-32">
+          {porSemana.map(s => {
+            const alto = ((s.full + s.solo) / maxSem) * 100
+            return (
+              <div key={s.lunes} className="flex-1 flex flex-col items-center gap-1 min-w-0">
+                <span className="text-[10px] font-bold text-k-text tabular-nums">
+                  {s.full + s.solo || ''}
+                </span>
+                <div className="w-full flex-1 flex flex-col justify-end">
+                  <div className="w-full flex flex-col justify-end rounded-t overflow-hidden"
+                    style={{ height: `${Math.max(alto, s.full + s.solo ? 3 : 0)}%` }}
+                    title={`${s.full} con sustento · ${s.solo} solo HH`}>
+                    <div className="bg-amber-500/60" style={{ flex: s.solo }} />
+                    <div className="bg-green-500/70" style={{ flex: s.full }} />
+                  </div>
+                </div>
+                <span className="text-[9px] text-k-text3 truncate w-full text-center">
+                  {fmtDia(s.lunes)}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      <div className="bg-k-surface border border-k-border rounded-xl p-4">
+        <p className="text-xs font-bold text-k-text mb-1">
+          Días con reporte por supervisor
+        </p>
+        <p className="text-[10px] text-k-text3 mb-3">
+          {totDias > 0
+            ? <>{Math.round((totFull / totDias) * 100)}% de los partes del periodo llegaron con sustento.</>
+            : 'Todavía nadie reportó en el periodo.'}
+        </p>
+        <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+          {porSup.map(s => (
+            <div key={s.nombre} className="flex items-center gap-2">
+              <span className="text-[10px] text-k-text2 w-36 flex-shrink-0 truncate" title={s.nombre}>
+                {s.nombre}
+              </span>
+              <div className="flex-1 h-3.5 bg-k-raised rounded overflow-hidden flex">
+                <div className="bg-green-500/70" style={{ width: `${(s.full / maxSup) * 100}%` }}
+                  title={`${s.full} con sustento`} />
+                <div className="bg-amber-500/60" style={{ width: `${(s.solo / maxSup) * 100}%` }}
+                  title={`${s.solo} solo HH`} />
+              </div>
+              <span className={`text-[11px] font-bold w-6 text-right tabular-nums ${
+                s.dias ? 'text-k-text' : 'text-k-text3'}`}>{s.dias}</span>
+            </div>
+          ))}
         </div>
       </div>
     </div>

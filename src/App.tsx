@@ -61,7 +61,7 @@ export default function App() {
                 redirigen a la pestaña, para no romper enlaces guardados. */}
             <Route path="importar"     element={<Navigate to="/trabajadores?tab=importar" replace />} />
             <Route path="qrs"          element={<Navigate to="/trabajadores?tab=qrs" replace />} />
-            <Route path="impresion-qr" element={<Navigate to="/trabajadores?tab=impresion" replace />} />
+            <Route path="impresion-qr" element={<Navigate to="/trabajadores?tab=qrs" replace />} />
             <Route path="registros"    element={<RegistrosHH />} />
             <Route path="matriz"       element={<MatrizHistorica />} />
             <Route path="reportes"     element={<Navigate to="/registros?tab=analytics" replace />} />

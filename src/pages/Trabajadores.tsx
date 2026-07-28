@@ -7,7 +7,7 @@ import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Search, UserPlus, UserX, X, Loader2, CheckCircle, XCircle,
-  Users, Upload, QrCode, Printer,
+  Users, Upload, QrCode,
 } from 'lucide-react'
 
 import { api } from '@/lib/api'
@@ -15,7 +15,6 @@ import { TabsPagina } from '@/components/TabsPagina'
 import { useTab, type TabDef } from '@/lib/tabs'
 import ImportarPersonal from '@/pages/ImportarPersonal'
 import QRs from '@/pages/QRs'
-import ImpresionQR from '@/pages/ImpresionQR'
 
 interface Trabajador {
   id: string; nombre: string; cargo: string; dni?: string; activo: boolean
@@ -26,11 +25,13 @@ interface AltaOk { nombre: string; usuario?: string | null; password?: string | 
 
 const FORM_VACIO = { nombre: '', cargo: '', dni: '', tipo: 'DIRECTO', es_supervisor: false }
 
+// «Impresión QR» se fusionó dentro de «QRs» (2026-07-28): eran la misma
+// pantalla —filtro, cuadrícula, imprimir— partida en dos. La ruta vieja
+// redirige aquí.
 const TABS: TabDef[] = [
   { id: 'personal',  label: 'Personal',     icon: Users },
   { id: 'importar',  label: 'Importar',     icon: Upload },
   { id: 'qrs',       label: 'QRs',          icon: QrCode },
-  { id: 'impresion', label: 'Impresión QR', icon: Printer },
 ]
 
 export default function Trabajadores() {
@@ -41,7 +42,6 @@ export default function Trabajadores() {
       {tab === 'personal'  && <PanelPersonal />}
       {tab === 'importar'  && <ImportarPersonal />}
       {tab === 'qrs'       && <QRs />}
-      {tab === 'impresion' && <ImpresionQR />}
     </div>
   )
 }
@@ -277,20 +277,19 @@ function PanelPersonal() {
                 </p>
               </div>
 
-              {/* Ser supervisor es un ROL encima de la ficha, no otra persona. */}
+              {/* Ser supervisor es un ROL encima de la ficha, no otra persona,
+                  y es INDEPENDIENTE del tipo: un capataz al que ascienden a
+                  tomar el tareo sigue trabajando en la partida y sigue siendo
+                  directo (corrección de Jean, 2026-07-28). */}
               <label className="flex items-start gap-2.5 cursor-pointer bg-k-raised border border-k-border2 rounded-lg px-4 py-3">
                 <input type="checkbox" checked={form.es_supervisor}
-                  onChange={e => setForm(p => ({
-                    ...p, es_supervisor: e.target.checked,
-                    // Quien reporta es staff; sigue siendo cambiable a mano.
-                    tipo: e.target.checked ? 'INDIRECTO' : p.tipo,
-                  }))}
+                  onChange={e => setForm(p => ({ ...p, es_supervisor: e.target.checked }))}
                   className="accent-k-amber mt-0.5" />
                 <span>
                   <span className="text-sm text-k-text font-medium">¿Reporta desde la app? (supervisor)</span>
                   <span className="block text-[11px] text-k-text3 mt-0.5">
                     {form.es_supervisor
-                      ? 'Se le crea su acceso a la app de campo con la clave inicial 1234.'
+                      ? 'Se le crea su acceso a la app de campo con la clave inicial 1234. No cambia el tipo: un capataz que reporta sigue siendo directo.'
                       : 'No — es lo habitual. Marcarlo solo si va a tomar el tareo en obra.'}
                   </span>
                 </span>

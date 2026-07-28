@@ -18,16 +18,19 @@ const NAV: NavGroup[] = [
     items: [
       { path: '/dashboard',    label: 'Dashboard',      icon: LayoutDashboard },
       { path: '/programacion', label: 'Programación',   icon: CalendarDays },
-      { path: '/supervisores', label: 'Supervisores',   icon: UserCheck },
     ],
   },
   // Importar/QRs/Impresión y Analytics dejaron de ser entradas propias: son
   // pestañas de Trabajadores y de Registros y HH (encargo de Jean 2026-07-26).
   // Las rutas viejas siguen vivas y redirigen a su pestaña.
+  // Supervisores baja aquí (2026-07-28): un supervisor es una persona del
+  // padrón con un rol, no un módulo de operaciones — y se gestiona junto al
+  // resto del personal.
   {
     label: 'Personal',
     items: [
       { path: '/trabajadores', label: 'Trabajadores',   icon: Users },
+      { path: '/supervisores', label: 'Supervisores',   icon: UserCheck },
     ],
   },
   {
