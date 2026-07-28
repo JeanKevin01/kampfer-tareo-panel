@@ -291,16 +291,33 @@ export default function CierreSemana({ proyectoId = 1 }: { proyectoId?: number }
                         onChange={e => set(a.actividad_id, { cumplida: e.target.checked })}
                         title="El sistema lo propone por metrado; puedes corregirlo" />
                     </td>
+                    {/* La categoría es para el Pareto (contar lo que se repite);
+                        el DETALLE es para el cliente, que no entiende «Falta de
+                        materiales» a secas: quiere saber qué material, desde
+                        cuándo y qué se hizo. Los dos, no uno u otro. */}
                     <td className="px-2 py-1.5">
-                      {a.cumplida ? <span className="text-k-text3">—</span> : (
-                        <select className={`${inputCls} w-full`} disabled={d?.cerrada}
-                          value={a.causa_cat ?? ''}
-                          onChange={e => set(a.actividad_id, { causa_cat: e.target.value })}>
-                          <option value="">¿Por qué no salió?</option>
-                          {Object.entries(d?.cnc_catalogo ?? {}).map(([k, v]) => (
-                            <option key={k} value={k}>{v}</option>
-                          ))}
-                        </select>
+                      {a.cumplida ? <span className="text-k-text3">—</span> : d?.cerrada ? (
+                        <div className="leading-tight">
+                          <div className="text-k-text2">
+                            {d.cnc_catalogo?.[a.causa_cat ?? ''] ?? a.causa_cat ?? '—'}
+                          </div>
+                          {a.causa && <div className="text-[10px] text-k-text3">{a.causa}</div>}
+                        </div>
+                      ) : (
+                        <div className="space-y-1">
+                          <select className={`${inputCls} w-full`}
+                            value={a.causa_cat ?? ''}
+                            onChange={e => set(a.actividad_id, { causa_cat: e.target.value })}>
+                            <option value="">¿Por qué no salió?</option>
+                            {Object.entries(d?.cnc_catalogo ?? {}).map(([k, v]) => (
+                              <option key={k} value={k}>{v}</option>
+                            ))}
+                          </select>
+                          <input className={`${inputCls} w-full`} value={a.causa ?? ''}
+                            placeholder="Detalle para el cliente: qué pasó exactamente…"
+                            title="Va en el reporte. La categoría cuenta para el Pareto; esto es lo que explica el caso."
+                            onChange={e => set(a.actividad_id, { causa: e.target.value })} />
+                        </div>
                       )}
                     </td>
                   </tr>
