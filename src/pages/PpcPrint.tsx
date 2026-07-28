@@ -67,9 +67,15 @@ export default function PpcPrint() {
     return out
   }, [desde, hasta])
 
+  // Con rango pedido, TODO el reporte es de ese rango: KPIs, histograma y
+  // tendencia incluidos. Antes el resumen eran siempre las últimas N semanas,
+  // así que un reporte del 13 al 26 traía además la semana en curso —a medio
+  // correr— y la tendencia salía cayendo por una semana que aún no terminaba.
   const resumen = useQuery<Resp>({
-    queryKey: ['ppc-print', proyecto, semanas],
-    queryFn: () => api(`/ev/programacion/ppc?proyecto_id=${proyecto}&semanas=${semanas}`),
+    queryKey: ['ppc-print', proyecto, semanas, desde, hasta],
+    queryFn: () => api(`/ev/programacion/ppc?proyecto_id=${proyecto}` + (desde
+      ? `&desde=${desde}&hasta=${hasta || desde}`
+      : `&semanas=${semanas}`)),
   })
   const grid = useQuery<GridResp>({
     queryKey: ['ppc-detalle', proyecto, weeks[0], weeks.length],
@@ -109,8 +115,9 @@ export default function PpcPrint() {
     <BrandDoc
       tipo="Programación · Last Planner"
       titulo="Reporte de PPC"
-      meta={<>Porcentaje de Plan Cumplido · resumen últimas {semanas} semanas · meta lean ≥ 75%
-        {desde && <> · detalle {fmtDia(weeks[0])} — {fmtDia(iso(new Date(new Date(weeks[weeks.length - 1] + 'T12:00:00').getTime() + 6 * 864e5)))}</>}</>}
+      meta={<>Porcentaje de Plan Cumplido · meta lean ≥ 75% · {desde
+        ? <>periodo {fmtDia(weeks[0])} — {fmtDia(iso(new Date(new Date(weeks[weeks.length - 1] + 'T12:00:00').getTime() + 6 * 864e5)))}</>
+        : <>últimas {semanas} semanas</>}</>}
       hint="Resumen + detalle semanal por partidas. Indicador de confiabilidad de la programación."
     >
       <style>{`
@@ -135,6 +142,10 @@ export default function PpcPrint() {
 
         /* Detalle semanal (F030b) — página horizontal */
         .pp-det { page: detLand; break-before: page; }
+        /* El pie vuelve al @page vertical, y cambiar de tipo de página abre una
+           hoja nueva: quedaba una última hoja con solo el pie. Con detalle, el
+           pie se queda en la misma página horizontal. */
+        ${weeks.length > 0 ? '.kd-foot { page: detLand; }' : ''}
         .pp-det-h { font-size: 15px; font-weight: 700; margin: 4px 0 2px; }
         .pp-det-h small { font-weight: 400; font-size: 11px; color: var(--tinta2); }
         table.pp-f { width: 100%; border-collapse: collapse; font-size: 7.6px; table-layout: fixed; margin-top: 6px; }

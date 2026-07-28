@@ -134,6 +134,9 @@ export default function PpcCliente() {
         .cl-vacio { font-size: 12px; color: var(--tinta3); font-style: italic; }
 
         .cl-det { page: cliLand; break-before: page; }
+        /* El pie vuelve al @page vertical, y cambiar de tipo de página abre una
+           hoja nueva: quedaba una última hoja con solo el pie. */
+        .kd-foot { page: cliLand; }
         .cl-det-h { font-size: 15px; font-weight: 700; margin: 4px 0 2px; }
         .cl-det-h small { font-weight: 400; font-size: 11px; color: var(--tinta2); }
         table.cl-t { width: 100%; border-collapse: collapse; font-size: 8px; table-layout: fixed; margin-top: 8px; }
@@ -149,7 +152,16 @@ export default function PpcCliente() {
         .cl-num { text-align: right; font-variant-numeric: tabular-nums; }
         .cl-cu { text-align: center; font-weight: 700; }
         .cl-obs { font-size: 7.5px; color: var(--tinta2); }
-        .cl-add { font-size: 7px; color: #b45309; }
+        /* El adicional se destaca: es trabajo que se ejecutó fuera del plan de
+           la semana y sustenta lo que se hizo de más. */
+        tr.cl-adic td { background: #fdf6e6; }
+        tr.cl-adic td.izq { border-left: 2.5px solid #d97706; }
+        .cl-chip {
+          display: inline-block; background: #d97706; color: #fff; font-size: 6px;
+          font-weight: 700; letter-spacing: .07em; padding: 1px 4px; border-radius: 3px;
+          vertical-align: middle; margin-right: 4px;
+        }
+        .cl-add { font-size: 7px; color: #b45309; font-weight: 600; }
         .cl-pie { font-size: 8.5px; color: var(--tinta3); margin-top: 8px; line-height: 1.5; }
       `}</style>
 
@@ -247,6 +259,11 @@ function SemanaCliente({ semana, grupos, cierre }: {
       <p className="cl-pie">
         Por día: en azul lo <b>programado</b> y debajo lo <b>ejecutado</b>. PROGR. y EJEC. son los
         totales de la semana, y son los que deciden el cumplimiento.
+        {(cierre?.actividades ?? []).some(a => a.no_planificada) && <>
+          {' '}Las filas marcadas <b style={{ color: '#b45309' }}>ADICIONAL</b> son trabajo
+          ejecutado que no estaba en el plan comprometido de la semana: se informa como
+          ejecutado, pero queda fuera del cálculo de cumplimiento.
+        </>}
         {cierre?.cerrada
           ? ' Semana cerrada: estas cifras ya no se recalculan.'
           : ' Semana aún abierta: las cifras pueden variar hasta el cierre.'}
@@ -275,8 +292,9 @@ function GrupoCliente({ g, F, juicio }: {
           : j.no_planificada ? ['+', '#b45309']
             : j.cumplida ? ['SÍ', '#0a7d4f'] : ['NO', '#c0392b']
         return (
-          <tr key={a.id}>
+          <tr key={a.id} className={j?.no_planificada ? 'cl-adic' : undefined}>
             <td className="izq">
+              {j?.no_planificada && <span className="cl-chip">ADICIONAL</span>}
               {a.titulo}
               {a.partida_codigo && <span style={{ color: '#8a93a1' }}> · {a.partida_codigo}</span>}
             </td>
@@ -298,7 +316,7 @@ function GrupoCliente({ g, F, juicio }: {
             <td className="cl-obs">
               {/* Solo la explicación redactada. La categoría interna del Pareto
                   se queda en el reporte de oficina. */}
-              {j?.no_planificada && <div className="cl-add">Trabajo adicional no programado en la semana</div>}
+              {j?.no_planificada && <div className="cl-add">Fuera del plan de la semana</div>}
               {j && !j.cumplida && !j.no_planificada && (j.causa?.trim()
                 ? j.causa
                 : <span style={{ color: '#8a93a1', fontStyle: 'italic' }}>Sin observación registrada</span>)}

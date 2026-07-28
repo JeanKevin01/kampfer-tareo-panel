@@ -57,7 +57,12 @@ export default function BrandDoc({
           -webkit-print-color-adjust: exact; print-color-adjust: exact;
         }
         .kd-root ::selection { background: #fde4b0; }
-        @media print { .kd-noprint { display: none !important; } }
+        @media print {
+          .kd-noprint { display: none !important; }
+          /* En pantalla el documento ocupa el alto de la ventana; al imprimir,
+             ese alto sobrante se convierte en una hoja de más. */
+          .kd-root { min-height: 0; }
+        }
         ${page ? `@page { ${page} }` : '@page { margin: 14mm; }'}
 
         .kd-bar {
