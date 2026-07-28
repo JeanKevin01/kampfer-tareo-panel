@@ -10,6 +10,7 @@ import { CNC, TIPOS_RESTRICCION } from '@/lib/catalogos'
 import { lunesDe, iso } from '@/lib/semana'
 import { LookaheadGrid, EvaluacionSemanal, type ActGrid } from '@/components/LookaheadGrid'
 import AltaPartidasLote from '@/components/maestros/AltaPartidasLote'
+import CierreSemana from '@/components/CierreSemana'
 import { ProgramarLote } from '@/components/ProgramarLote'
 import { CalendarioLaboral } from '@/components/CalendarioLaboral'
 import HistogramaMO from '@/components/HistogramaMO'
@@ -1279,7 +1280,10 @@ function ModalReporte({ rep, onClose }: { rep: Reporte; onClose: () => void }) {
 // ── PPC + Pareto de causas: el aprendizaje del Last Planner ──
 function PanelPPC() {
   interface Resp {
-    semanal: { lunes: string; comprometidas: number; cumplidas: number; no_cumplidas: number; ppc: number | null }[]
+    semanal: { lunes: string; comprometidas: number; cumplidas: number; no_cumplidas: number
+      ppc: number | null
+      /** congelada = ya se cerró y su número no volverá a cambiar */
+      congelada?: boolean; parcial?: boolean; no_planificadas?: number }[]
     cnc: { causa: string; etiqueta: string; n: number }[]
     pareto_restricciones?: { causa: string; etiqueta: string; n: number }[]
     por_supervisor: { supervisor_id: string; nombre?: string; comprometidas: number; cumplidas: number; ppc: number | null }[]
@@ -1303,6 +1307,10 @@ function PanelPPC() {
 
   return (
     <div className="space-y-4">
+      {/* Cierre de la semana: congela el PPC (y es la reunión del Last Planner:
+          revisar, poner causa a lo que no salió, cerrar). */}
+      <CierreSemana proyectoId={PROYECTO_ID} />
+
       {/* F030b: la evaluación semanal comprometido vs alcanzado */}
       <EvaluacionSemanal />
 
@@ -1339,6 +1347,14 @@ function PanelPPC() {
           <div className="space-y-2">
             {(d?.semanal ?? []).map(w => (
               <div key={w.lunes} className="flex items-center gap-2">
+                {/* El candado distingue lo firme de lo que todavía se mueve: una
+                    semana sin cerrar se recalcula sobre el plan vigente. */}
+                <span title={w.congelada
+                  ? `Semana cerrada${w.parcial ? ' con corte parcial' : ''}: este número ya no cambia`
+                  : 'Semana sin cerrar: se calcula sobre el plan vigente y aún puede cambiar'}
+                  className={`w-3 flex-shrink-0 text-[9px] ${w.congelada ? 'text-k-green' : 'text-k-text3/50'}`}>
+                  {w.congelada ? '🔒' : '○'}
+                </span>
                 <span className="text-[10px] text-k-text3 font-mono w-20 flex-shrink-0">{fmtDia(w.lunes)}</span>
                 <div className="flex-1 h-4 bg-k-raised rounded overflow-hidden">
                   <div className={`h-full rounded ${w.ppc == null ? '' : w.ppc >= 0.75 ? 'bg-green-500/70' : w.ppc >= 0.5 ? 'bg-amber-500/70' : 'bg-red-500/70'}`}
