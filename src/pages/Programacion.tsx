@@ -52,11 +52,12 @@ export interface Restriccion {
 
 export interface Semana { lunes: string; fechas: string[]; actividades: Actividad[]; reportes: Reporte[] }
 
-// Partida creada al programar que todavía no tiene OTM, lugar en el WBS o HH.
+// Partida creada al programar a la que todavía le falta algo: OTM, lugar en el
+// WBS, HH o precio de venta.
 export interface PorUbicar {
   id: number; codigo: string; descripcion: string; unidad: string
   fase?: string | null; otm_id?: string | null
-  metrado_presup: number; hh_presup: number
+  metrado_presup: number; hh_presup: number; precio_unitario?: number
   naturaleza?: string | null; nivel?: number | null; parent_codigo?: string | null
   actividades: number; motivos: string[]
 }
@@ -152,9 +153,9 @@ export default function Programacion() {
           </button>
           {(porUbicar.data ?? []).length > 0 && (
             <button onClick={() => setVerUbicar(true)}
-              title="Partidas creadas al programar que aún no tienen OTM, lugar en el WBS o HH"
+              title="Partidas creadas al programar a las que les falta OTM, lugar en el WBS, HH o precio de venta"
               className="btn btn-on font-bold">
-              ⚑ Por ubicar ({(porUbicar.data ?? []).length})
+              ⚑ Por completar ({(porUbicar.data ?? []).length})
             </button>
           )}
           <button onClick={() => setVerCalendario(v => !v)}
@@ -1818,6 +1819,8 @@ function BandejaPorUbicar({ onClose }: { onClose: () => void }) {
   const [otm, setOtm] = useState('')
   const [padre, setPadre] = useState('')
   const [codigo, setCodigo] = useState('')
+  const [datos, setDatos] = useState<{ precio_unitario: string; hh_presup: string; metrado_presup: string }>(
+    { precio_unitario: '', hh_presup: '', metrado_presup: '' })
   const [err, setErr] = useState('')
 
   const lista = useQuery<PorUbicar[]>({
@@ -1832,23 +1835,58 @@ function BandejaPorUbicar({ onClose }: { onClose: () => void }) {
     queryFn: () => api(`/ev/partidas?otm=${encodeURIComponent(otm)}`),
     enabled: !!otm,
   })
-  const ubicar = useMutation({
-    mutationFn: (id: number) => api(`/ev/partidas/${id}/ubicar`, {
-      method: 'PUT',
-      body: JSON.stringify({
-        otm_id: otm, parent_codigo: padre || null, codigo: codigo.trim() || null,
-      }),
-    }),
-    onSuccess: () => {
-      setSel(null); setOtm(''); setPadre(''); setCodigo(''); setErr('')
-      qc.invalidateQueries({ queryKey: ['partidas-por-ubicar'] })
-      qc.invalidateQueries({ queryKey: ['partidas-otm'] })
+  const cerrarFila = () => {
+    setSel(null); setOtm(''); setPadre(''); setCodigo(''); setErr('')
+    setDatos({ precio_unitario: '', hh_presup: '', metrado_presup: '' })
+  }
+  const refrescar = () => {
+    cerrarFila()
+    qc.invalidateQueries({ queryKey: ['partidas-por-ubicar'] })
+    qc.invalidateQueries({ queryKey: ['partidas-otm'] })
+    qc.invalidateQueries({ queryKey: ['partidas'] })
+  }
+  // Un solo gesto: se completa lo que falte y, si además hace falta ubicarla,
+  // se ubica. Antes la bandeja SOLO sabía ubicar, así que una partida cuyo
+  // único problema era el precio no salía nunca de la lista por más que le
+  // dieras a «Ubicar» (lo que Jean encontró el 2026-07-28).
+  const guardar = useMutation({
+    mutationFn: async (p: PorUbicar) => {
+      const campos: Record<string, number> = {}
+      for (const [k, v] of Object.entries(datos)) {
+        if (v.trim() !== '') campos[k] = Number(v)
+      }
+      if (Object.values(campos).some(v => !Number.isFinite(v) || v < 0))
+        throw new Error('Los valores deben ser números no negativos')
+      if (Object.keys(campos).length)
+        await api(`/ev/partidas/${p.id}/completar`, { method: 'PUT', body: JSON.stringify(campos) })
+      // Solo se toca el sitio si de verdad cambia algo: en una partida que ya
+      // tiene su OTM, «guardar» no debe reubicarla de rebote.
+      const cambiaSitio = !!otm && (otm !== p.otm_id || !!padre || !!codigo.trim())
+      if (cambiaSitio)
+        await api(`/ev/partidas/${p.id}/ubicar`, {
+          method: 'PUT',
+          body: JSON.stringify({
+            otm_id: otm, parent_codigo: padre || null, codigo: codigo.trim() || null,
+          }),
+        })
     },
+    onSuccess: refrescar,
     onError: (e: Error) => setErr(e.message),
   })
   const MOTIVO: Record<string, string> = {
     SIN_OTM: 'Sin OTM', SIN_PADRE: 'Suelta del WBS', SIN_HH: 'Sin HH',
+    SIN_PU: 'Sin precio de venta',
   }
+  const AYUDA: Record<string, string> = {
+    SIN_OTM: 'No se sabe a qué obra pertenece, así que no aparece en ningún selector de partida.',
+    SIN_PADRE: 'Su código anuncia jerarquía pero no cuelga de nadie en el árbol de Valor Ganado.',
+    SIN_HH: 'Sin HH presupuestadas no hay contra qué medir el rendimiento: el ISP sale vacío.',
+    SIN_PU: 'La venta del RO es cantidad × precio unitario. Sin PU, la partida entra al resultado '
+      + 'como costo puro sin venta: consume HH y no aporta ingreso.',
+  }
+  /** ¿Qué hay que resolver en esta partida? */
+  const faltaUbicar = (p: PorUbicar) => p.motivos.some(m => m === 'SIN_OTM' || m === 'SIN_PADRE')
+  const faltaDatos = (p: PorUbicar) => p.motivos.some(m => m === 'SIN_PU' || m === 'SIN_HH')
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 flex items-start justify-center p-4 overflow-y-auto"
@@ -1857,9 +1895,10 @@ function BandejaPorUbicar({ onClose }: { onClose: () => void }) {
         onClick={e => e.stopPropagation()}>
         <div className="px-4 py-3 border-b border-k-border flex items-center justify-between">
           <div>
-            <h3 className="text-sm font-bold text-k-text">Partidas por ubicar</h3>
+            <h3 className="text-sm font-bold text-k-text">Partidas por completar</h3>
             <p className="text-[11px] text-k-text3">
-              Creadas al programar, todavía sin OTM, sin lugar en el WBS o sin HH.
+              Creadas al programar: les falta OTM, lugar en el WBS, HH o precio de venta.
+              Pasa el cursor por cada etiqueta para ver qué implica.
             </p>
           </div>
           <button onClick={onClose} className="text-k-text3 hover:text-k-text"><X size={18} /></button>
@@ -1881,7 +1920,8 @@ function BandejaPorUbicar({ onClose }: { onClose: () => void }) {
                       <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-red-500/15 text-k-red border border-red-500/25">ADICIONAL</span>
                     )}
                     {p.motivos.map(m => (
-                      <span key={m} className="text-[9px] px-1 py-0.5 rounded bg-k-amber/15 text-k-amber border border-k-amber/25">
+                      <span key={m} title={AYUDA[m]}
+                        className="text-[9px] px-1 py-0.5 rounded bg-k-amber/15 text-k-amber border border-k-amber/25 cursor-help">
                         {MOTIVO[m] ?? m}
                       </span>
                     ))}
@@ -1894,43 +1934,93 @@ function BandejaPorUbicar({ onClose }: { onClose: () => void }) {
                   </p>
                 </div>
                 <button onClick={() => {
-                  setSel(sel === p.id ? null : p.id); setOtm(p.otm_id ?? '')
-                  setPadre(''); setCodigo(''); setErr('')
+                  if (sel === p.id) { cerrarFila(); return }
+                  setSel(p.id); setOtm(p.otm_id ?? ''); setPadre(''); setCodigo(''); setErr('')
+                  // Los valores actuales quedan a la vista para no tener que
+                  // buscarlos en otra pantalla.
+                  setDatos({
+                    precio_unitario: p.precio_unitario ? String(p.precio_unitario) : '',
+                    hh_presup: p.hh_presup ? String(p.hh_presup) : '',
+                    metrado_presup: p.metrado_presup ? String(p.metrado_presup) : '',
+                  })
                 }}
                   className="shrink-0 text-[11px] font-bold px-2.5 py-1 rounded-lg border border-k-amber/50 text-k-amber hover:bg-k-amber/10">
-                  {sel === p.id ? 'Cerrar' : 'Ubicar'}
+                  {sel === p.id ? 'Cerrar' : faltaUbicar(p) ? 'Ubicar' : 'Completar'}
                 </button>
               </div>
               {sel === p.id && (
                 <div className="mt-2 pt-2 border-t border-k-border space-y-2">
-                  <div className="grid grid-cols-2 gap-2">
-                    <select value={otm} onChange={e => { setOtm(e.target.value); setPadre('') }}
-                      className={inputCls}>
-                      <option value="">Elige la OTM…</option>
-                      {(otms.data ?? []).map(o => (
-                        <option key={o.otm_id} value={o.otm_id}>
-                          {o.otm_id} — {(o.descripcion ?? '').slice(0, 30)}
-                        </option>
+                  {/* Dónde va: solo si de verdad le falta sitio. */}
+                  {faltaUbicar(p) && (
+                    <>
+                      <div className="grid grid-cols-2 gap-2">
+                        <select value={otm} onChange={e => { setOtm(e.target.value); setPadre('') }}
+                          className={inputCls}>
+                          <option value="">Elige la OTM…</option>
+                          {(otms.data ?? []).map(o => (
+                            <option key={o.otm_id} value={o.otm_id}>
+                              {o.otm_id} — {(o.descripcion ?? '').slice(0, 30)}
+                            </option>
+                          ))}
+                        </select>
+                        <select value={padre} onChange={e => setPadre(e.target.value)}
+                          className={inputCls} disabled={!otm}
+                          title="De qué partida cuelga en el árbol de Valor Ganado">
+                          <option value="">Cuelga de… (raíz del WBS)</option>
+                          {(padresQ.data ?? []).filter(x => x.id !== p.id).map(x => (
+                            <option key={x.id} value={x.codigo}>
+                              {x.codigo} — {(x.descripcion ?? '').slice(0, 28)}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <input placeholder={`Código (dejar vacío = ${p.codigo})`} value={codigo}
+                        onChange={e => setCodigo(e.target.value)} className={inputCls}
+                        title="Solo si la OTM destino ya usa ese código" />
+                    </>
+                  )}
+
+                  {/* Lo que le falta de presupuesto. El PU es el que deja el RO
+                      con costo y sin venta, así que va primero y explicado. */}
+                  {faltaDatos(p) && (
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        { k: 'precio_unitario' as const, l: `PU de venta (S/ por ${p.unidad})`,
+                          falta: p.motivos.includes('SIN_PU') },
+                        { k: 'hh_presup' as const, l: 'HH presupuestadas',
+                          falta: p.motivos.includes('SIN_HH') },
+                        { k: 'metrado_presup' as const, l: `Metrado (${p.unidad})`, falta: false },
+                      ].map(f => (
+                        <div key={f.k}>
+                          <label className={`block text-[9px] uppercase tracking-wide mb-1 ${
+                            f.falta ? 'text-k-amber font-bold' : 'text-k-text3'}`}>
+                            {f.l}{f.falta ? ' *' : ''}
+                          </label>
+                          <input type="number" min="0" step="any" inputMode="decimal"
+                            value={datos[f.k]} placeholder="0"
+                            onChange={e => setDatos(d => ({ ...d, [f.k]: e.target.value }))}
+                            className={`${inputCls} w-full ${f.falta && !datos[f.k].trim() ? 'border-k-amber' : ''}`} />
+                        </div>
                       ))}
-                    </select>
-                    <select value={padre} onChange={e => setPadre(e.target.value)}
-                      className={inputCls} disabled={!otm}
-                      title="De qué partida cuelga en el árbol de Valor Ganado">
-                      <option value="">Cuelga de… (raíz del WBS)</option>
-                      {(padresQ.data ?? []).filter(x => x.id !== p.id).map(x => (
-                        <option key={x.id} value={x.codigo}>
-                          {x.codigo} — {(x.descripcion ?? '').slice(0, 28)}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <input placeholder={`Código (dejar vacío = ${p.codigo})`} value={codigo}
-                    onChange={e => setCodigo(e.target.value)} className={inputCls}
-                    title="Solo si la OTM destino ya usa ese código" />
+                    </div>
+                  )}
+
+                  {p.motivos.includes('SIN_PU') && (
+                    <p className="text-[10px] text-k-text3 leading-relaxed">
+                      <b className="text-k-text2">Por qué se te pide el PU:</b> la venta del Resultado
+                      Operativo es <span className="font-mono">cantidad × PU</span>. Con el PU en cero
+                      esta partida consume HH y plata y no aporta ni un sol de ingreso — el margen
+                      sale mal sin que nada avise. {p.actividades > 0 && <>Ya tiene {p.actividades} actividad
+                      programada, así que va a consumir horas.</>}
+                    </p>
+                  )}
+
                   {err && <p className="text-k-red text-[11px]">{err}</p>}
-                  <button onClick={() => ubicar.mutate(p.id)} disabled={!otm || ubicar.isPending}
+                  <button onClick={() => guardar.mutate(p)}
+                    disabled={guardar.isPending || (faltaUbicar(p) && !otm)}
                     className="w-full bg-k-amber text-black font-bold text-xs py-2 rounded-lg disabled:opacity-40">
-                    {ubicar.isPending ? 'Ubicando…' : 'Ubicar en esta OTM'}
+                    {guardar.isPending ? 'Guardando…'
+                      : faltaUbicar(p) ? 'Ubicar y guardar' : 'Guardar'}
                   </button>
                 </div>
               )}

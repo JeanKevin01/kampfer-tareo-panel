@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Loader2, Download, RefreshCw, Pencil } from 'lucide-react'
+import { Loader2, Download, RefreshCw, Pencil, AlertTriangle } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { api, apiBlob, descargarBlob } from '@/lib/api'
 import { RECURSOS, CONCEPTOS_VENTA, nombreLargo } from '@/lib/catalogos'
 import Rentabilidad from '@/pages/Rentabilidad'
@@ -37,6 +38,39 @@ interface RO {
 }
 
 type Tab = 'tobra' | 'fases' | 'proyeccion' | 'otm'
+
+// ── Partidas que entran al RO como costo sin venta ───────────
+// La venta es Σ(cantidad valorizada × PU): una partida con PU en cero consume
+// HH y plata y no aporta ingreso, así que el margen sale mal sin que nada
+// avise. Aquí se dice ANTES de cerrar el mes, con el enlace a donde se
+// arregla. El aviso vive en la bandeja y en este banner — nunca marcando en
+// rojo cada fila del lookahead (lección del 2026-07-27).
+function AvisoSinVenta() {
+  const q = useQuery<{ motivos: string[]; codigo: string; descripcion: string }[]>({
+    queryKey: ['partidas-por-ubicar'],
+    queryFn: () => api('/ev/partidas-por-ubicar'),
+    staleTime: 5 * 60 * 1000,
+  })
+  const sinPU = (q.data ?? []).filter(p => p.motivos.includes('SIN_PU'))
+  if (!sinPU.length) return null
+  return (
+    <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3 flex items-start gap-3">
+      <AlertTriangle size={16} className="text-k-alerta mt-0.5 flex-shrink-0" />
+      <div className="flex-1 text-sm text-k-text2">
+        <b className="text-k-text">{sinPU.length} partida{sinPU.length !== 1 ? 's' : ''} sin precio de
+        venta</b> {sinPU.length !== 1 ? 'están entrando' : 'está entrando'} al resultado como
+        costo puro: {sinPU.length !== 1 ? 'consumen' : 'consume'} HH y no {sinPU.length !== 1 ? 'aportan' : 'aporta'} ingreso.
+        <span className="block text-[11px] text-k-text3 mt-0.5">
+          {sinPU.slice(0, 4).map(p => p.codigo).join(' · ')}
+          {sinPU.length > 4 ? ` y ${sinPU.length - 4} más` : ''}
+        </span>
+      </div>
+      <Link to="/programacion" className="btn btn-secundario btn-sm flex-shrink-0">
+        Ponerles precio
+      </Link>
+    </div>
+  )
+}
 
 export default function ResultadoOperativo() {
   const [tab, setTab] = useState<Tab>('tobra')
@@ -90,6 +124,8 @@ export default function ResultadoOperativo() {
           )}
         </div>
       </div>
+
+      <AvisoSinVenta />
 
       {/* Tarjetas de totales */}
       {t && tab !== 'otm' && (
