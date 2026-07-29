@@ -869,7 +869,7 @@ export function LookaheadGrid({ onEditar, onProgramar }: {
 
       {subfilaDe && (
         <SubfilaModal padre={subfilaDe} etiquetas={etiquetas} proyectoId={PROYECTO_ID}
-          onClose={() => setSubfilaDe(null)} />
+          sups={sups.data ?? []} onClose={() => setSubfilaDe(null)} />
       )}
       {histPartida != null && (
         <HistorialPartida partidaId={histPartida} proyectoId={PROYECTO_ID}
@@ -1327,6 +1327,7 @@ function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, o
   onHistorial?: (partidaId: number) => void
 } & PropsFila) {
   const toggle = onCompactar
+  const [renombrando, setRenombrando] = useState<string | null>(null)
   const items = agruparPorPartida(grupo.actividades)
   const idxCadena = new Map<number, number>()
   for (const it of items) if (it.tipo === 'partida') idxCadena.set(it.pid, idxCadena.size)
@@ -1368,18 +1369,26 @@ function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, o
         <FilaPartidaCompacta acts={hijos} color={color ?? PALETA_CADENA[0]}
           fechas={fechas} hoy={hoy} laborable={laborable}
           onToggle={() => onPlegar(a.id)} fijar={fp.fijar} compacto={fp.compacto}
-          numero={String(a.id)} rotulo={a.titulo}
-          subtitulo={`▾ ${hijos.length} ${SUBFILA.toLowerCase()} · ${hechas}/${hijos.length} ✓`}
+          numero={String(a.id)} rotulo={a.titulo} abierto={!plegada}
+          subtitulo={`${hechas}/${hijos.length} ${SUBFILA.toLowerCase()} terminados · esta fila suma lo de todos`}
           ayuda={`«${a.titulo}» está dividida en ${hijos.length} porciones: esta fila suma lo de todas por día.\nClic para ${plegada ? 'ver' : 'ocultar'} las sub-filas.`}
           extra={
             <span className="flex items-center gap-1 ml-1">
+              {/* Una pastilla que dice con palabras qué pasa al tocarla: el
+                  triangulito solo lo entiende quien ya sabe que hay algo debajo. */}
+              <button onClick={e => { e.stopPropagation(); onPlegar(a.id) }}
+                className="text-[10px] font-bold px-1.5 py-0.5 rounded-full border border-k-blue/50
+                  text-k-blue bg-blue-500/10 hover:bg-blue-500/20 whitespace-nowrap">
+                {plegada ? `▸ Ver ${hijos.length} frentes` : `▾ Ocultar los ${hijos.length} frentes`}
+              </button>
               <button onClick={e => { e.stopPropagation(); onSubfila?.(a) }}
                 title={`Nuevo ${SUBFILA.toLowerCase()} — ${SUBFILA_QUE_ES}`}
-                className="text-[9px] font-bold px-1 rounded border border-k-blue/40 text-k-blue hover:bg-blue-500/10">＋</button>
+                className="text-[10px] font-bold px-1.5 py-0.5 rounded-full border border-k-border
+                  text-k-text2 hover:bg-k-raised whitespace-nowrap">＋ frente</button>
               {a.partida_id && (
                 <button onClick={e => { e.stopPropagation(); onHistorial?.(a.partida_id!) }}
                   title="Historial de la partida: qué porciones ya se cerraron y cuánto queda"
-                  className="text-[9px] px-1 rounded text-k-text3 hover:bg-k-raised">🕘</button>
+                  className="text-[10px] px-1 rounded text-k-text3 hover:bg-k-raised">🕘</button>
               )}
             </span>
           } />
@@ -1393,9 +1402,16 @@ function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, o
               <FilaPartidaCompacta key={kb} acts={hs} color={color ?? PALETA_CADENA[0]}
                 fechas={fechas} hoy={hoy} laborable={laborable}
                 onToggle={() => onBanda(kb)} fijar={fp.fijar} compacto={fp.compacto}
-                sangria={1} rotulo={area}
-                subtitulo={`${hs.length} de ${etiquetas.d2.toLowerCase()} · ${num(met)} ${hs[0].und ?? ''}`}
-                ayuda={`${etiquetas.d1}: ${area} — plegada. La fila suma sus porciones por día.\nClic para desplegarla.`} />
+                sangria={1} rotulo={area === SIN_DESGLOSE ? area : `${etiquetas.d1}: ${area}`}
+                subtitulo={`${hs.length} porciones · ${num(met)} ${hs[0].und ?? ''} — la fila suma lo de todas`}
+                ayuda={`${etiquetas.d1}: ${area} — plegada. La fila suma sus porciones por día.\nClic para desplegarla.`}
+                extra={
+                  <button onClick={e => { e.stopPropagation(); onBanda(kb) }}
+                    className="text-[10px] font-bold px-1.5 py-0.5 rounded-full border border-k-border
+                      text-k-text2 hover:bg-k-raised whitespace-nowrap">
+                    ▸ Ver {hs.length} frentes
+                  </button>
+                } />
             )
           }
           return (
@@ -1403,17 +1419,34 @@ function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, o
               <tr>
                 {/* Nivel 3: el área. La franja del color de la partida sangrada
                     la separa del nivel 2 sin que haya que contar sangrías. */}
-                <td colSpan={N_FIJAS + fechas.length} onClick={() => onBanda(kb)}
-                  className="border-b border-k-border px-2 py-0.5 text-[10px] cursor-pointer hover:bg-k-raised"
+                <td colSpan={N_FIJAS + fechas.length}
+                  className="border-b border-k-border px-2 py-0.5 text-[10px]"
                   style={{ boxShadow: `inset 12px 0 0 -9px ${color ?? PALETA_CADENA[0]}` }}>
-                  <div style={ROTULO} className="pl-4">
-                    <span className="text-k-text2">▾</span>{' '}
-                    <b className={area === SIN_DESGLOSE ? 'text-k-text3' : 'text-k-text2'}>
-                      {area === SIN_DESGLOSE ? `Sin ${etiquetas.d1.toLowerCase()}` : `${etiquetas.d1}: ${area}`}
-                    </b>{' '}
-                    <span className="text-k-text3">
-                      · {hs.length} · {num(met)} {hs[0].und ?? ''}
-                    </span>
+                  <div style={ROTULO} className="pl-4 flex items-center gap-1.5 flex-wrap">
+                    {renombrando === kb ? (
+                      <FormRenombrar area={area} etiqueta={etiquetas.d1} n={hs.length}
+                        padreId={a.id} onCerrar={() => setRenombrando(null)} />
+                    ) : (
+                      <>
+                        <b className={area === SIN_DESGLOSE ? 'text-k-text3' : 'text-k-text2'}>
+                          {area === SIN_DESGLOSE ? `Sin ${etiquetas.d1.toLowerCase()}` : `${etiquetas.d1}: ${area}`}
+                        </b>
+                        <span className="text-k-text3">· {num(met)} {hs[0].und ?? ''}</span>
+                        <button onClick={() => onBanda(kb)}
+                          className="text-[10px] font-bold px-1.5 py-0.5 rounded-full border border-k-border
+                            text-k-text2 hover:bg-k-raised whitespace-nowrap">
+                          ▾ Ocultar los {hs.length} frentes
+                        </button>
+                        {/* Renombrar el área una vez, no seis: si se cambia a
+                            mano fila por fila basta un dedazo para partir la
+                            banda en dos áreas que eran la misma. */}
+                        {area !== SIN_DESGLOSE && (
+                          <button onClick={() => setRenombrando(kb)}
+                            title={`Cambiar el nombre de «${area}» en sus ${hs.length} sub-filas`}
+                            className="text-[10px] px-1 rounded text-k-text3 hover:bg-k-raised">✎</button>
+                        )}
+                      </>
+                    )}
                   </div>
                 </td>
               </tr>
@@ -1491,9 +1524,49 @@ function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, o
   )
 }
 
+// Renombrar un área: cambia el nombre en TODAS las sub-filas de esa banda de
+// una vez. Hacerlo fila por fila era el camino corto a tener «AREA A» y «AREA
+// A » como dos áreas distintas, con la banda y el saldo partidos en dos.
+function FormRenombrar({ area, etiqueta, n, padreId, onCerrar }: {
+  area: string; etiqueta: string; n: number; padreId: number; onCerrar: () => void
+}) {
+  const qc = useQueryClient()
+  const [v, setV] = useState(area)
+  const guardar = useMutation({
+    mutationFn: () => api('/ev/programacion/renombrar-desglose', {
+      method: 'PUT',
+      body: JSON.stringify({ padre_id: padreId, campo: 'desglose_1', de: area, a: v }),
+    }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['lookahead-grid'] })
+      qc.invalidateQueries({ queryKey: ['desgloses'] })
+      onCerrar()
+    },
+  })
+  return (
+    <span className="flex items-center gap-1.5">
+      <span className="text-k-text3">{etiqueta}:</span>
+      <input autoFocus value={v} onChange={e => setV(e.target.value)}
+        onKeyDown={e => {
+          if (e.key === 'Enter') guardar.mutate()
+          if (e.key === 'Escape') onCerrar()
+        }}
+        className="px-1.5 py-0.5 rounded border border-k-blue/50 bg-k-surface text-[10px]
+          font-bold text-k-text w-40" />
+      <button onClick={() => guardar.mutate()} disabled={guardar.isPending || !v.trim()}
+        className="text-[10px] font-bold px-1.5 py-0.5 rounded border border-k-blue/50
+          text-k-blue hover:bg-blue-500/10 disabled:opacity-40">
+        Renombrar en {n}
+      </button>
+      <button onClick={onCerrar} className="text-[10px] text-k-text3 hover:text-k-text px-1">✕</button>
+      {guardar.isError && <span className="text-[10px] text-k-red">No se pudo renombrar</span>}
+    </span>
+  )
+}
+
 // Fila única de una partida COMPACTADA: agrega el programado y el real de
 // todas sus etapas por día (solo lectura — para editar, despliega con ▸).
-function FilaPartidaCompacta({ acts, color, fechas, hoy, laborable, onToggle, fijar, compacto, numero, rotulo, subtitulo, sangria, ayuda, extra }: {
+function FilaPartidaCompacta({ acts, color, fechas, hoy, laborable, onToggle, fijar, compacto, numero, rotulo, subtitulo, sangria, ayuda, extra, abierto }: {
   acts: ActGrid[]; color: string; fechas: string[]; hoy: string
   laborable: (f: string) => boolean; onToggle: () => void
   fijar: boolean; compacto: boolean
@@ -1501,7 +1574,7 @@ function FilaPartidaCompacta({ acts, color, fechas, hoy, laborable, onToggle, fi
   // compactada: en los tres casos lo que aporta es el acumulado por día de lo
   // que tiene debajo, que es lo que se mira cuando algo está plegado.
   numero?: string; rotulo?: string; subtitulo?: string; sangria?: number
-  ayuda?: string; extra?: React.ReactNode
+  ayuda?: string; extra?: React.ReactNode; abierto?: boolean
 }) {
   const a0 = acts[0]
   const progAgg: Record<string, number> = {}
@@ -1529,8 +1602,8 @@ function FilaPartidaCompacta({ acts, color, fechas, hoy, laborable, onToggle, fi
         style={{ ...stick(1, true), borderLeft: `3px solid ${color}`,
                  paddingLeft: sangria ? 8 + sangria * 12 : undefined }}
         title={ayuda ?? 'Partida compactada: la fila suma el programado y el real de todas sus etapas.\nClic para desplegar las etapas (y poder editar los avances).'}>
-        <div className="flex items-center gap-1.5">
-          <span className="text-k-text2">▸</span>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="text-k-text2">{abierto ? '▾' : '▸'}</span>
           <span style={{ color }}>●</span>
           <span className="text-k-text leading-tight font-bold">
             {rotulo ?? `${a0.partida_codigo} — ${a0.partida_desc}`}
@@ -1777,8 +1850,23 @@ function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, 
                 titulo="Metrado META de la actividad — doble clic para cambiarlo"
                 onCommit={v => onCampo(a.id, { metrado_prog: v === '' ? null : Number(v) })} />
               {a.metrado_base != null && (
-                <div className="text-[9px] text-k-text3" title="Metrado presupuestado de la partida · saldo por ejecutar">
+                <div className="text-[9px] text-k-text3"
+                  title={esSubfila
+                    ? 'Presupuesto de la PARTIDA y lo que le queda por ejecutar — la misma cifra en todos sus frentes'
+                    : 'Metrado presupuestado de la partida · saldo por ejecutar'}>
                   base {num(a.metrado_base)}{a.saldo != null ? ` · saldo ${num(a.saldo)}` : ''}
+                </div>
+              )}
+              {/* El saldo de arriba es el de la PARTIDA (igual en todos los
+                  frentes); esto es lo de este frente, que es lo que dice si va
+                  atrasado. Sin las dos cifras, una de las dos preguntas de la
+                  reunión se queda sin responder. */}
+              {esSubfila && (a.metrado_prog ?? 0) > 0 && (
+                <div className={`text-[9px] ${
+                  (a.acum_real ?? 0) >= (a.metrado_prog ?? 0) ? 'text-k-green' : 'text-k-text2'}`}
+                  title="Lo hecho en ESTE frente contra su propio metrado">
+                  hecho {num(a.acum_real ?? 0)} de {num(a.metrado_prog ?? 0)}
+                  {' '}({Math.round(((a.acum_real ?? 0) / (a.metrado_prog || 1)) * 100)}%)
                 </div>
               )}
             </td>
