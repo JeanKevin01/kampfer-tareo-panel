@@ -106,15 +106,49 @@ export type TipoDep = 'FS' | 'SS' | 'FF'
 export interface DepEdit { pred: number; tipo: TipoDep; lag: number }
 export interface DepVista { id: number; lag_dias: number; tipo?: string }
 
+// Las sub-filas se ven como 58.1, 58.2 (0038), así que el vínculo también tiene
+// que hablar ese idioma: escrito «59» nadie sabe a qué frente apunta. `numeros`
+// traduce id → número visible en las dos direcciones; se acepta cualquiera de
+// los dos al teclear, porque el id sigue siendo válido y está en los tooltips.
+export type MapaNumeros = Map<number, string>
+
+export interface FilaNumerable { id: number; padre_id?: number | null; fecha: string }
+
+/** id → número visible del LookAhead: `46` en una fila raíz, `46.1` en la
+ *  primera de sus sub-filas. Se calcula sobre TODAS las filas del rango, nunca
+ *  sobre las filtradas: si ocultar las terminadas renumerara, el 58.4 del que
+ *  se habló en la reunión pasaría a ser otro. */
+export function numerosDeGrid(acts: FilaNumerable[]): MapaNumeros {
+  const m: MapaNumeros = new Map()
+  const visibles = new Set(acts.map(a => a.id))
+  const hijos = new Map<number, FilaNumerable[]>()
+  for (const a of acts) {
+    m.set(a.id, String(a.id))
+    // Sub-fila cuyo padre quedó fuera del rango: se queda con su id, que es lo
+    // único que la identifica sin él.
+    if (a.padre_id && visibles.has(a.padre_id)) {
+      hijos.set(a.padre_id, [...(hijos.get(a.padre_id) ?? []), a])
+    }
+  }
+  for (const [pid, hs] of hijos) {
+    hs.sort((x, y) => (x.fecha === y.fecha ? x.id - y.id : x.fecha < y.fecha ? -1 : 1))
+    hs.forEach((h, i) => m.set(h.id, `${pid}.${i + 1}`))
+  }
+  return m
+}
+
 /** Devuelve null si algo no parsea: no se adivina, se le avisa al planner. */
-export function parseDeps(txt: string): DepEdit[] | null {
+export function parseDeps(txt: string, numeros?: MapaNumeros): DepEdit[] | null {
+  const porNumero = new Map<string, number>()
+  for (const [id, n] of numeros ?? []) porNumero.set(n, id)
   const out: DepEdit[] = []
   for (const trozo of txt.split(/[;,]/)) {
     const t = trozo.trim().toUpperCase().replace(/\s+/g, '')
     if (!t) continue
-    const m = /^#?(\d+)(FS|SS|FF)?([+-]\d+)?D?$/.exec(t)
+    const m = /^#?(\d+(?:\.\d+)*)(FS|SS|FF)?([+-]\d+)?D?$/.exec(t)
     if (!m) return null
-    const pred = Number(m[1])
+    // «58.1» es el número visible de una sub-fila; «59» es su id de siempre.
+    const pred = porNumero.get(m[1]) ?? (m[1].includes('.') ? 0 : Number(m[1]))
     if (!pred || out.some(d => d.pred === pred)) return null
     out.push({ pred, tipo: (m[2] as TipoDep) ?? 'FS', lag: Number(m[3] ?? 0) })
   }
@@ -122,10 +156,10 @@ export function parseDeps(txt: string): DepEdit[] | null {
 }
 
 /** El inverso: FS con lag 0 se escribe solo con el número (como en Project). */
-export function fmtDeps(preds: DepVista[] | undefined): string {
+export function fmtDeps(preds: DepVista[] | undefined, numeros?: MapaNumeros): string {
   return (preds ?? []).map(p => {
     const lag = p.lag_dias ? (p.lag_dias > 0 ? `+${p.lag_dias}` : String(p.lag_dias)) : ''
     const tipo = p.tipo && p.tipo !== 'FS' ? p.tipo : (lag ? 'FS' : '')
-    return `${p.id}${tipo}${lag}`
+    return `${numeros?.get(p.id) ?? p.id}${tipo}${lag}`
   }).join(';')
 }

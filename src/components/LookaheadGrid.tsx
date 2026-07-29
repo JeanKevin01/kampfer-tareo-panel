@@ -11,8 +11,8 @@ import { ChevronLeft, ChevronRight, Loader2, Printer, Search } from 'lucide-reac
 import { api } from '@/lib/api'
 import { CNC } from '@/lib/catalogos'
 import { lunesDe, iso } from '@/lib/semana'
-import { DIAS_1, fmtDia, fmtCorta, num, isoDow, clrRealTxt, parseDeps, fmtDeps, runsDeFila, tramosDeFila, numCorto } from '@/lib/lookahead'
-import type { TipoDep } from '@/lib/lookahead'
+import { DIAS_1, fmtDia, fmtCorta, num, isoDow, clrRealTxt, parseDeps, fmtDeps, runsDeFila, tramosDeFila, numCorto, numerosDeGrid } from '@/lib/lookahead'
+import type { TipoDep, MapaNumeros } from '@/lib/lookahead'
 import CeldaDia from '@/components/CeldaDia'
 import AyudaLookahead from '@/components/AyudaLookahead'
 import SubfilaModal, { SUBFILA, SUBFILA_QUE_ES } from '@/components/SubfilaModal'
@@ -306,8 +306,11 @@ export function LookaheadGrid({ onEditar, onProgramar }: {
   // (altas/cambios por upsert, bajas por DELETE) y se manda todo junto.
   const guardarDeps = useMutation({
     mutationFn: async ({ a, txt }: { a: ActGrid; txt: string }) => {
-      const nuevas = parseDeps(txt)
-      if (nuevas === null) throw new Error('No se entiende: usa 12 · 12FS+2 · 8;12SS-1 (sin repetir el mismo número)')
+      // Se acepta el número que se ve (58.1) o el id de siempre (59): la
+      // columna muestra el primero, pero el segundo sigue estando en tooltips.
+      const nuevas = parseDeps(
+        txt, numerosDeGrid((grid.data?.grupos ?? []).flatMap(g => g.actividades)))
+      if (nuevas === null) throw new Error('No se entiende: usa 12 · 58.1 · 12FS+2 · 8;12SS-1 (sin repetir el mismo número)')
       if (nuevas.some(dep => dep.pred === a.id)) throw new Error('Una actividad no puede depender de sí misma')
       const antes = a.predecesoras ?? []
       const quitar = antes.filter(p => !nuevas.some(dep => dep.pred === p.id))
@@ -432,14 +435,14 @@ export function LookaheadGrid({ onEditar, onProgramar }: {
     return m
   }, [d, enArbol, ocultarHechas, areaSel])
 
-  /** Número que se ve en la columna «#»: la sub-fila lleva el del padre con su
-   *  orden (46.1, 46.2), como el árbol del WBS pero dentro del lookahead. */
+  /** Número que se ve en la columna «#» y en los vínculos. Sobre TODAS las
+   *  filas, no sobre las filtradas: la numeración no puede moverse al ocultar
+   *  las terminadas o al aislar un área. */
   const numeros = useMemo(() => {
-    const m = new Map<number, string>()
-    for (const g of d?.grupos ?? []) for (const a of g.actividades) m.set(a.id, String(a.id))
-    for (const [pid, hs] of hijosDe) hs.forEach((h, i) => m.set(h.id, `${pid}.${i + 1}`))
-    return m
-  }, [d, hijosDe])
+    const todas: ActGrid[] = []
+    for (const g of d?.grupos ?? []) todas.push(...g.actividades)
+    return numerosDeGrid(todas)
+  }, [d])
 
   /** Áreas presentes en las sub-filas: los chips que aíslan una para la reunión. */
   const areasChips = useMemo(() => {
@@ -718,7 +721,9 @@ export function LookaheadGrid({ onEditar, onProgramar }: {
       {sel.length > 0 && (
         <div className="flex items-center gap-2 flex-wrap text-[11px] font-bold text-k-blue bg-blue-500/10 border border-blue-500/30 rounded-lg px-3 py-2">
           ☑ {sel.length} seleccionada(s) — se encadenan en el orden en que las marcaste:
-          <span className="font-mono text-k-text2">{sel.map(i => `#${i}`).join(' → ')}</span>
+          <span className="font-mono text-k-text2">
+            {sel.map(i => `#${numeros.get(i) ?? i}`).join(' → ')}
+          </span>
           {(['FS', 'SS', 'FF'] as TipoDep[]).map(t => (
             <button key={t} disabled={sel.length < 2 || encadenar.isPending}
               onClick={() => encadenar.mutate({ ids: sel, tipo: t })}
@@ -983,6 +988,8 @@ function PanelDeps({ actId, data, grafo, caja, sups, onGrafo, onCerrar, onIr, on
 }) {
   const acts = data.grupos.flatMap(g => g.actividades)
   const porId = new Map(acts.map(a => [a.id, a]))
+  // Mismos números que la cuadrícula: en el dock también se lee 58.1, no 59.
+  const numeros = numerosDeGrid(acts)
   const focal = porId.get(actId)
   if (!focal) return null
 
@@ -1145,8 +1152,8 @@ function PanelDeps({ actId, data, grafo, caja, sups, onGrafo, onCerrar, onIr, on
             lag firmado. Sustituye a los botones FS/SS/FF que estaban aparte. */}
         <label className="flex items-center gap-1 flex-shrink-0 text-[9px] uppercase font-bold text-k-text3 tracking-wide">
           Después de
-          <input key={`d${focal.id}:${fmtDeps(focal.predecesoras)}`}
-            defaultValue={fmtDeps(focal.predecesoras)}
+          <input key={`d${focal.id}:${fmtDeps(focal.predecesoras, numeros)}`}
+            defaultValue={fmtDeps(focal.predecesoras, numeros)}
             placeholder="12; 8FF-1"
             title={'Antecesoras como en Project, separadas por ; —\n'
               + '12 → después de terminar la 12 (FS)\n'
@@ -1157,7 +1164,7 @@ function PanelDeps({ actId, data, grafo, caja, sups, onGrafo, onCerrar, onIr, on
             onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
             onBlur={e => {
               const v = e.target.value.trim()
-              if (v !== fmtDeps(focal.predecesoras)) onDeps(focal, v)
+              if (v !== fmtDeps(focal.predecesoras, numeros)) onDeps(focal, v)
             }}
             className="w-40 bg-k-void border border-k-border rounded-lg px-1.5 py-1 font-mono
                        text-[11px] normal-case tracking-normal text-k-text outline-none focus:border-k-amber" />
@@ -1337,7 +1344,7 @@ function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, o
       laborable={laborable} cadena={cadena} onCadena={onCadena}
       onEditar={onEditar} onReal={onReal} onProg={onProg} color={color}
       vincular={vincular} onPick={onPick} onPanel={onPanel} onHover={onHover}
-      numero={numeros.get(a.id)} sangria={sangria} etiquetas={etiquetas}
+      numero={numeros.get(a.id)} numeros={numeros} sangria={sangria} etiquetas={etiquetas}
       onSubfila={onSubfila} onHistorial={onHistorial} {...fp} />
   )
 
@@ -1647,7 +1654,7 @@ function FilaPartidaCompacta({ acts, color, fechas, hoy, laborable, onToggle, fi
   )
 }
 
-function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, onReal, onProg, color, vincular, onPick, onPanel, onHover, fijar, compacto, sel, onSel, onDeps, onCampo, abierta, onAbrir, numero, sangria, etiquetas, onSubfila, onHistorial }: {
+function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, onReal, onProg, color, vincular, onPick, onPanel, onHover, fijar, compacto, sel, onSel, onDeps, onCampo, abierta, onAbrir, numero, numeros, sangria, etiquetas, onSubfila, onHistorial }: {
   a: ActGrid; fechas: string[]; hoy: string
   laborable: (f: string) => boolean
   cadena: { focal: number; azules: Set<number>; verdes: Set<number> } | null
@@ -1658,6 +1665,8 @@ function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, 
   color?: string
   /** Lo que se ve en «#»: 46 en una fila raíz, 46.1 en una sub-fila. */
   numero?: string
+  /** id → número visible, para que los vínculos digan 58.1 y no 59. */
+  numeros?: MapaNumeros
   sangria?: number
   etiquetas?: { d1: string; d2: string }
   onSubfila?: (a: ActGrid) => void
@@ -1893,10 +1902,10 @@ function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, 
             {/* DESPUÉS DE, como en Project: se teclea «12», «12FS+2», «8;12SS-1» */}
             <td className={`${tdFijo} align-middle`} style={stick(8, fijar)}>
               <CeldaEdit tipo="text" clase="font-mono text-[10px] text-k-blue text-center"
-                valor={fmtDeps(a.predecesoras)} placeholder="—"
+                valor={fmtDeps(a.predecesoras, numeros)} placeholder="—"
                 titulo={(a.predecesoras ?? []).length
-                  ? `Después de:\n${(a.predecesoras ?? []).map(p => `• ${p.titulo} (${p.tipo ?? 'FS'}${p.lag_dias ? (p.lag_dias > 0 ? `+${p.lag_dias}` : p.lag_dias) : ''}) termina ${fmtCorta(p.fecha_fin)}`).join('\n')}\n\nDoble clic para escribirlas: 12 · 12FS+2 · 8;12SS-1`
-                  : 'Sin antecesoras — doble clic y escribe el # de la que va antes (12 · 12FS+2 · 8;12SS-1)'}
+                  ? `Después de:\n${(a.predecesoras ?? []).map(p => `• ${numeros?.get(p.id) ?? p.id} — ${p.titulo} (${p.tipo ?? 'FS'}${p.lag_dias ? (p.lag_dias > 0 ? `+${p.lag_dias}` : p.lag_dias) : ''}) termina ${fmtCorta(p.fecha_fin)}`).join('\n')}\n\nDoble clic para escribirlas: 12 · 58.1 · 12FS+2 · 8;12SS-1`
+                  : 'Sin antecesoras — doble clic y escribe el # de la que va antes (12 · 58.1 · 12FS+2 · 8;12SS-1)'}
                 onCommit={v => onDeps(a, v)} />
               {(a.predecesoras ?? []).length > 0 ? (
                 <button onClick={() => onPanel(a.id)} title="Ver la cadena completa en el panel"

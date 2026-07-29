@@ -6,7 +6,8 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { lunesDe, iso } from '@/lib/semana'
 import BrandDoc from '@/components/print/BrandDoc'
-import { fmtDeps } from '@/lib/lookahead'
+import { fmtDeps, numerosDeGrid } from '@/lib/lookahead'
+import type { MapaNumeros } from '@/lib/lookahead'
 import type { GridResp } from '@/components/LookaheadGrid'
 
 const PROYECTO_ID = 1
@@ -78,7 +79,8 @@ export default function LookaheadPrint() {
         </thead>
         <tbody>
           {d.grupos.map(g => (
-            <GrupoPrint key={g.otm_id ?? '-'} grupo={g} fechas={d.fechas} />
+            <GrupoPrint key={g.otm_id ?? '-'} grupo={g} fechas={d.fechas}
+              numeros={numerosDeGrid(d.grupos.flatMap(x => x.actividades))} />
           ))}
           {nActs === 0 && (
             <tr><td colSpan={8 + d.fechas.length} style={{ ...tdC, padding: 20, color: '#8a93a1' }}>Sin actividades en el rango.</td></tr>
@@ -89,7 +91,9 @@ export default function LookaheadPrint() {
   )
 }
 
-function GrupoPrint({ grupo, fechas }: { grupo: GridResp['grupos'][number]; fechas: string[] }) {
+function GrupoPrint({ grupo, fechas, numeros }: {
+  grupo: GridResp['grupos'][number]; fechas: string[]; numeros: MapaNumeros
+}) {
   return (
     <>
       <tr>
@@ -100,7 +104,21 @@ function GrupoPrint({ grupo, fechas }: { grupo: GridResp['grupos'][number]; fech
       {grupo.actividades.map(a => (
         <tr key={a.id} style={a.estado === 'CANCELADO' ? { color: '#999' } : undefined}>
           <td style={td}>
-            {a.titulo}
+            {/* La sub-fila se sangra y lleva su número: impreso, el árbol tiene
+                que leerse igual que en pantalla o la reunión no lo sigue. */}
+            {a.padre_id ? (
+              <span style={{ paddingLeft: 10 }}>
+                <span style={{ fontFamily: 'monospace', color: '#666' }}>
+                  {numeros.get(a.id) ?? a.id}{' '}
+                </span>
+                {a.titulo}
+              </span>
+            ) : a.titulo}
+            {a.padre_id && (a.desglose_1 || a.desglose_2) && (
+              <div style={{ fontSize: 8, color: '#456', paddingLeft: 10 }}>
+                ▸ {[a.desglose_1, a.desglose_2].filter(Boolean).join(' · ')}
+              </div>
+            )}
             {a.partida_codigo && <div style={{ fontSize: 8, color: '#666', fontFamily: 'monospace' }}>📌 {a.partida_codigo}</div>}
             {a.estado === 'NO_CUMPLIDA' && <div style={{ fontSize: 8, color: '#a11' }}>NO CUMPLIDA{a.causa_nc ? ` — ${a.causa_nc}` : ''}</div>}
           </td>
@@ -113,7 +131,7 @@ function GrupoPrint({ grupo, fechas }: { grupo: GridResp['grupos'][number]; fech
           <td style={tdC}>{a.plazo_dias != null ? num(a.plazo_dias) : ''}</td>
           <td style={tdC}>{fmtCorta(a.fecha)}</td>
           <td style={tdC}>{fmtCorta(a.fecha_fin)}</td>
-          <td style={{ ...tdC, fontFamily: 'monospace', fontSize: 8 }}>{fmtDeps(a.predecesoras)}</td>
+          <td style={{ ...tdC, fontFamily: 'monospace', fontSize: 8 }}>{fmtDeps(a.predecesoras, numeros)}</td>
           {fechas.map(f => {
             const p = a.prog[f]; const r = a.real[f]
             const esSalto = (a.dias_salto ?? []).includes(f)

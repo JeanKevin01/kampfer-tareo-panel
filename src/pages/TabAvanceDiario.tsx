@@ -22,6 +22,8 @@ interface PartidaH {
   metrado: number; factor_conv: number; hh_presup: number
   hh: Record<string, number>
   primer_registro: string | null; sin_registros: boolean
+  /** Dividida en frentes (0038): la fila suma y no se escribe aquí. */
+  con_frentes?: boolean
   etapas: EtapaH[]
 }
 interface HistResp {
@@ -161,6 +163,14 @@ export default function TabAvanceDiario({ otm }: { otm?: string }) {
                       <span className={e.hito_id == null ? 'text-k-plan' : 'text-k-wbs'}>
                         {e.hito_id == null ? '●' : '◆'} {etiqueta}
                       </span>
+                      {/* Partida dividida en frentes: el día es la SUMA de sus
+                          frentes. Escribir aquí crearía un avance sin frente
+                          que se sumaría al de ellos — el mismo trabajo dos veces. */}
+                      {p.con_frentes && (
+                        <div className="text-[9px] text-k-text3">
+                          Σ de sus frentes — el avance se registra en el frente, desde el LookAhead
+                        </div>
+                      )}
                     </td>
                     <td className="border border-k-border px-1 py-1 text-center text-[10px] font-mono text-k-text2">{num(p.metrado)}</td>
                     <td className="border border-k-border px-1 py-1 text-center text-[10px] font-mono text-k-green">{acum > 0 ? num(acum) : '—'}</td>
@@ -168,7 +178,7 @@ export default function TabAvanceDiario({ otm }: { otm?: string }) {
                     {d.fechas.map((f, i) => (
                       <CeldaDia key={f}
                         prog={e.prog[f]} real={e.real[f]}
-                        editable={f <= d.hoy}
+                        editable={f <= d.hoy && !p.con_frentes}
                         esSalto={saltos.has(f)} esMedio={medios.has(f)}
                         laborable={laborable(f)}
                         run={runsE[f]} esHoy={f === d.hoy} finSemana={(i + 1) % 7 === 0}
