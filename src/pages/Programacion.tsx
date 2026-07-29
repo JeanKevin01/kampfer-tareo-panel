@@ -40,6 +40,8 @@ export interface Actividad {
   supervisor_id?: string | null; supervisor_nombre?: string | null
   rest_total?: number; rest_pend?: number
   fecha_fin?: string | null; metrado_prog?: number | null; und?: string | null
+  /** Qué porción de la partida grande es este tramo (0037): área y capa. */
+  desglose_1?: string | null; desglose_2?: string | null
   dias_salto?: string[]; dias_medio?: string[]
   causa_nc_planner?: string | null; causa_nc_planner_cat?: string | null
   creado_por?: string; reportes: number[]
@@ -400,6 +402,10 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
     fecha_fin: act?.fecha_fin ?? '',
     metrado_prog: act?.metrado_prog != null ? String(act.metrado_prog) : '',
     und: act?.und ?? '',
+    // Qué porción de la partida grande es este tramo (0037): en tierras «Área»
+    // y «Capa», en estructuras «Eje» y «Nivel» — las etiquetas se configuran.
+    desglose_1: act?.desglose_1 ?? '',
+    desglose_2: act?.desglose_2 ?? '',
     dias_salto: act?.dias_salto ?? [],
     dias_medio: act?.dias_medio ?? [],
   })
@@ -456,6 +462,8 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
         titulo: form.titulo, descripcion: form.descripcion, responsable: form.responsable,
         otm_id: form.otm_id || null, supervisor_id: form.supervisor_id || null,
         partida_id: form.partida_id || null, und: form.und.trim() || null,
+        desglose_1: form.desglose_1.trim() || null,
+        desglose_2: form.desglose_2.trim() || null,
       }
       const metrado = form.metrado_prog.trim() === '' ? null : Number(form.metrado_prog)
       if (!editar) {
@@ -536,6 +544,17 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
               </div>
             </div>
           </div>
+
+          {/* Desglose + saldo: la partida grande que se ejecuta en porciones.
+              Solo tiene sentido con partida elegida — sin ella no hay de qué
+              descontar ni qué subdividir. */}
+          {form.partida_id > 0 && (
+            <DesglosePartida partidaId={form.partida_id} excluir={act?.id ?? 0}
+              metrado={form.metrado_prog}
+              d1={form.desglose_1} d2={form.desglose_2}
+              onCambio={(k, v) => setForm(f => ({ ...f, [k]: v }))} />
+          )}
+
           {/* Días del rango: clic cicla normal → salto ∅ (peso 0) → medio ◐ (peso 0.5) */}
           {form.fecha && form.fecha_fin && form.fecha_fin > form.fecha && (() => {
             const dias: string[] = []
@@ -754,6 +773,122 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
             onConfirmar={(cat, detalle) => { setShowNC(false); estado.mutate({ estado: 'NO_CUMPLIDA', causa_nc_cat: cat, causa_nc: detalle } as { estado: string; causa_nc?: string }) }} />
         )}
       </div>
+    </div>
+  )
+}
+
+// ── Desglose de la partida grande y su saldo ─────────────────
+// El caso de Jean (movimiento de tierras): RELLENO ZONA 5 son 15 000 m³ que no
+// se hacen de una — se avanza por ÁREAS y CAPAS, de 200 en 200. La partida
+// sigue siendo UNA (crear una hija por área-capa haría el WBS ilegible y
+// rompería la comparación contra el contractual); lo que se subdivide es su
+// programación, y por eso hace falta ver cuánto le queda al presupuesto.
+interface SaldoResp {
+  codigo: string; unidad?: string | null
+  metrado_presup: number; programado: number; ejecutado: number
+  saldo_por_programar: number; excedido: number
+  pct_programado: number | null; pct_ejecutado: number | null
+  desglose: { desglose_1: string | null; desglose_2: string | null; programado: number; actividades: number }[]
+}
+
+function DesglosePartida({ partidaId, excluir, metrado, d1, d2, onCambio }: {
+  partidaId: number
+  /** La actividad que se está editando no debe contarse contra su propio saldo. */
+  excluir: number
+  metrado: string
+  d1: string; d2: string
+  onCambio: (campo: 'desglose_1' | 'desglose_2', valor: string) => void
+}) {
+  const cfg = useQuery<{ etiqueta_desglose_1: string; etiqueta_desglose_2: string }>({
+    queryKey: ['prog-config', PROYECTO_ID],
+    queryFn: () => api(`/ev/programacion/config?proyecto_id=${PROYECTO_ID}`),
+    staleTime: 10 * 60 * 1000,
+  })
+  const saldo = useQuery<SaldoResp>({
+    queryKey: ['saldo-partida', partidaId, excluir],
+    queryFn: () => api(`/ev/programacion/saldo-partida?partida_id=${partidaId}&excluir=${excluir}`),
+  })
+  const opciones = useQuery<{ desglose_1: string[]; desglose_2: string[] }>({
+    queryKey: ['desgloses', partidaId],
+    queryFn: () => api(`/ev/programacion/desgloses?partida_id=${partidaId}&proyecto_id=${PROYECTO_ID}`),
+    staleTime: 5 * 60 * 1000,
+  })
+  // El API llega con el Redeploy; hasta entonces esto simplemente no aparece.
+  if (saldo.isError || cfg.isError) return null
+
+  const e1 = cfg.data?.etiqueta_desglose_1 ?? 'Área'
+  const e2 = cfg.data?.etiqueta_desglose_2 ?? 'Capa'
+  const s = saldo.data
+  const und = s?.unidad ? ` ${s.unidad}` : ''
+  const pedido = metrado.trim() === '' ? 0 : Number(metrado)
+  // El saldo ya excluye esta actividad, así que el total con lo que se está
+  // pidiendo ahora es lo que de verdad quedará comprometido.
+  const restante = s ? s.saldo_por_programar - (Number.isFinite(pedido) ? pedido : 0) : null
+  const nc = (v: number) => (Math.round(v * 1000) / 1000).toLocaleString('es-PE')
+
+  return (
+    <div className="rounded-lg border border-k-border bg-k-raised/40 px-3 py-2 space-y-2">
+      <div className="grid grid-cols-2 gap-2">
+        {([[e1, 'desglose_1' as const, d1, opciones.data?.desglose_1 ?? []],
+          [e2, 'desglose_2' as const, d2, opciones.data?.desglose_2 ?? []]] as const).map(
+          ([etiqueta, campo, valor, sugerencias]) => (
+            <div key={campo}>
+              <label className="text-[9px] uppercase font-bold text-k-text3">
+                {etiqueta} <span className="normal-case font-normal">(opcional)</span>
+              </label>
+              <input list={`sug-${campo}`} value={valor} placeholder={`Ej: ${etiqueta} 3`}
+                onChange={e => onCambio(campo, e.target.value)} className={inputCls}
+                title="Sirve para agrupar el lookahead en la reunión. Se escribe libre; abajo salen las que ya usaste." />
+              <datalist id={`sug-${campo}`}>
+                {sugerencias.map(v => <option key={v} value={v} />)}
+              </datalist>
+            </div>
+          ))}
+      </div>
+
+      {s && s.metrado_presup > 0 && (
+        <>
+          <div className="flex items-center gap-2 text-[10px]">
+            <div className="flex-1 h-2.5 bg-k-raised rounded overflow-hidden flex" title={
+              `Ejecutado ${nc(s.ejecutado)}${und} · programado ${nc(s.programado)}${und} de ${nc(s.metrado_presup)}${und}`}>
+              <div className="bg-green-500/70" style={{ width: `${Math.min(100, (s.ejecutado / s.metrado_presup) * 100)}%` }} />
+              <div className="bg-k-plan/50" style={{
+                width: `${Math.max(0, Math.min(100 - (s.ejecutado / s.metrado_presup) * 100,
+                  ((s.programado - s.ejecutado) / s.metrado_presup) * 100))}%` }} />
+            </div>
+            <span className="text-k-text3 whitespace-nowrap">
+              {nc(s.ejecutado)} hecho · {nc(s.programado)} programado de <b className="text-k-text2">{nc(s.metrado_presup)}{und}</b>
+            </span>
+          </div>
+          <p className={`text-[10px] ${
+            restante != null && restante < -0.0005 ? 'text-k-alerta' : 'text-k-text3'}`}>
+            {restante == null ? null
+              : restante < -0.0005
+                ? <><b>Te pasas {nc(Math.abs(restante))}{und} del presupuesto de la partida.</b> Se
+                  puede programar igual —la obra manda—, pero queda como mayor metrado por sustentar.</>
+                : <>Quedarían <b className="text-k-text2">{nc(restante)}{und}</b> por programar de
+                  esta partida{pedido > 0 ? ' después de este tramo' : ''}.</>}
+          </p>
+        </>
+      )}
+
+      {s && s.desglose.filter(x => x.desglose_1 || x.desglose_2).length > 0 && (
+        <details className="text-[10px]">
+          <summary className="cursor-pointer text-k-text3 hover:text-k-text2">
+            Ya programado por {e1.toLowerCase()} / {e2.toLowerCase()}
+          </summary>
+          <div className="mt-1 space-y-0.5">
+            {s.desglose.filter(x => x.desglose_1 || x.desglose_2).map((x, i) => (
+              <div key={i} className="flex gap-2 text-k-text3">
+                <span className="flex-1 truncate">
+                  {x.desglose_1 ?? '—'}{x.desglose_2 ? ` · ${x.desglose_2}` : ''}
+                </span>
+                <span className="tabular-nums">{nc(x.programado)}{und}</span>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
     </div>
   )
 }

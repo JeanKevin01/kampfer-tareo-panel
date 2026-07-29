@@ -55,6 +55,8 @@ const ESTADO_DOT: Record<string, string> = {
 
 const PROYECTO_ID = 1
 const thBase = 'border border-k-border px-1 py-1 text-[10px] font-bold text-k-text2 bg-k-raised'
+/** Cajón de las actividades a las que todavía no se les puso área ni capa. */
+const SIN_DESGLOSE = 'Sin asignar'
 const tdFijo = 'border border-k-border px-2 py-1 text-[11px] bg-k-surface'
 
 // ── Inmovilizar paneles (pedido del planner: la fila de fechas SIEMPRE visible)
@@ -173,6 +175,20 @@ export function LookaheadGrid({ onEditar, onProgramar }: {
   const [fEstado, setFEstado] = useState('')
   const [soloRest, setSoloRest] = useState(false)
   const [soloRevisar, setSoloRevisar] = useState(false)
+  // Cómo se presenta en la reunión: por proyecto (lo de siempre) o por las
+  // porciones en que se subdivide una partida grande — áreas y capas.
+  const [agrupar, setAgrupar] = useState<'otm' | 'd1' | 'd2' | 'd12'>('otm')
+  // Cómo llama ESTE proyecto a las dos dimensiones (tierras: área/capa;
+  // estructuras: eje/nivel). Si el API todavía no lo trae, valen los defectos.
+  const cfgDesglose = useQuery<{ etiqueta_desglose_1?: string; etiqueta_desglose_2?: string }>({
+    queryKey: ['prog-config', PROYECTO_ID],
+    queryFn: () => api(`/ev/programacion/config?proyecto_id=${PROYECTO_ID}`),
+    staleTime: 10 * 60 * 1000,
+  })
+  const etiquetas = {
+    d1: cfgDesglose.data?.etiqueta_desglose_1 || 'Área',
+    d2: cfgDesglose.data?.etiqueta_desglose_2 || 'Capa',
+  }
   const [compacto, setCompacto] = useState(false)
   // Partidas compactadas y proyectos contraídos: viven aquí (no en el grupo)
   // para que «Contraer todo» pueda actuar sobre todos de una vez.
@@ -371,21 +387,46 @@ export function LookaheadGrid({ onEditar, onProgramar }: {
     return [...m].sort((x, y) => x[1].localeCompare(y[1]))
   }, [d])
   const grupos = useMemo(() => {
-    const todos = d?.grupos ?? []
-    if (!hayFiltro) return todos
-    return todos
-      .map(g => ({ ...g, actividades: g.actividades.filter(a => {
-        if (fSup && (a.supervisor_id ?? '') !== fSup) return false
-        if (fEstado && a.estado !== fEstado) return false
-        if (soloRest && !(a.rest_pend ?? 0)) return false
-        if (soloRevisar && !porRevisar(a)) return false
-        if (!q) return true
-        return norm([a.titulo, a.partida_codigo, a.partida_desc, a.hito_desc,
-                     a.supervisor_nombre, a.responsable, `#${a.id}`]
-          .filter(Boolean).join(' ')).includes(q)
-      }) }))
-      .filter(g => g.actividades.length > 0)
-  }, [d, q, fSup, fEstado, soloRest, soloRevisar, hayFiltro])
+    let todos = d?.grupos ?? []
+    if (hayFiltro) {
+      todos = todos
+        .map(g => ({ ...g, actividades: g.actividades.filter(a => {
+          if (fSup && (a.supervisor_id ?? '') !== fSup) return false
+          if (fEstado && a.estado !== fEstado) return false
+          if (soloRest && !(a.rest_pend ?? 0)) return false
+          if (soloRevisar && !porRevisar(a)) return false
+          if (!q) return true
+          return norm([a.titulo, a.partida_codigo, a.partida_desc, a.hito_desc,
+                       a.supervisor_nombre, a.responsable, `#${a.id}`]
+            .filter(Boolean).join(' ')).includes(q)
+        }) }))
+        .filter(g => g.actividades.length > 0)
+    }
+    // Reagrupar por área/capa: en la reunión el lookahead se presenta por
+    // porciones de la partida grande («Área B, capa 3»), no por proyecto.
+    // Se rehace en el cliente porque son las MISMAS actividades vistas de otra
+    // manera: pedirlas de nuevo al API no traería nada distinto.
+    if (agrupar === 'otm') return todos
+    const cajas = new Map<string, GridResp['grupos'][number]>()
+    for (const g of todos) {
+      for (const a of g.actividades) {
+        const k = agrupar === 'd1' ? (a.desglose_1 ?? '')
+          : agrupar === 'd2' ? (a.desglose_2 ?? '')
+            : [a.desglose_1, a.desglose_2].filter(Boolean).join(' · ')
+        const clave = k || SIN_DESGLOSE
+        const caja = cajas.get(clave)
+        if (caja) caja.actividades.push(a)
+        else cajas.set(clave, { otm_id: clave, otm_desc: null, actividades: [a] })
+      }
+    }
+    // «Sin asignar» al final: es lo que falta etiquetar, no una porción más.
+    return [...cajas.values()].sort((x, y) => {
+      const a = x.otm_id ?? '', b = y.otm_id ?? ''
+      if (a === SIN_DESGLOSE) return 1
+      if (b === SIN_DESGLOSE) return -1
+      return a.localeCompare(b, 'es', { numeric: true })
+    })
+  }, [d, q, fSup, fEstado, soloRest, soloRevisar, hayFiltro, agrupar])
   const nTotal = (d?.grupos ?? []).reduce((s, g) => s + g.actividades.length, 0)
   const nVisible = grupos.reduce((s, g) => s + g.actividades.length, 0)
   const limpiarFiltros = () => { setBusca(''); setFSup(''); setFEstado(''); setSoloRest(false) }
@@ -507,6 +548,16 @@ export function LookaheadGrid({ onEditar, onProgramar }: {
           <option value="">Todos los estados</option>
           {['PROGRAMADO', 'EJECUTADO', 'NO_CUMPLIDA', 'CANCELADO'].map(e =>
             <option key={e} value={e}>{e === 'NO_CUMPLIDA' ? 'NO CUMPLIDA' : e[0] + e.slice(1).toLowerCase()}</option>)}
+        </select>
+        {/* Una partida grande se ejecuta por porciones, y en la reunión se
+            presenta así: por área y por capa, no por proyecto. */}
+        <select value={agrupar} onChange={e => setAgrupar(e.target.value as typeof agrupar)}
+          title="Cómo se agrupan las filas. Para la reunión suele presentarse por área y capa."
+          className="bg-k-raised border border-k-border rounded-lg px-2.5 py-2 text-sm text-k-text2 outline-none">
+          <option value="otm">Agrupar por proyecto</option>
+          <option value="d1">Agrupar por {(etiquetas.d1).toLowerCase()}</option>
+          <option value="d2">Agrupar por {(etiquetas.d2).toLowerCase()}</option>
+          <option value="d12">Agrupar por {(etiquetas.d1).toLowerCase()} + {(etiquetas.d2).toLowerCase()}</option>
         </select>
         <label className="flex items-center gap-1.5 text-xs text-k-text2 px-2.5 py-2 rounded-lg border border-k-border bg-k-raised cursor-pointer select-none"
           title="Solo las actividades que todavía tienen restricciones sin liberar">
