@@ -15,6 +15,8 @@ import { DIAS_1, fmtDia, fmtCorta, num, isoDow, clrRealTxt, parseDeps, fmtDeps, 
 import type { TipoDep } from '@/lib/lookahead'
 import CeldaDia from '@/components/CeldaDia'
 import AyudaLookahead from '@/components/AyudaLookahead'
+import SubfilaModal, { SUBFILA, SUBFILA_QUE_ES } from '@/components/SubfilaModal'
+import HistorialPartida from '@/components/HistorialPartida'
 
 export interface ActGrid {
   id: number; titulo: string; estado: string; descripcion?: string | null
@@ -36,6 +38,10 @@ export interface ActGrid {
   sucesoras?: number[]; dep_total?: number
   prog: Record<string, number>; real: Record<string, number>
   prog_manual?: string[]
+  desglose_1?: string | null; desglose_2?: string | null
+  // Árbol del LookAhead (0038): de qué fila cuelga, de qué tipo es y cuántas
+  // sub-filas tiene. Con sub-filas la fila deja de editarse: es un contenedor.
+  padre_id?: number | null; es_frente?: boolean; n_subfilas?: number
 }
 export interface GridResp {
   desde: string; hasta: string
@@ -190,6 +196,14 @@ export function LookaheadGrid({ onEditar, onProgramar }: {
     d2: cfgDesglose.data?.etiqueta_desglose_2 || 'Capa',
   }
   const [compacto, setCompacto] = useState(false)
+  // Árbol (0038): sub-filas plegadas, bandas de área plegadas, el área aislada
+  // por los chips y si se ocultan las porciones ya terminadas.
+  const [plegados, setPlegados] = useState<Set<number>>(new Set())
+  const [bandas, setBandas] = useState<Set<string>>(new Set())
+  const [areaSel, setAreaSel] = useState<string | null>(null)
+  const [ocultarHechas, setOcultarHechas] = useState(false)
+  const [subfilaDe, setSubfilaDe] = useState<ActGrid | null>(null)
+  const [histPartida, setHistPartida] = useState<number | null>(null)
   // Partidas compactadas y proyectos contraídos: viven aquí (no en el grupo)
   // para que «Contraer todo» pueda actuar sobre todos de una vez.
   const [compactas, setCompactas] = useState<Set<number>>(new Set())
@@ -386,8 +400,80 @@ export function LookaheadGrid({ onEditar, onProgramar }: {
     }
     return [...m].sort((x, y) => x[1].localeCompare(y[1]))
   }, [d])
+  // ── Árbol del LookAhead (0038) ────────────────────────────
+  // Una partida grande no se ejecuta de una: se parte en porciones que cuelgan
+  // de su fila. Aquí las sub-filas se sacan de la lista plana para dibujarlas
+  // DENTRO de su padre. Con «agrupar por área/capa» el árbol se aplana: en esa
+  // vista lo que manda es la porción, no la jerarquía.
+  // Sin el Redeploy del API (0038) la respuesta no trae el árbol: el panel se
+  // comporta como antes y no ofrece dividir, en vez de mandar un padre_id que
+  // el API viejo ignoraría dejando una actividad suelta sin partida.
+  const soportaArbol = useMemo(
+    () => (d?.grupos ?? []).some(g => g.actividades.some(a => 'n_subfilas' in a)),
+    [d])
+  const enArbol = agrupar === 'otm' && soportaArbol
+  const hijosDe = useMemo(() => {
+    const m = new Map<number, ActGrid[]>()
+    if (!enArbol) return m
+    const acts = (d?.grupos ?? []).flatMap(g => g.actividades)
+    const visibles = new Set(acts.map(a => a.id))
+    for (const a of acts) {
+      // Sub-fila cuyo padre cayó fuera de la ventana: se queda como fila suelta
+      // en vez de desaparecer.
+      if (!a.padre_id || !visibles.has(a.padre_id)) continue
+      if (ocultarHechas && a.estado === 'EJECUTADO') continue
+      if (areaSel && (a.desglose_1 || SIN_DESGLOSE) !== areaSel) continue
+      m.set(a.padre_id, [...(m.get(a.padre_id) ?? []), a])
+    }
+    for (const [k, v] of m) {
+      m.set(k, v.slice().sort((x, y) =>
+        x.fecha === y.fecha ? x.id - y.id : x.fecha < y.fecha ? -1 : 1))
+    }
+    return m
+  }, [d, enArbol, ocultarHechas, areaSel])
+
+  /** Número que se ve en la columna «#»: la sub-fila lleva el del padre con su
+   *  orden (46.1, 46.2), como el árbol del WBS pero dentro del lookahead. */
+  const numeros = useMemo(() => {
+    const m = new Map<number, string>()
+    for (const g of d?.grupos ?? []) for (const a of g.actividades) m.set(a.id, String(a.id))
+    for (const [pid, hs] of hijosDe) hs.forEach((h, i) => m.set(h.id, `${pid}.${i + 1}`))
+    return m
+  }, [d, hijosDe])
+
+  /** Áreas presentes en las sub-filas: los chips que aíslan una para la reunión. */
+  const areasChips = useMemo(() => {
+    const m = new Map<string, number>()
+    if (!enArbol) return [] as [string, number][]
+    for (const g of d?.grupos ?? []) for (const a of g.actividades) {
+      if (!a.padre_id) continue
+      if (ocultarHechas && a.estado === 'EJECUTADO') continue
+      const k = a.desglose_1 || SIN_DESGLOSE
+      m.set(k, (m.get(k) ?? 0) + 1)
+    }
+    return [...m].sort((x, y) =>
+      x[0] === SIN_DESGLOSE ? 1 : y[0] === SIN_DESGLOSE ? -1
+        : x[0].localeCompare(y[0], 'es', { numeric: true }))
+  }, [d, enArbol, ocultarHechas])
+
   const grupos = useMemo(() => {
     let todos = d?.grupos ?? []
+    if (enArbol) {
+      // Fuera de la lista plana: las sub-filas se dibujan dentro de su padre, y
+      // con un área aislada solo quedan las filas que tienen algo en ella.
+      const hijos = new Set([...hijosDe.values()].flat().map(a => a.id))
+      const conHijo = new Set(hijosDe.keys())
+      todos = todos
+        .map(g => ({ ...g, actividades: g.actividades.filter(a => {
+          if (hijos.has(a.id)) return false          // se dibuja dentro de su padre
+          if (!areaSel) return true
+          // Con un área aislada quedan sus filas padre y las sub-filas huérfanas
+          // (las que perdieron a su padre por la ventana de fechas).
+          return conHijo.has(a.id)
+            || (!!a.padre_id && (a.desglose_1 || SIN_DESGLOSE) === areaSel)
+        }) }))
+        .filter(g => g.actividades.length > 0)
+    }
     if (hayFiltro) {
       todos = todos
         .map(g => ({ ...g, actividades: g.actividades.filter(a => {
@@ -426,7 +512,7 @@ export function LookaheadGrid({ onEditar, onProgramar }: {
       if (b === SIN_DESGLOSE) return -1
       return a.localeCompare(b, 'es', { numeric: true })
     })
-  }, [d, q, fSup, fEstado, soloRest, soloRevisar, hayFiltro, agrupar])
+  }, [d, q, fSup, fEstado, soloRest, soloRevisar, hayFiltro, agrupar, enArbol, hijosDe, areaSel])
   const nTotal = (d?.grupos ?? []).reduce((s, g) => s + g.actividades.length, 0)
   const nVisible = grupos.reduce((s, g) => s + g.actividades.length, 0)
   const limpiarFiltros = () => { setBusca(''); setFSup(''); setFEstado(''); setSoloRest(false) }
@@ -597,6 +683,38 @@ export function LookaheadGrid({ onEditar, onProgramar }: {
         )}
       </div>
 
+      {/* Chips de área: aislar una porción de la obra es lo que se hace en la
+          reunión de lookahead («veamos solo el área norte»). Van arriba y no
+          como columna, para no quitarle ancho a los días. */}
+      {areasChips.length > 0 && (
+        <div className="flex items-center gap-1.5 flex-wrap text-[11px]">
+          <span className="text-k-text3 font-bold uppercase text-[10px] mr-0.5">{etiquetas.d1}s</span>
+          <button onClick={() => setAreaSel(null)}
+            className={`px-2 py-0.5 rounded-full border ${areaSel == null
+              ? 'border-k-amber/60 bg-amber-500/15 text-k-amber font-bold'
+              : 'border-k-border text-k-text3 hover:bg-k-raised'}`}>
+            Todas
+          </button>
+          {areasChips.map(([a, n]) => (
+            <button key={a} onClick={() => setAreaSel(areaSel === a ? null : a)}
+              title={a === SIN_DESGLOSE
+                ? `${n} sub-fila(s) sin ${etiquetas.d1.toLowerCase()} — falta etiquetarlas`
+                : `Ver solo lo de ${a} (${n} sub-filas)`}
+              className={`px-2 py-0.5 rounded-full border ${areaSel === a
+                ? 'border-k-blue/60 bg-blue-500/15 text-k-blue font-bold'
+                : 'border-k-border text-k-text2 hover:bg-k-raised'}`}>
+              {a} <span className="text-k-text3">{n}</span>
+            </button>
+          ))}
+          <label className="flex items-center gap-1 ml-2 text-k-text3 cursor-pointer select-none"
+            title="Oculta las porciones ya ejecutadas para dejar a la vista lo que falta. Siguen en el historial de la partida.">
+            <input type="checkbox" checked={ocultarHechas} className="accent-green-600"
+              onChange={e => setOcultarHechas(e.target.checked)} />
+            Ocultar terminadas
+          </label>
+        </div>
+      )}
+
       {sel.length > 0 && (
         <div className="flex items-center gap-2 flex-wrap text-[11px] font-bold text-k-blue bg-blue-500/10 border border-blue-500/30 rounded-lg px-3 py-2">
           ☑ {sel.length} seleccionada(s) — se encadenan en el orden en que las marcaste:
@@ -684,7 +802,20 @@ export function LookaheadGrid({ onEditar, onProgramar }: {
                 onPanel={id => { setPanelDe(id); setCadenaDe(id) }}
                 onHover={setHoverDe}
                 onReal={(actId, fecha, v) => guardarReal.mutate({ actId, fecha, v })}
-                onProg={(actId, fecha, v) => guardarProg.mutate({ actId, fecha, v })} />
+                onProg={(actId, fecha, v) => guardarProg.mutate({ actId, fecha, v })}
+                hijosDe={hijosDe} numeros={numeros} etiquetas={etiquetas}
+                plegados={plegados} onPlegar={id => setPlegados(s => {
+                  const n = new Set(s)
+                  if (n.has(id)) n.delete(id); else n.add(id)
+                  return n
+                })}
+                bandas={bandas} onBanda={k => setBandas(s => {
+                  const n = new Set(s)
+                  if (n.has(k)) n.delete(k); else n.add(k)
+                  return n
+                })}
+                onSubfila={soportaArbol ? setSubfilaDe : undefined}
+                onHistorial={soportaArbol ? setHistPartida : undefined} />
             ))}
             {/* La pantalla vacía es la primera que ve un planner nuevo: en vez
                 de un «Sin actividades» que no lleva a ningún lado, explica qué
@@ -735,6 +866,15 @@ export function LookaheadGrid({ onEditar, onProgramar }: {
       )}
 
       {ayuda && <AyudaLookahead onCerrar={() => setAyuda(false)} />}
+
+      {subfilaDe && (
+        <SubfilaModal padre={subfilaDe} etiquetas={etiquetas} proyectoId={PROYECTO_ID}
+          onClose={() => setSubfilaDe(null)} />
+      )}
+      {histPartida != null && (
+        <HistorialPartida partidaId={histPartida} proyectoId={PROYECTO_ID}
+          etiquetaD1={etiquetas.d1} onClose={() => setHistPartida(null)} />
+      )}
 
       {panelDe != null && d && (
         <PanelDeps actId={panelDe} data={d}
@@ -1162,7 +1302,7 @@ interface PropsFila {
   onAbrir: (id: number | null) => void
 }
 
-function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, onReal, onProg, vincular, onPick, onPanel, onHover, compactas, onCompactar, contraido, onContraer, onEncadenar, ...fp }: {
+function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, onReal, onProg, vincular, onPick, onPanel, onHover, compactas, onCompactar, contraido, onContraer, onEncadenar, hijosDe, numeros, etiquetas, plegados, onPlegar, bandas, onBanda, onSubfila, onHistorial, ...fp }: {
   grupo: GridResp['grupos'][number]; fechas: string[]; hoy: string
   laborable: (f: string) => boolean
   cadena: { focal: number; azules: Set<number>; verdes: Set<number> } | null
@@ -1176,11 +1316,114 @@ function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, o
   // para que «Contraer todo» pueda actuar sobre todos de una vez.
   compactas: Set<number>; onCompactar: (pid: number) => void
   contraido: boolean; onContraer: () => void
+  // Árbol (0038)
+  hijosDe: Map<number, ActGrid[]>
+  numeros: Map<number, string>
+  etiquetas: { d1: string; d2: string }
+  plegados: Set<number>; onPlegar: (id: number) => void
+  bandas: Set<string>; onBanda: (k: string) => void
+  /** Sin 0038 en el API llegan sin definir y la fila no ofrece dividir. */
+  onSubfila?: (a: ActGrid) => void
+  onHistorial?: (partidaId: number) => void
 } & PropsFila) {
   const toggle = onCompactar
   const items = agruparPorPartida(grupo.actividades)
   const idxCadena = new Map<number, number>()
   for (const it of items) if (it.tipo === 'partida') idxCadena.set(it.pid, idxCadena.size)
+
+  const fila = (a: ActGrid, color?: string, sangria?: number) => (
+    <FilaActividad key={a.id} a={a} fechas={fechas} hoy={hoy}
+      laborable={laborable} cadena={cadena} onCadena={onCadena}
+      onEditar={onEditar} onReal={onReal} onProg={onProg} color={color}
+      vincular={vincular} onPick={onPick} onPanel={onPanel} onHover={onHover}
+      numero={numeros.get(a.id)} sangria={sangria} etiquetas={etiquetas}
+      onSubfila={onSubfila} onHistorial={onHistorial} {...fp} />
+  )
+
+  // Una fila con sub-filas se dibuja como rama: el padre resume (suma lo de sus
+  // hijos por día) y debajo van las porciones, agrupadas en bandas por área.
+  // Plegar la banda deja una sola línea con el acumulado del área — que es lo
+  // que se mira cuando un área ya está cerrada.
+  const rama = (a: ActGrid, color?: string) => {
+    const hijos = hijosDe.get(a.id) ?? []
+    if (!hijos.length) {
+      // Fila dividida cuyas porciones están todas ocultas (terminadas o de otra
+      // área): se va con ellas. Si se quedara, sería una fila vacía —el
+      // contenedor no tiene plan propio— que parecería un error.
+      if ((a.n_subfilas ?? 0) > 0) return null
+      return fila(a, color)
+    }
+    const plegada = plegados.has(a.id)
+    const porArea = new Map<string, ActGrid[]>()
+    for (const h of hijos) {
+      const k = h.desglose_1 || SIN_DESGLOSE
+      porArea.set(k, [...(porArea.get(k) ?? []), h])
+    }
+    const areas = [...porArea.keys()].sort((x, y) =>
+      x === SIN_DESGLOSE ? 1 : y === SIN_DESGLOSE ? -1
+        : x.localeCompare(y, 'es', { numeric: true }))
+    const hechas = hijos.filter(h => h.estado === 'EJECUTADO').length
+    return (
+      <Fragment key={`r${a.id}`}>
+        <FilaPartidaCompacta acts={hijos} color={color ?? PALETA_CADENA[0]}
+          fechas={fechas} hoy={hoy} laborable={laborable}
+          onToggle={() => onPlegar(a.id)} fijar={fp.fijar} compacto={fp.compacto}
+          numero={String(a.id)} rotulo={a.titulo}
+          subtitulo={`▾ ${hijos.length} ${SUBFILA.toLowerCase()} · ${hechas}/${hijos.length} ✓`}
+          ayuda={`«${a.titulo}» está dividida en ${hijos.length} porciones: esta fila suma lo de todas por día.\nClic para ${plegada ? 'ver' : 'ocultar'} las sub-filas.`}
+          extra={
+            <span className="flex items-center gap-1 ml-1">
+              <button onClick={e => { e.stopPropagation(); onSubfila?.(a) }}
+                title={`Nuevo ${SUBFILA.toLowerCase()} — ${SUBFILA_QUE_ES}`}
+                className="text-[9px] font-bold px-1 rounded border border-k-blue/40 text-k-blue hover:bg-blue-500/10">＋</button>
+              {a.partida_id && (
+                <button onClick={e => { e.stopPropagation(); onHistorial?.(a.partida_id!) }}
+                  title="Historial de la partida: qué porciones ya se cerraron y cuánto queda"
+                  className="text-[9px] px-1 rounded text-k-text3 hover:bg-k-raised">🕘</button>
+              )}
+            </span>
+          } />
+        {!plegada && areas.map(area => {
+          const hs = porArea.get(area)!
+          const kb = `${a.id}|${area}`
+          const cerrada = bandas.has(kb)
+          const met = hs.reduce((s, h) => s + (h.metrado_prog ?? 0), 0)
+          if (cerrada) {
+            return (
+              <FilaPartidaCompacta key={kb} acts={hs} color={color ?? PALETA_CADENA[0]}
+                fechas={fechas} hoy={hoy} laborable={laborable}
+                onToggle={() => onBanda(kb)} fijar={fp.fijar} compacto={fp.compacto}
+                sangria={1} rotulo={area}
+                subtitulo={`${hs.length} de ${etiquetas.d2.toLowerCase()} · ${num(met)} ${hs[0].und ?? ''}`}
+                ayuda={`${etiquetas.d1}: ${area} — plegada. La fila suma sus porciones por día.\nClic para desplegarla.`} />
+            )
+          }
+          return (
+            <Fragment key={kb}>
+              <tr>
+                {/* Nivel 3: el área. La franja del color de la partida sangrada
+                    la separa del nivel 2 sin que haya que contar sangrías. */}
+                <td colSpan={N_FIJAS + fechas.length} onClick={() => onBanda(kb)}
+                  className="border-b border-k-border px-2 py-0.5 text-[10px] cursor-pointer hover:bg-k-raised"
+                  style={{ boxShadow: `inset 12px 0 0 -9px ${color ?? PALETA_CADENA[0]}` }}>
+                  <div style={ROTULO} className="pl-4">
+                    <span className="text-k-text2">▾</span>{' '}
+                    <b className={area === SIN_DESGLOSE ? 'text-k-text3' : 'text-k-text2'}>
+                      {area === SIN_DESGLOSE ? `Sin ${etiquetas.d1.toLowerCase()}` : `${etiquetas.d1}: ${area}`}
+                    </b>{' '}
+                    <span className="text-k-text3">
+                      · {hs.length} · {num(met)} {hs[0].und ?? ''}
+                    </span>
+                  </div>
+                </td>
+              </tr>
+              {hs.map(h => fila(h, color, 2))}
+            </Fragment>
+          )
+        })}
+      </Fragment>
+    )
+  }
   return (
     <>
       <tr>
@@ -1204,12 +1447,7 @@ function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, o
         </td>
       </tr>
       {!contraido && items.map(it => {
-        if (it.tipo === 'suelta') {
-          return <FilaActividad key={it.a.id} a={it.a} fechas={fechas} hoy={hoy}
-            laborable={laborable} cadena={cadena} onCadena={onCadena}
-            onEditar={onEditar} onReal={onReal} onProg={onProg}
-            vincular={vincular} onPick={onPick} onPanel={onPanel} onHover={onHover} {...fp} />
-        }
+        if (it.tipo === 'suelta') return rama(it.a)
         const color = PALETA_CADENA[(idxCadena.get(it.pid) ?? 0) % PALETA_CADENA.length]
         const compacta = compactas.has(it.pid)
         const a0 = it.acts[0]
@@ -1245,12 +1483,7 @@ function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, o
                 </div>
               </td>
             </tr>
-            {it.acts.map(a => (
-              <FilaActividad key={a.id} a={a} fechas={fechas} hoy={hoy}
-                laborable={laborable} cadena={cadena} onCadena={onCadena}
-                onEditar={onEditar} onReal={onReal} onProg={onProg} color={color}
-                vincular={vincular} onPick={onPick} onPanel={onPanel} onHover={onHover} {...fp} />
-            ))}
+            {it.acts.map(a => rama(a, color))}
           </Fragment>
         )
       })}
@@ -1260,10 +1493,15 @@ function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, o
 
 // Fila única de una partida COMPACTADA: agrega el programado y el real de
 // todas sus etapas por día (solo lectura — para editar, despliega con ▸).
-function FilaPartidaCompacta({ acts, color, fechas, hoy, laborable, onToggle, fijar, compacto }: {
+function FilaPartidaCompacta({ acts, color, fechas, hoy, laborable, onToggle, fijar, compacto, numero, rotulo, subtitulo, sangria, ayuda, extra }: {
   acts: ActGrid[]; color: string; fechas: string[]; hoy: string
   laborable: (f: string) => boolean; onToggle: () => void
   fijar: boolean; compacto: boolean
+  // Con el árbol (0038) esta misma fila hace de CONTENEDOR y de BANDA DE ÁREA
+  // compactada: en los tres casos lo que aporta es el acumulado por día de lo
+  // que tiene debajo, que es lo que se mira cuando algo está plegado.
+  numero?: string; rotulo?: string; subtitulo?: string; sangria?: number
+  ayuda?: string; extra?: React.ReactNode
 }) {
   const a0 = acts[0]
   const progAgg: Record<string, number> = {}
@@ -1282,19 +1520,26 @@ function FilaPartidaCompacta({ acts, color, fechas, hoy, laborable, onToggle, fi
   const runsAgg = runsDeFila(fechas, f => (progAgg[f] ?? 0) > 0 || realAgg[f] != null)
   return (
     <tr>
-      <td className={`${tdFijo} text-center font-mono text-[9px] text-k-text3`} style={stick(0, true)}>—</td>
+      <td className={`${tdFijo} text-center font-mono text-[10px] font-bold ${
+          numero ? 'text-k-blue' : 'text-k-text3'}`} style={stick(0, true)}>
+        {numero ?? '—'}
+      </td>
       <td onClick={onToggle}
         className={`${tdFijo} cursor-pointer hover:bg-k-raised align-top`}
-        style={{ ...stick(1, true), borderLeft: `3px solid ${color}` }}
-        title={'Partida compactada: la fila suma el programado y el real de todas sus etapas.\nClic para desplegar las etapas (y poder editar los avances).'}>
+        style={{ ...stick(1, true), borderLeft: `3px solid ${color}`,
+                 paddingLeft: sangria ? 8 + sangria * 12 : undefined }}
+        title={ayuda ?? 'Partida compactada: la fila suma el programado y el real de todas sus etapas.\nClic para desplegar las etapas (y poder editar los avances).'}>
         <div className="flex items-center gap-1.5">
           <span className="text-k-text2">▸</span>
           <span style={{ color }}>●</span>
-          <span className="text-k-text leading-tight font-bold">{a0.partida_codigo} — {a0.partida_desc}</span>
+          <span className="text-k-text leading-tight font-bold">
+            {rotulo ?? `${a0.partida_codigo} — ${a0.partida_desc}`}
+          </span>
+          {extra}
         </div>
         {!compacto && (
           <div className="text-[9px] text-k-text3 pl-3.5">
-            ◆ {acts.length} etapas compactadas · {ejecutadas}/{acts.length} ✓
+            {subtitulo ?? `◆ ${acts.length} etapas compactadas · ${ejecutadas}/${acts.length} ✓`}
           </div>
         )}
       </td>
@@ -1329,7 +1574,7 @@ function FilaPartidaCompacta({ acts, color, fechas, hoy, laborable, onToggle, fi
   )
 }
 
-function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, onReal, onProg, color, vincular, onPick, onPanel, onHover, fijar, compacto, sel, onSel, onDeps, onCampo, abierta, onAbrir }: {
+function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, onReal, onProg, color, vincular, onPick, onPanel, onHover, fijar, compacto, sel, onSel, onDeps, onCampo, abierta, onAbrir, numero, sangria, etiquetas, onSubfila, onHistorial }: {
   a: ActGrid; fechas: string[]; hoy: string
   laborable: (f: string) => boolean
   cadena: { focal: number; azules: Set<number>; verdes: Set<number> } | null
@@ -1338,6 +1583,12 @@ function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, 
   onReal: (actId: number, fecha: string, v: number | null) => void
   onProg: (actId: number, fecha: string, v: number | null) => void
   color?: string
+  /** Lo que se ve en «#»: 46 en una fila raíz, 46.1 en una sub-fila. */
+  numero?: string
+  sangria?: number
+  etiquetas?: { d1: string; d2: string }
+  onSubfila?: (a: ActGrid) => void
+  onHistorial?: (partidaId: number) => void
   vincular: Vincular; onPick: (id: number) => void; onPanel: (id: number) => void
   onHover: (id: number | null) => void
 } & Omit<PropsFila, 'onEncadenar'>) {
@@ -1385,6 +1636,10 @@ function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, 
         const esPrimera = vincular.on && vincular.primera === a.id
         const iSel = sel.indexOf(a.id)
         const revisar = motivoRevisar(a)
+        // Los dos tipos de sub-fila (0038): porción de la partida (azul) y
+        // sub-etapa, que es un hito (violeta). No se mezclan bajo una misma fila.
+        const esSubfila = !!a.padre_id && a.es_frente !== false
+        const esSubetapa = !!a.padre_id && a.es_frente === false
         return (
           <tr key={a.id} className={`${a.estado === 'CANCELADO' ? 'opacity-50' : ''} ${claseCadena} ${esPrimera ? 'bg-amber-500/15' : ''} ${
               expandida ? 'ring-1 ring-inset ring-k-green/50 bg-k-green/5' : ''}`}
@@ -1409,16 +1664,29 @@ function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, 
               onClick={() => onSel(a.id)}
               title={iSel >= 0
                 ? `Marcada en la posición ${iSel + 1} de la secuencia — clic para desmarcar`
-                : `Actividad #${a.id} — este es el número que se teclea en DESPUÉS DE.\nClic para marcarla y encadenarla con otras.\nPara saltar a ella, escribe #${a.id} en el buscador.`}>
+                : esSubfila
+                  ? `${SUBFILA} ${numero} de la fila #${a.padre_id}.\nPara vincularla en DESPUÉS DE o buscarla, su número es #${a.id}.`
+                  : esSubetapa
+                    ? `Sub-etapa (hito) #${a.id} — este es el número que se teclea en DESPUÉS DE.\nClic para marcarla y encadenarla con otras.`
+                    : `Actividad #${a.id} — este es el número que se teclea en DESPUÉS DE.\nClic para marcarla y encadenarla con otras.\nPara saltar a ella, escribe #${a.id} en el buscador.`}>
               {iSel >= 0 && (
                 <div className="font-mono text-[9px] font-bold text-k-blue leading-none">{iSel + 1}º</div>
               )}
-              <span className={`font-mono text-[13px] font-bold tabular-nums ${
-                iSel >= 0 ? 'text-k-blue' : 'text-k-text2'}`}>{a.id}</span>
+              {/* Azul = porción de la partida (frente/tramo/sector); violeta =
+                  sub-etapa, que es el color de estructura en todo el panel. El
+                  rojo NO se usa aquí: significa problema. */}
+              <span className={`font-mono font-bold tabular-nums ${
+                numero && numero.includes('.') ? 'text-[11px]' : 'text-[13px]'} ${
+                iSel >= 0 ? 'text-k-blue'
+                  : esSubfila ? 'text-k-blue'
+                    : esSubetapa ? 'text-k-wbs' : 'text-k-text2'}`}>
+                {numero ?? a.id}
+              </span>
             </td>
             <td onClick={() => (vincular.on ? onPick(a.id) : onEditar(a))}
               className={`${tdFijo} cursor-pointer hover:bg-k-raised align-top`}
-              style={{ ...stick(1, true), ...(color ? { borderLeft: `3px solid ${color}` } : {}) }}
+              style={{ ...stick(1, true), ...(color ? { borderLeft: `3px solid ${color}` } : {}),
+                       ...(sangria ? { paddingLeft: 8 + sangria * 12 } : {}) }}
               title={vincular.on
                 ? (vincular.primera == null ? 'Clic: esta actividad va PRIMERO'
                   : esPrimera ? 'Elegida como la que va primero'
@@ -1442,6 +1710,23 @@ function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, 
                 )}
                 {/* Cerrada: se resume en una barra. El botón dice que hay
                     detalle debajo, para que no parezca que se perdió. */}
+                {/* Dividir la fila en porciones: el gesto que resuelve la
+                    partida grande que se ejecuta de a pocos. Solo tiene sentido
+                    con partida (de ahí sale el metrado) y en una fila raíz. */}
+                {!!a.partida_id && !a.padre_id && onSubfila && (
+                  <button onClick={e => { e.stopPropagation(); onSubfila(a) }}
+                    title={`Dividir en ${SUBFILA.toLowerCase()} — ${SUBFILA_QUE_ES}`}
+                    className="text-[9px] font-bold flex-shrink-0 px-1 rounded text-k-blue hover:bg-blue-500/10">
+                    ＋⊞
+                  </button>
+                )}
+                {esSubfila && !!a.partida_id && onHistorial && (
+                  <button onClick={e => { e.stopPropagation(); onHistorial(a.partida_id!) }}
+                    title="Historial de la partida: todas sus porciones, incluidas las terminadas"
+                    className="text-[9px] flex-shrink-0 px-1 rounded text-k-text3 hover:bg-k-raised">
+                    🕘
+                  </button>
+                )}
                 {cerrada && (
                   <button onClick={e => { e.stopPropagation(); onAbrir(a.id) }}
                     title={expandida
@@ -1459,6 +1744,14 @@ function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, 
               {!compacto && !color && a.partida_codigo && (
                 <div className="text-[9px] text-k-text3 font-mono pl-3.5 truncate max-w-[240px]">
                   📌 {a.partida_codigo}{a.partida_desc ? ` · ${a.partida_desc.slice(0, 34)}` : ''}
+                </div>
+              )}
+              {/* En una sub-fila, el área y la capa son su identidad: sin ellas
+                  «Capa 1» aparece cinco veces y no se sabe cuál es cuál. */}
+              {!compacto && esSubfila && (a.desglose_1 || a.desglose_2) && (
+                <div className="text-[9px] text-k-blue/90 pl-3.5 truncate max-w-[240px]"
+                  title={`Porción de la partida — ${etiquetas?.d1 ?? 'Área'}: ${a.desglose_1 ?? '—'} · ${etiquetas?.d2 ?? 'Capa'}: ${a.desglose_2 ?? '—'}`}>
+                  ▸ {[a.desglose_1, a.desglose_2].filter(Boolean).join(' · ')}
                 </div>
               )}
               {!compacto && a.hito_desc && (
