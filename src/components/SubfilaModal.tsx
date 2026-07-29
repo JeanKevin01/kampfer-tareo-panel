@@ -21,14 +21,18 @@ interface Saldo {
   saldo_por_programar: number; excedido: number; unidad?: string | null
 }
 
-/** Nombre visible del concepto. Jean lo pidió con las tres palabras juntas para
- *  que ninguna especialidad tenga que traducirlo: en tierras es un frente, en
- *  carreteras un tramo, en edificación un sector. */
-export const SUBFILA = 'Frente / Tramo / Sector'
-export const SUBFILA_QUE_ES =
-  'Una porción de la partida que se ejecuta aparte —una zona, un tramo, un sector, ' +
-  'una capa— y que consume metrado del presupuesto de esa misma partida. ' +
-  'No crea una partida nueva: la partida sigue siendo una sola.'
+// Cómo se llama la FILA (el objeto) y cómo se llaman sus ETIQUETAS son dos
+// cosas distintas, y confundirlas fue el error de la primera versión: la fila se
+// llamaba «frente» y una de sus etiquetas «capa», así que al abrir la ventana no
+// se sabía qué era qué. Ahora la fila es una DIVISIÓN de la partida —el verbo
+// que usa el planner: «esta partida se divide en cuatro»— y las etiquetas se
+// llaman como cada proyecto decida (por defecto Área y Frente / Tramo / Sector).
+export const DIVISION = 'división'
+export const DIVISIONES = 'divisiones'
+export const DIVISION_QUE_ES =
+  'Una porción de la partida que se ejecuta aparte y que consume metrado de su ' +
+  'presupuesto. No crea una partida nueva: la partida sigue siendo una sola. ' +
+  'Las etiquetas de abajo dicen a qué parte de la obra corresponde.'
 
 export default function SubfilaModal({ padre, etiquetas, proyectoId, sups, onClose }: {
   padre: PadreSubfila
@@ -106,7 +110,7 @@ export default function SubfilaModal({ padre, etiquetas, proyectoId, sups, onClo
         className="bg-k-surface border border-k-border rounded-xl w-full max-w-lg mt-16 p-4 space-y-3">
         <div className="flex items-start justify-between gap-2">
           <div>
-            <h3 className="text-sm font-bold text-k-text">Nuevo {SUBFILA.toLowerCase()}</h3>
+            <h3 className="text-sm font-bold text-k-text">Nueva {DIVISION} de la partida</h3>
             <p className="text-[11px] text-k-text3 mt-0.5">
               Sale de <b className="text-k-text2">#{padre.id} {padre.titulo}</b>
               {padre.partida_codigo && <> · 📌 {padre.partida_codigo}</>}
@@ -116,20 +120,22 @@ export default function SubfilaModal({ padre, etiquetas, proyectoId, sups, onClo
         </div>
 
         <p className="text-[11px] text-k-text3 bg-k-raised border border-k-border rounded-lg p-2">
-          {SUBFILA_QUE_ES}
+          {DIVISION_QUE_ES}
         </p>
 
         <div className="grid grid-cols-2 gap-2">
           <label className="block">
             <span className="text-[10px] font-bold text-k-text3 uppercase">{etiquetas.d1}</span>
             <input value={d1} onChange={e => setD1(e.target.value)} list="sf-d1"
-              placeholder="Área A" className="input w-full" />
+              placeholder={`Con qué ${etiquetas.d1.toLowerCase()} se corresponde`}
+              className="input w-full" />
             <datalist id="sf-d1">{(sug?.desglose_1 ?? []).map(v => <option key={v} value={v} />)}</datalist>
           </label>
           <label className="block">
-            <span className="text-[10px] font-bold text-k-text3 uppercase">{etiquetas.d2}</span>
+            <span className="text-[10px] font-bold text-k-text3 uppercase truncate block"
+              title={etiquetas.d2}>{etiquetas.d2}</span>
             <input value={d2} onChange={e => setD2(e.target.value)} list="sf-d2"
-              placeholder="Capa 1" className="input w-full" />
+              placeholder="FL10 · Capa 1 · Sector norte" className="input w-full" />
             <datalist id="sf-d2">{(sug?.desglose_2 ?? []).map(v => <option key={v} value={v} />)}</datalist>
           </label>
         </div>

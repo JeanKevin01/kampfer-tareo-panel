@@ -15,7 +15,7 @@ import { DIAS_1, fmtDia, fmtCorta, num, isoDow, clrRealTxt, parseDeps, fmtDeps, 
 import type { TipoDep, MapaNumeros } from '@/lib/lookahead'
 import CeldaDia from '@/components/CeldaDia'
 import AyudaLookahead from '@/components/AyudaLookahead'
-import SubfilaModal, { SUBFILA, SUBFILA_QUE_ES } from '@/components/SubfilaModal'
+import SubfilaModal, { DIVISIONES, DIVISION_QUE_ES } from '@/components/SubfilaModal'
 import HistorialPartida from '@/components/HistorialPartida'
 
 export interface ActGrid {
@@ -181,9 +181,10 @@ export function LookaheadGrid({ onEditar, onProgramar }: {
   const [fEstado, setFEstado] = useState('')
   const [soloRest, setSoloRest] = useState(false)
   const [soloRevisar, setSoloRevisar] = useState(false)
-  // Cómo se presenta en la reunión: por proyecto (lo de siempre) o por las
-  // porciones en que se subdivide una partida grande — áreas y capas.
-  const [agrupar, setAgrupar] = useState<'otm' | 'd1' | 'd2' | 'd12'>('otm')
+  // En qué bandas se ordenan las porciones dentro de su fila. Son ETIQUETAS,
+  // no jerarquía: la misma porción se mira por área o por frente según lo que
+  // toque presentar, sin crear una fila más ni obligar a elegir al programar.
+  const [banda, setBanda] = useState<'d1' | 'd2' | 'd12' | 'no'>('d1')
   // Cómo llama ESTE proyecto a las dos dimensiones (tierras: área/capa;
   // estructuras: eje/nivel). Si el API todavía no lo trae, valen los defectos.
   const cfgDesglose = useQuery<{ etiqueta_desglose_1?: string; etiqueta_desglose_2?: string }>({
@@ -200,7 +201,8 @@ export function LookaheadGrid({ onEditar, onProgramar }: {
   // por los chips y si se ocultan las porciones ya terminadas.
   const [plegados, setPlegados] = useState<Set<number>>(new Set())
   const [bandas, setBandas] = useState<Set<string>>(new Set())
-  const [areaSel, setAreaSel] = useState<string | null>(null)
+  const [selD1, setSelD1] = useState<string | null>(null)
+  const [selD2, setSelD2] = useState<string | null>(null)
   const [ocultarHechas, setOcultarHechas] = useState(false)
   const [subfilaDe, setSubfilaDe] = useState<ActGrid | null>(null)
   const [histPartida, setHistPartida] = useState<number | null>(null)
@@ -405,16 +407,15 @@ export function LookaheadGrid({ onEditar, onProgramar }: {
   }, [d])
   // ── Árbol del LookAhead (0038) ────────────────────────────
   // Una partida grande no se ejecuta de una: se parte en porciones que cuelgan
-  // de su fila. Aquí las sub-filas se sacan de la lista plana para dibujarlas
-  // DENTRO de su padre. Con «agrupar por área/capa» el árbol se aplana: en esa
-  // vista lo que manda es la porción, no la jerarquía.
+  // de su fila. Aquí las porciones se sacan de la lista plana para dibujarlas
+  // DENTRO de su padre; cómo se ordenan ahí dentro lo decide `banda`.
   // Sin el Redeploy del API (0038) la respuesta no trae el árbol: el panel se
   // comporta como antes y no ofrece dividir, en vez de mandar un padre_id que
   // el API viejo ignoraría dejando una actividad suelta sin partida.
   const soportaArbol = useMemo(
     () => (d?.grupos ?? []).some(g => g.actividades.some(a => 'n_subfilas' in a)),
     [d])
-  const enArbol = agrupar === 'otm' && soportaArbol
+  const enArbol = soportaArbol
   const hijosDe = useMemo(() => {
     const m = new Map<number, ActGrid[]>()
     if (!enArbol) return m
@@ -425,7 +426,8 @@ export function LookaheadGrid({ onEditar, onProgramar }: {
       // en vez de desaparecer.
       if (!a.padre_id || !visibles.has(a.padre_id)) continue
       if (ocultarHechas && a.estado === 'EJECUTADO') continue
-      if (areaSel && (a.desglose_1 || SIN_DESGLOSE) !== areaSel) continue
+      if (selD1 && (a.desglose_1 || SIN_DESGLOSE) !== selD1) continue
+      if (selD2 && (a.desglose_2 || SIN_DESGLOSE) !== selD2) continue
       m.set(a.padre_id, [...(m.get(a.padre_id) ?? []), a])
     }
     for (const [k, v] of m) {
@@ -433,7 +435,7 @@ export function LookaheadGrid({ onEditar, onProgramar }: {
         x.fecha === y.fecha ? x.id - y.id : x.fecha < y.fecha ? -1 : 1))
     }
     return m
-  }, [d, enArbol, ocultarHechas, areaSel])
+  }, [d, enArbol, ocultarHechas, selD1, selD2])
 
   /** Número que se ve en la columna «#» y en los vínculos. Sobre TODAS las
    *  filas, no sobre las filtradas: la numeración no puede moverse al ocultar
@@ -444,19 +446,29 @@ export function LookaheadGrid({ onEditar, onProgramar }: {
     return numerosDeGrid(todas)
   }, [d])
 
-  /** Áreas presentes en las sub-filas: los chips que aíslan una para la reunión. */
-  const areasChips = useMemo(() => {
-    const m = new Map<string, number>()
-    if (!enArbol) return [] as [string, number][]
+  /** Valores usados en cada etiqueta: los chips que aíslan una para la reunión.
+   *  Las dos dimensiones tienen el mismo trato — son etiquetas equivalentes, no
+   *  una principal y otra secundaria. */
+  const chips = useMemo(() => {
+    const m1 = new Map<string, number>()
+    const m2 = new Map<string, number>()
+    if (!enArbol) return { d1: [] as [string, number][], d2: [] as [string, number][] }
     for (const g of d?.grupos ?? []) for (const a of g.actividades) {
       if (!a.padre_id) continue
       if (ocultarHechas && a.estado === 'EJECUTADO') continue
-      const k = a.desglose_1 || SIN_DESGLOSE
-      m.set(k, (m.get(k) ?? 0) + 1)
+      const k1 = a.desglose_1 || SIN_DESGLOSE
+      const k2 = a.desglose_2 || SIN_DESGLOSE
+      m1.set(k1, (m1.get(k1) ?? 0) + 1)
+      m2.set(k2, (m2.get(k2) ?? 0) + 1)
     }
-    return [...m].sort((x, y) =>
+    // «Sin asignar» al final: es lo que falta etiquetar, no una porción más.
+    const orden = (m: Map<string, number>) => [...m].sort((x, y) =>
       x[0] === SIN_DESGLOSE ? 1 : y[0] === SIN_DESGLOSE ? -1
         : x[0].localeCompare(y[0], 'es', { numeric: true }))
+    const soloVacio = (l: [string, number][]) =>
+      l.length === 1 && l[0][0] === SIN_DESGLOSE
+    const l1 = orden(m1), l2 = orden(m2)
+    return { d1: soloVacio(l1) ? [] : l1, d2: soloVacio(l2) ? [] : l2 }
   }, [d, enArbol, ocultarHechas])
 
   const grupos = useMemo(() => {
@@ -466,14 +478,17 @@ export function LookaheadGrid({ onEditar, onProgramar }: {
       // con un área aislada solo quedan las filas que tienen algo en ella.
       const hijos = new Set([...hijosDe.values()].flat().map(a => a.id))
       const conHijo = new Set(hijosDe.keys())
+      const filtrando = !!(selD1 || selD2)
+      const casa = (a: ActGrid) =>
+        (!selD1 || (a.desglose_1 || SIN_DESGLOSE) === selD1)
+        && (!selD2 || (a.desglose_2 || SIN_DESGLOSE) === selD2)
       todos = todos
         .map(g => ({ ...g, actividades: g.actividades.filter(a => {
           if (hijos.has(a.id)) return false          // se dibuja dentro de su padre
-          if (!areaSel) return true
-          // Con un área aislada quedan sus filas padre y las sub-filas huérfanas
-          // (las que perdieron a su padre por la ventana de fechas).
-          return conHijo.has(a.id)
-            || (!!a.padre_id && (a.desglose_1 || SIN_DESGLOSE) === areaSel)
+          if (!filtrando) return true
+          // Aislando una etiqueta quedan sus filas padre y las porciones
+          // huérfanas (las que perdieron a su padre por la ventana de fechas).
+          return conHijo.has(a.id) || (!!a.padre_id && casa(a))
         }) }))
         .filter(g => g.actividades.length > 0)
     }
@@ -491,31 +506,8 @@ export function LookaheadGrid({ onEditar, onProgramar }: {
         }) }))
         .filter(g => g.actividades.length > 0)
     }
-    // Reagrupar por área/capa: en la reunión el lookahead se presenta por
-    // porciones de la partida grande («Área B, capa 3»), no por proyecto.
-    // Se rehace en el cliente porque son las MISMAS actividades vistas de otra
-    // manera: pedirlas de nuevo al API no traería nada distinto.
-    if (agrupar === 'otm') return todos
-    const cajas = new Map<string, GridResp['grupos'][number]>()
-    for (const g of todos) {
-      for (const a of g.actividades) {
-        const k = agrupar === 'd1' ? (a.desglose_1 ?? '')
-          : agrupar === 'd2' ? (a.desglose_2 ?? '')
-            : [a.desglose_1, a.desglose_2].filter(Boolean).join(' · ')
-        const clave = k || SIN_DESGLOSE
-        const caja = cajas.get(clave)
-        if (caja) caja.actividades.push(a)
-        else cajas.set(clave, { otm_id: clave, otm_desc: null, actividades: [a] })
-      }
-    }
-    // «Sin asignar» al final: es lo que falta etiquetar, no una porción más.
-    return [...cajas.values()].sort((x, y) => {
-      const a = x.otm_id ?? '', b = y.otm_id ?? ''
-      if (a === SIN_DESGLOSE) return 1
-      if (b === SIN_DESGLOSE) return -1
-      return a.localeCompare(b, 'es', { numeric: true })
-    })
-  }, [d, q, fSup, fEstado, soloRest, soloRevisar, hayFiltro, agrupar, enArbol, hijosDe, areaSel])
+    return todos
+  }, [d, q, fSup, fEstado, soloRest, soloRevisar, hayFiltro, enArbol, hijosDe, selD1, selD2])
   const nTotal = (d?.grupos ?? []).reduce((s, g) => s + g.actividades.length, 0)
   const nVisible = grupos.reduce((s, g) => s + g.actividades.length, 0)
   const limpiarFiltros = () => { setBusca(''); setFSup(''); setFEstado(''); setSoloRest(false) }
@@ -638,15 +630,17 @@ export function LookaheadGrid({ onEditar, onProgramar }: {
           {['PROGRAMADO', 'EJECUTADO', 'NO_CUMPLIDA', 'CANCELADO'].map(e =>
             <option key={e} value={e}>{e === 'NO_CUMPLIDA' ? 'NO CUMPLIDA' : e[0] + e.slice(1).toLowerCase()}</option>)}
         </select>
-        {/* Una partida grande se ejecuta por porciones, y en la reunión se
-            presenta así: por área y por capa, no por proyecto. */}
-        <select value={agrupar} onChange={e => setAgrupar(e.target.value as typeof agrupar)}
-          title="Cómo se agrupan las filas. Para la reunión suele presentarse por área y capa."
+        {/* En qué bandas se ordenan las porciones DENTRO de su fila. No cambia
+            qué se ve, solo cómo se ordena — que es lo que se decide justo antes
+            de una reunión y cambia de una semana a otra. */}
+        <select value={banda} onChange={e => setBanda(e.target.value as typeof banda)}
+          title={'Cómo se ordenan las porciones dentro de la partida que las contiene.\n'
+            + 'Son etiquetas, no jerarquía: la misma porción se puede mirar de las dos maneras.'}
           className="bg-k-raised border border-k-border rounded-lg px-2.5 py-2 text-sm text-k-text2 outline-none">
-          <option value="otm">Agrupar por proyecto</option>
           <option value="d1">Agrupar por {(etiquetas.d1).toLowerCase()}</option>
           <option value="d2">Agrupar por {(etiquetas.d2).toLowerCase()}</option>
           <option value="d12">Agrupar por {(etiquetas.d1).toLowerCase()} + {(etiquetas.d2).toLowerCase()}</option>
+          <option value="no">Sin agrupar</option>
         </select>
         <label className="flex items-center gap-1.5 text-xs text-k-text2 px-2.5 py-2 rounded-lg border border-k-border bg-k-raised cursor-pointer select-none"
           title="Solo las actividades que todavía tienen restricciones sin liberar">
@@ -686,30 +680,38 @@ export function LookaheadGrid({ onEditar, onProgramar }: {
         )}
       </div>
 
-      {/* Chips de área: aislar una porción de la obra es lo que se hace en la
-          reunión de lookahead («veamos solo el área norte»). Van arriba y no
-          como columna, para no quitarle ancho a los días. */}
-      {areasChips.length > 0 && (
-        <div className="flex items-center gap-1.5 flex-wrap text-[11px]">
-          <span className="text-k-text3 font-bold uppercase text-[10px] mr-0.5">{etiquetas.d1}s</span>
-          <button onClick={() => setAreaSel(null)}
-            className={`px-2 py-0.5 rounded-full border ${areaSel == null
-              ? 'border-k-amber/60 bg-amber-500/15 text-k-amber font-bold'
-              : 'border-k-border text-k-text3 hover:bg-k-raised'}`}>
-            Todas
-          </button>
-          {areasChips.map(([a, n]) => (
-            <button key={a} onClick={() => setAreaSel(areaSel === a ? null : a)}
-              title={a === SIN_DESGLOSE
-                ? `${n} sub-fila(s) sin ${etiquetas.d1.toLowerCase()} — falta etiquetarlas`
-                : `Ver solo lo de ${a} (${n} sub-filas)`}
-              className={`px-2 py-0.5 rounded-full border ${areaSel === a
-                ? 'border-k-blue/60 bg-blue-500/15 text-k-blue font-bold'
-                : 'border-k-border text-k-text2 hover:bg-k-raised'}`}>
-              {a} <span className="text-k-text3">{n}</span>
-            </button>
-          ))}
-          <label className="flex items-center gap-1 ml-2 text-k-text3 cursor-pointer select-none"
+      {/* Chips por etiqueta: aislar una porción de la obra es lo que se hace en
+          la reunión («veamos solo el valle principal»). Las dos etiquetas tienen
+          la misma barra —son equivalentes— y van arriba, no como columna, para
+          no quitarle ancho a los días. */}
+      {(chips.d1.length > 0 || chips.d2.length > 0) && (
+        <div className="space-y-1">
+          {([[etiquetas.d1, chips.d1, selD1, setSelD1],
+             [etiquetas.d2, chips.d2, selD2, setSelD2]] as const).map(
+            ([etiqueta, lista, sel_, setSel]) => lista.length === 0 ? null : (
+              <div key={etiqueta} className="flex items-center gap-1.5 flex-wrap text-[11px]">
+                <span className="text-k-text3 font-bold uppercase text-[10px] mr-0.5 w-36 flex-shrink-0 truncate"
+                  title={etiqueta}>{etiqueta}</span>
+                <button onClick={() => setSel(null)}
+                  className={`px-2 py-0.5 rounded-full border ${sel_ == null
+                    ? 'border-k-amber/60 bg-amber-500/15 text-k-amber font-bold'
+                    : 'border-k-border text-k-text3 hover:bg-k-raised'}`}>
+                  Todas
+                </button>
+                {lista.map(([v, n]) => (
+                  <button key={v} onClick={() => setSel(sel_ === v ? null : v)}
+                    title={v === SIN_DESGLOSE
+                      ? `${n} porción(es) sin ${etiqueta.toLowerCase()} — falta etiquetarlas`
+                      : `Ver solo lo de ${v} (${n} porciones)`}
+                    className={`px-2 py-0.5 rounded-full border ${sel_ === v
+                      ? 'border-k-blue/60 bg-blue-500/15 text-k-blue font-bold'
+                      : 'border-k-border text-k-text2 hover:bg-k-raised'}`}>
+                    {v} <span className="text-k-text3">{n}</span>
+                  </button>
+                ))}
+              </div>
+            ))}
+          <label className="flex items-center gap-1 text-[11px] text-k-text3 cursor-pointer select-none"
             title="Oculta las porciones ya ejecutadas para dejar a la vista lo que falta. Siguen en el historial de la partida.">
             <input type="checkbox" checked={ocultarHechas} className="accent-green-600"
               onChange={e => setOcultarHechas(e.target.checked)} />
@@ -808,7 +810,7 @@ export function LookaheadGrid({ onEditar, onProgramar }: {
                 onHover={setHoverDe}
                 onReal={(actId, fecha, v) => guardarReal.mutate({ actId, fecha, v })}
                 onProg={(actId, fecha, v) => guardarProg.mutate({ actId, fecha, v })}
-                hijosDe={hijosDe} numeros={numeros} etiquetas={etiquetas}
+                hijosDe={hijosDe} numeros={numeros} etiquetas={etiquetas} banda={banda}
                 plegados={plegados} onPlegar={id => setPlegados(s => {
                   const n = new Set(s)
                   if (n.has(id)) n.delete(id); else n.add(id)
@@ -1309,7 +1311,7 @@ interface PropsFila {
   onAbrir: (id: number | null) => void
 }
 
-function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, onReal, onProg, vincular, onPick, onPanel, onHover, compactas, onCompactar, contraido, onContraer, onEncadenar, hijosDe, numeros, etiquetas, plegados, onPlegar, bandas, onBanda, onSubfila, onHistorial, ...fp }: {
+function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, onReal, onProg, vincular, onPick, onPanel, onHover, compactas, onCompactar, contraido, onContraer, onEncadenar, hijosDe, numeros, etiquetas, banda, plegados, onPlegar, bandas, onBanda, onSubfila, onHistorial, ...fp }: {
   grupo: GridResp['grupos'][number]; fechas: string[]; hoy: string
   laborable: (f: string) => boolean
   cadena: { focal: number; azules: Set<number>; verdes: Set<number> } | null
@@ -1327,6 +1329,8 @@ function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, o
   hijosDe: Map<number, ActGrid[]>
   numeros: Map<number, string>
   etiquetas: { d1: string; d2: string }
+  /** Por cuál de las dos etiquetas se ordenan las porciones dentro de la fila. */
+  banda: 'd1' | 'd2' | 'd12' | 'no'
   plegados: Set<number>; onPlegar: (id: number) => void
   bandas: Set<string>; onBanda: (k: string) => void
   /** Sin 0038 en el API llegan sin definir y la fila no ofrece dividir. */
@@ -1362,9 +1366,19 @@ function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, o
       return fila(a, color)
     }
     const plegada = plegados.has(a.id)
+    // La banda sale de la etiqueta que se esté mirando: son etiquetas, no
+    // jerarquía, así que la misma porción se ordena de una u otra manera sin
+    // que nada cambie en los datos.
+    const rotuloBanda = banda === 'd2' ? etiquetas.d2
+      : banda === 'd12' ? `${etiquetas.d1} · ${etiquetas.d2}` : etiquetas.d1
+    const claveBanda = (h: ActGrid) =>
+      banda === 'd2' ? (h.desglose_2 || SIN_DESGLOSE)
+        : banda === 'd12'
+          ? ([h.desglose_1, h.desglose_2].filter(Boolean).join(' · ') || SIN_DESGLOSE)
+          : (h.desglose_1 || SIN_DESGLOSE)
     const porArea = new Map<string, ActGrid[]>()
     for (const h of hijos) {
-      const k = h.desglose_1 || SIN_DESGLOSE
+      const k = banda === 'no' ? '' : claveBanda(h)
       porArea.set(k, [...(porArea.get(k) ?? []), h])
     }
     const areas = [...porArea.keys()].sort((x, y) =>
@@ -1377,8 +1391,8 @@ function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, o
           fechas={fechas} hoy={hoy} laborable={laborable}
           onToggle={() => onPlegar(a.id)} fijar={fp.fijar} compacto={fp.compacto}
           numero={String(a.id)} rotulo={a.titulo} abierto={!plegada}
-          subtitulo={`${hechas}/${hijos.length} ${SUBFILA.toLowerCase()} terminados · esta fila suma lo de todos`}
-          ayuda={`«${a.titulo}» está dividida en ${hijos.length} porciones: esta fila suma lo de todas por día.\nClic para ${plegada ? 'ver' : 'ocultar'} las sub-filas.`}
+          subtitulo={`${hechas}/${hijos.length} ${DIVISIONES} terminadas · esta fila suma lo de todas`}
+          ayuda={`«${a.titulo}» está dividida en ${hijos.length} porciones: esta fila suma lo de todas por día.\nClic para ${plegada ? 'ver' : 'ocultar'} las divisiones.`}
           extra={
             <span className="flex items-center gap-1 ml-1">
               {/* Una pastilla que dice con palabras qué pasa al tocarla: el
@@ -1386,12 +1400,12 @@ function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, o
               <button onClick={e => { e.stopPropagation(); onPlegar(a.id) }}
                 className="text-[10px] font-bold px-1.5 py-0.5 rounded-full border border-k-blue/50
                   text-k-blue bg-blue-500/10 hover:bg-blue-500/20 whitespace-nowrap">
-                {plegada ? `▸ Ver ${hijos.length} frentes` : `▾ Ocultar los ${hijos.length} frentes`}
+                {plegada ? `▸ Ver las ${hijos.length} ${DIVISIONES}` : `▾ Ocultar las ${hijos.length} ${DIVISIONES}`}
               </button>
               <button onClick={e => { e.stopPropagation(); onSubfila?.(a) }}
-                title={`Nuevo ${SUBFILA.toLowerCase()} — ${SUBFILA_QUE_ES}`}
+                title={`Dividir la partida en una porción más — ${DIVISION_QUE_ES}`}
                 className="text-[10px] font-bold px-1.5 py-0.5 rounded-full border border-k-border
-                  text-k-text2 hover:bg-k-raised whitespace-nowrap">＋ frente</button>
+                  text-k-text2 hover:bg-k-raised whitespace-nowrap">＋ dividir</button>
               {a.partida_id && (
                 <button onClick={e => { e.stopPropagation(); onHistorial?.(a.partida_id!) }}
                   title="Historial de la partida: qué porciones ya se cerraron y cuánto queda"
@@ -1409,55 +1423,62 @@ function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, o
               <FilaPartidaCompacta key={kb} acts={hs} color={color ?? PALETA_CADENA[0]}
                 fechas={fechas} hoy={hoy} laborable={laborable}
                 onToggle={() => onBanda(kb)} fijar={fp.fijar} compacto={fp.compacto}
-                sangria={1} rotulo={area === SIN_DESGLOSE ? area : `${etiquetas.d1}: ${area}`}
-                subtitulo={`${hs.length} porciones · ${num(met)} ${hs[0].und ?? ''} — la fila suma lo de todas`}
-                ayuda={`${etiquetas.d1}: ${area} — plegada. La fila suma sus porciones por día.\nClic para desplegarla.`}
+                sangria={1} rotulo={area === SIN_DESGLOSE ? area : `${rotuloBanda}: ${area}`}
+                subtitulo={`${hs.length} ${DIVISIONES} · ${num(met)} ${hs[0].und ?? ''} — la fila suma lo de todas`}
+                ayuda={`${rotuloBanda}: ${area} — plegada. La fila suma sus porciones por día.\nClic para desplegarla.`}
                 extra={
                   <button onClick={e => { e.stopPropagation(); onBanda(kb) }}
                     className="text-[10px] font-bold px-1.5 py-0.5 rounded-full border border-k-border
                       text-k-text2 hover:bg-k-raised whitespace-nowrap">
-                    ▸ Ver {hs.length} frentes
+                    ▸ Ver las {hs.length} {DIVISIONES}
                   </button>
                 } />
             )
           }
           return (
             <Fragment key={kb}>
-              <tr>
-                {/* Nivel 3: el área. La franja del color de la partida sangrada
-                    la separa del nivel 2 sin que haya que contar sangrías. */}
-                <td colSpan={N_FIJAS + fechas.length}
-                  className="border-b border-k-border px-2 py-0.5 text-[10px]"
-                  style={{ boxShadow: `inset 12px 0 0 -9px ${color ?? PALETA_CADENA[0]}` }}>
-                  <div style={ROTULO} className="pl-4 flex items-center gap-1.5 flex-wrap">
-                    {renombrando === kb ? (
-                      <FormRenombrar area={area} etiqueta={etiquetas.d1} n={hs.length}
-                        padreId={a.id} onCerrar={() => setRenombrando(null)} />
-                    ) : (
-                      <>
-                        <b className={area === SIN_DESGLOSE ? 'text-k-text3' : 'text-k-text2'}>
-                          {area === SIN_DESGLOSE ? `Sin ${etiquetas.d1.toLowerCase()}` : `${etiquetas.d1}: ${area}`}
-                        </b>
-                        <span className="text-k-text3">· {num(met)} {hs[0].und ?? ''}</span>
-                        <button onClick={() => onBanda(kb)}
-                          className="text-[10px] font-bold px-1.5 py-0.5 rounded-full border border-k-border
-                            text-k-text2 hover:bg-k-raised whitespace-nowrap">
-                          ▾ Ocultar los {hs.length} frentes
-                        </button>
-                        {/* Renombrar el área una vez, no seis: si se cambia a
-                            mano fila por fila basta un dedazo para partir la
-                            banda en dos áreas que eran la misma. */}
-                        {area !== SIN_DESGLOSE && (
-                          <button onClick={() => setRenombrando(kb)}
-                            title={`Cambiar el nombre de «${area}» en sus ${hs.length} sub-filas`}
-                            className="text-[10px] px-1 rounded text-k-text3 hover:bg-k-raised">✎</button>
-                        )}
-                      </>
-                    )}
-                  </div>
-                </td>
-              </tr>
-              {hs.map(h => fila(h, color, 2))}
+              {/* Sin agrupar no hay banda: las porciones cuelgan directo de su
+                  fila. Es una etiqueta menos en pantalla, no un nivel menos. */}
+              {area !== '' && (
+                <tr>
+                  {/* La banda de la etiqueta. La franja del color de la partida
+                      sangrada la separa de la fila padre sin contar sangrías. */}
+                  <td colSpan={N_FIJAS + fechas.length}
+                    className="border-b border-k-border px-2 py-0.5 text-[10px]"
+                    style={{ boxShadow: `inset 12px 0 0 -9px ${color ?? PALETA_CADENA[0]}` }}>
+                    <div style={ROTULO} className="pl-4 flex items-center gap-1.5 flex-wrap">
+                      {renombrando === kb ? (
+                        <FormRenombrar area={area} etiqueta={rotuloBanda} n={hs.length}
+                          campo={banda === 'd2' ? 'desglose_2' : 'desglose_1'}
+                          padreId={a.id} onCerrar={() => setRenombrando(null)} />
+                      ) : (
+                        <>
+                          <b className={area === SIN_DESGLOSE ? 'text-k-text3' : 'text-k-text2'}>
+                            {area === SIN_DESGLOSE ? `Sin ${rotuloBanda.toLowerCase()}` : `${rotuloBanda}: ${area}`}
+                          </b>
+                          <span className="text-k-text3">· {num(met)} {hs[0].und ?? ''}</span>
+                          <button onClick={() => onBanda(kb)}
+                            className="text-[10px] font-bold px-1.5 py-0.5 rounded-full border border-k-border
+                              text-k-text2 hover:bg-k-raised whitespace-nowrap">
+                            ▾ Ocultar las {hs.length} {DIVISIONES}
+                          </button>
+                          {/* Renombrar la etiqueta una vez, no seis: si se cambia
+                              a mano fila por fila basta un dedazo para partir la
+                              banda en dos etiquetas que eran la misma. Con la
+                              vista combinada no se ofrece: no se sabría cuál de
+                              las dos se está renombrando. */}
+                          {area !== SIN_DESGLOSE && banda !== 'd12' && (
+                            <button onClick={() => setRenombrando(kb)}
+                              title={`Cambiar el nombre de «${area}» en sus ${hs.length} porciones`}
+                              className="text-[10px] px-1 rounded text-k-text3 hover:bg-k-raised">✎</button>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              )}
+              {hs.map(h => fila(h, color, area === '' ? 1 : 2))}
             </Fragment>
           )
         })}
@@ -1534,15 +1555,16 @@ function GrupoOTM({ grupo, fechas, hoy, laborable, cadena, onCadena, onEditar, o
 // Renombrar un área: cambia el nombre en TODAS las sub-filas de esa banda de
 // una vez. Hacerlo fila por fila era el camino corto a tener «AREA A» y «AREA
 // A » como dos áreas distintas, con la banda y el saldo partidos en dos.
-function FormRenombrar({ area, etiqueta, n, padreId, onCerrar }: {
-  area: string; etiqueta: string; n: number; padreId: number; onCerrar: () => void
+function FormRenombrar({ area, etiqueta, n, padreId, campo, onCerrar }: {
+  area: string; etiqueta: string; n: number; padreId: number
+  campo: 'desglose_1' | 'desglose_2'; onCerrar: () => void
 }) {
   const qc = useQueryClient()
   const [v, setV] = useState(area)
   const guardar = useMutation({
     mutationFn: () => api('/ev/programacion/renombrar-desglose', {
       method: 'PUT',
-      body: JSON.stringify({ padre_id: padreId, campo: 'desglose_1', de: area, a: v }),
+      body: JSON.stringify({ padre_id: padreId, campo, de: area, a: v }),
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['lookahead-grid'] })
@@ -1747,7 +1769,10 @@ function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, 
               title={iSel >= 0
                 ? `Marcada en la posición ${iSel + 1} de la secuencia — clic para desmarcar`
                 : esSubfila
-                  ? `${SUBFILA} ${numero} de la fila #${a.padre_id}.\nPara vincularla en DESPUÉS DE o buscarla, su número es #${a.id}.`
+                  ? `División ${numero} de la fila #${a.padre_id}${
+                      [a.desglose_1, a.desglose_2].filter(Boolean).length
+                        ? ` — ${[a.desglose_1, a.desglose_2].filter(Boolean).join(' · ')}` : ''
+                    }.\nPara vincularla en DESPUÉS DE puedes escribir ${numero} o #${a.id}.`
                   : esSubetapa
                     ? `Sub-etapa (hito) #${a.id} — este es el número que se teclea en DESPUÉS DE.\nClic para marcarla y encadenarla con otras.`
                     : `Actividad #${a.id} — este es el número que se teclea en DESPUÉS DE.\nClic para marcarla y encadenarla con otras.\nPara saltar a ella, escribe #${a.id} en el buscador.`}>
@@ -1797,9 +1822,10 @@ function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, 
                     con partida (de ahí sale el metrado) y en una fila raíz. */}
                 {!!a.partida_id && !a.padre_id && onSubfila && (
                   <button onClick={e => { e.stopPropagation(); onSubfila(a) }}
-                    title={`Dividir en ${SUBFILA.toLowerCase()} — ${SUBFILA_QUE_ES}`}
-                    className="text-[9px] font-bold flex-shrink-0 px-1 rounded text-k-blue hover:bg-blue-500/10">
-                    ＋⊞
+                    title={`Dividir esta partida en porciones — ${DIVISION_QUE_ES}`}
+                    className="text-[9px] font-bold flex-shrink-0 px-1 rounded border border-k-blue/40
+                      text-k-blue hover:bg-blue-500/10 whitespace-nowrap">
+                    ＋ dividir
                   </button>
                 )}
                 {esSubfila && !!a.partida_id && onHistorial && (
