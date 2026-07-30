@@ -11,6 +11,7 @@ import { lunesDe, iso } from '@/lib/semana'
 import { LookaheadGrid, EvaluacionSemanal, type ActGrid } from '@/components/LookaheadGrid'
 import AltaPartidasLote from '@/components/maestros/AltaPartidasLote'
 import CierreSemana from '@/components/CierreSemana'
+import NoPlanificadas from '@/components/NoPlanificadas'
 import { ProgramarLote } from '@/components/ProgramarLote'
 import { CalendarioLaboral } from '@/components/CalendarioLaboral'
 import HistogramaMO from '@/components/HistogramaMO'
@@ -1423,6 +1424,16 @@ function PanelPPC() {
     cnc: { causa: string; etiqueta: string; n: number }[]
     pareto_restricciones?: { causa: string; etiqueta: string; n: number }[]
     por_supervisor: { supervisor_id: string; nombre?: string; comprometidas: number; cumplidas: number; ppc: number | null }[]
+    /** 0040 — el indicador PAR del PPC. Va aparte a proposito: no se mezcla ni
+     *  se arma un «PPC ampliado». El PPC mide la confiabilidad de la promesa;
+     *  esto mide cuanto improvisa la obra. Dos numeros limpios valen mas que
+     *  uno mezclado, y juntos son los que muestran mejora de verdad. */
+    no_planificado?: {
+      actividades: number; hh: number; hh_total: number; ratio: number | null
+      hh_sin_actividad: number; sin_clasificar: number
+      pareto_motivos: { motivo: string; etiqueta: string; n: number; improvisacion: boolean }[]
+      no_cumplidas_causadas: number; no_cumplidas_total: number
+    }
   }
   const [nSem, setNSem] = useState(8)
   const [verExport, setVerExport] = useState<'cliente' | 'oficina' | null>(null)
@@ -1439,6 +1450,8 @@ function PanelPPC() {
   const totNC = (d?.semanal ?? []).reduce((s, w) => s + w.no_cumplidas, 0)
   const ppcGlobal = totC ? totE / totC : null
   const maxCnc = Math.max(1, ...(d?.cnc ?? []).map(c => c.n))
+  const np = d?.no_planificado
+  const maxMot = Math.max(1, ...(np?.pareto_motivos ?? []).map(c => c.n))
   const rest = d?.pareto_restricciones ?? []
   const maxRest = Math.max(1, ...rest.map(c => c.n))
   const pctTxt = (v: number | null) => (v == null ? '—' : `${(v * 100).toFixed(0)}%`)
@@ -1492,6 +1505,90 @@ function PanelPPC() {
           </div>
         ))}
       </div>
+
+      {/* El indicador PAR. Un PPC alto puede convivir con una obra caótica: mide
+          si se cumple lo prometido, no cuánto se improvisó. Estos dos juntos son
+          los que sostienen una mejora — el PPC solo, no. */}
+      {np && (
+        <div className="bg-k-surface border border-k-border rounded-xl p-4">
+          <p className="text-xs font-bold text-k-text mb-1">
+            Trabajo no planificado{' '}
+            <span className="text-k-text3 font-normal">(fuera del PPC — el indicador par)</span>
+          </p>
+          <p className="text-[10px] text-k-text3 mb-3">
+            Horas del tareo que se fueron en trabajo que nadie comprometió. Se mide en HH y no en
+            número de actividades porque una de 4 HH y una de 200 no pesan igual.
+          </p>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <div className="bg-k-raised border border-k-border rounded-lg px-3 py-2">
+              <div className={`font-mono text-2xl font-medium ${np.ratio == null ? 'text-k-text3'
+                : np.ratio <= 0.15 ? 'text-k-green' : np.ratio <= 0.30 ? 'text-k-alerta' : 'text-k-red'}`}>
+                {np.ratio == null ? '—' : `${(np.ratio * 100).toFixed(0)}%`}
+              </div>
+              <div className="text-[10px] uppercase text-k-text3 tracking-wide">HH no planificadas</div>
+            </div>
+            <div className="bg-k-raised border border-k-border rounded-lg px-3 py-2">
+              <div className="font-mono text-2xl font-medium text-k-text">
+                {np.hh.toLocaleString('es-PE')}
+              </div>
+              <div className="text-[10px] uppercase text-k-text3 tracking-wide">
+                de {np.hh_total.toLocaleString('es-PE')} HH
+              </div>
+            </div>
+            <div className="bg-k-raised border border-k-border rounded-lg px-3 py-2">
+              <div className="font-mono text-2xl font-medium text-k-alerta">{np.actividades}</div>
+              <div className="text-[10px] uppercase text-k-text3 tracking-wide">
+                actividades{np.sin_clasificar ? ` · ${np.sin_clasificar} sin clasificar` : ''}
+              </div>
+            </div>
+            {/* La frase que cambia la reunión semanal. */}
+            <div className="bg-k-raised border border-k-border rounded-lg px-3 py-2"
+              title="Incumplimientos cuya cuadrilla se fue a trabajo no planificado. Sin este vínculo el Pareto dice «nos falta gente» cuando la verdad es «nos metieron trabajo que no estaba».">
+              <div className="font-mono text-2xl font-medium text-k-red">
+                {np.no_cumplidas_causadas}
+                <span className="text-sm text-k-text3">/{np.no_cumplidas_total}</span>
+              </div>
+              <div className="text-[10px] uppercase text-k-text3 tracking-wide">
+                incumplim. que causó
+              </div>
+            </div>
+          </div>
+          {!!np.hh_sin_actividad && (
+            <p className="text-[10px] text-k-text3 mt-2">
+              Además <b className="text-k-text2">{np.hh_sin_actividad.toLocaleString('es-PE')} HH</b>{' '}
+              cayeron en partidas sin ninguna actividad de la semana: no son planificadas ni no
+              planificadas. Se informan porque callarlas dejaría el indicador corto.
+            </p>
+          )}
+          {!!(np.pareto_motivos ?? []).length && (
+            <div className="mt-3 space-y-2">
+              <p className="text-[11px] font-bold text-k-text2">
+                ¿Por qué entró? <span className="text-k-text3 font-normal">(Pareto de motivos)</span>
+              </p>
+              {np.pareto_motivos.map(m => (
+                <div key={m.motivo} className="flex items-center gap-2">
+                  <span className="text-[10px] text-k-text2 w-52 flex-shrink-0 truncate"
+                    title={m.etiqueta}>{m.etiqueta}</span>
+                  <div className="flex-1 h-4 bg-k-raised rounded overflow-hidden">
+                    <div className={`h-full rounded ${m.motivo === 'OMISION_PLANNER' ? 'bg-amber-500/70'
+                      : m.motivo === 'EMERGENCIA' ? 'bg-red-500/60'
+                        : m.motivo === 'CLIENTE' ? 'bg-blue-500/60'
+                          : m.motivo === 'ADELANTO' ? 'bg-green-500/60' : 'bg-k-text3/40'}`}
+                      style={{ width: `${Math.round((m.n / maxMot) * 100)}%` }} />
+                  </div>
+                  <span className="text-[11px] font-bold text-k-text w-6 text-right">{m.n}</span>
+                  <span className={`text-[9px] w-16 ${m.improvisacion ? 'text-k-text3' : 'text-k-green'}`}>
+                    {m.improvisacion ? '' : 'no cuenta'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* La bandeja: el parte y las fotos que mandó campo, para clasificarlo. */}
+      <NoPlanificadas proyectoId={PROYECTO_ID} nSem={nSem} />
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         {/* PPC semanal (meta lean: ≥75%) */}

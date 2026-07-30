@@ -26,6 +26,15 @@ interface ActCierre {
   no_planificada: boolean
   causa_cat?: string | null
   causa?: string | null
+  /** 0040 — por qué entró y a quién le quitó la cuadrilla. */
+  no_plan_motivo?: string | null
+  no_plan_desplaza_a?: number | null
+  no_plan_desplaza_tit?: string | null
+  /** Lo que el sistema propuso. Si difiere de `no_planificada`, alguien lo
+   *  cambió al cerrar: con cerrado_por/cerrado_en queda quién y cuándo. */
+  no_plan_auto?: boolean
+  no_plan_editada?: boolean
+  hh?: number
 }
 /** Lo que campo dejó escrito esa semana. Referencia para redactar, no dato del
  *  indicador: la causa que reportó el supervisor el día que no salió y las
@@ -53,8 +62,19 @@ interface Cierre {
   cierre_semana_siguiente?: boolean
   cerrado_en?: string
   cerrado_por?: string | null
+  /** 0040 — de dónde sale la marca de «no planificada»: del compromiso
+   *  congelado (exacto, no se discute) o de la fecha de creación (deducido). */
+  compromiso?: 'congelado' | 'deducido'
+  comprometido_en?: string | null
+  sin_clasificar?: number
+  motivos?: Record<string, string>
+  hh_total?: number
+  hh_no_planificadas?: number
+  hh_sin_actividad?: number
+  ratio_no_planificado?: number | null
 }
-type Ajuste = { cumplida?: boolean; no_planificada?: boolean; causa_cat?: string; causa?: string }
+type Ajuste = { cumplida?: boolean; no_planificada?: boolean; causa_cat?: string; causa?: string
+  no_plan_motivo?: string | null }
 
 const DIAS = ['', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
 const inputCls = 'bg-k-raised border border-k-border rounded-lg px-2 py-1.5 text-xs text-k-text outline-none focus:border-k-amber'
@@ -103,6 +123,18 @@ export default function CierreSemana({ proyectoId = 1, lunes, onLunes }: {
   const reabrir = useMutation({
     mutationFn: () => api(`/ev/programacion/cierre-semana?lunes=${lunes}&proyecto_id=${proyectoId}`,
       { method: 'DELETE' }),
+    onSuccess: refrescar,
+    onError: (e: Error) => setErr(e.message),
+  })
+  // Congelar el compromiso al inicio de la semana. Reemplaza el proxy «nació
+  // después del lunes», que marcaba como no planificado un plan acordado el
+  // lunes y tecleado el martes, y permitía desmarcar al cerrar —convirtiendo la
+  // omisión propia en compromiso cumplido— sin dejar rastro.
+  const comprometer = useMutation({
+    mutationFn: () => api('/ev/programacion/plan-semana', {
+      method: 'POST',
+      body: JSON.stringify({ lunes, proyecto_id: proyectoId }),
+    }),
     onSuccess: refrescar,
     onError: (e: Error) => setErr(e.message),
   })
@@ -228,6 +260,22 @@ export default function CierreSemana({ proyectoId = 1, lunes, onLunes }: {
               PPC {d?.cerrada ? 'congelado' : 'propuesto'}
             </div>
           </div>
+          {/* Indicador PAR del PPC: cuántas de las horas de la semana se fueron
+              en trabajo que nadie comprometió. Va al lado y NO dentro — un PPC
+              que incluyera esto premiaría improvisar. */}
+          <div>
+            <div className={`font-mono text-2xl font-medium ${
+              d?.ratio_no_planificado == null ? 'text-k-text3'
+                : d.ratio_no_planificado <= 0.15 ? 'text-k-green'
+                  : d.ratio_no_planificado <= 0.30 ? 'text-k-alerta' : 'text-k-red'}`}>
+              {d?.ratio_no_planificado == null ? '—'
+                : `${Math.round(d.ratio_no_planificado * 100)}%`}
+            </div>
+            <div className="text-[10px] uppercase text-k-text3 tracking-wide"
+              title={`${d?.hh_no_planificadas ?? 0} de ${d?.hh_total ?? 0} HH del tareo de la semana`}>
+              HH no planificadas
+            </div>
+          </div>
           <div className="text-[11px] text-k-text2 leading-relaxed">
             <div>{cumplidas} de {comprometidas.length} comprometidas</div>
             {filas.some(a => a.no_planificada) && (
@@ -257,6 +305,39 @@ export default function CierreSemana({ proyectoId = 1, lunes, onLunes }: {
         </div>
 
         {err && <p className="text-k-red text-xs">{err}</p>}
+
+        {/* De dónde sale la marca de «no planificada». Deducida por fecha de
+            creación admite discusión —y se puede desmarcar al cerrar sin que
+            nadie lo note—; congelada en la reunión, no. */}
+        {!d?.cerrada && d?.compromiso === 'deducido' && (
+          <div className="flex items-start gap-2 flex-wrap bg-k-raised/50 border border-k-border
+            rounded-lg px-3 py-2">
+            <p className="text-[11px] text-k-text2 flex-1 min-w-[220px] leading-relaxed">
+              <b>Esta semana no está comprometida.</b> Lo «no planificado» se está deduciendo de
+              la fecha en que se creó cada actividad, y eso marca de más un plan que se acordó el
+              lunes y se tecleó el martes. Comprometer la semana congela el conjunto: desde ahí,
+              lo que entre es no planificado sin nada que discutir.
+            </p>
+            <button onClick={() => comprometer.mutate()} disabled={comprometer.isPending || !filas.length}
+              className="btn btn-secundario btn-sm disabled:opacity-40">
+              {comprometer.isPending ? <Loader2 size={13} className="animate-spin" /> : <Lock size={13} />}
+              Comprometer la semana
+            </button>
+          </div>
+        )}
+        {!d?.cerrada && d?.compromiso === 'congelado' && (
+          <p className="text-[11px] text-k-green">
+            Compromiso congelado{d.comprometido_en ? ` el ${fmtDia(d.comprometido_en.slice(0, 10))}` : ''}:
+            lo que entró después no cuenta en el PPC, y no hace falta discutirlo.
+          </p>
+        )}
+        {!d?.cerrada && (d?.sin_clasificar ?? 0) > 0 && (
+          <p className="text-[11px] text-k-alerta">
+            <b>{d?.sin_clasificar}</b> no planificada(s) sin motivo. Clasificarlas es lo que
+            separa la omisión del planner del imprevisto real — son dos problemas distintos con
+            dos soluciones distintas.
+          </p>
+        )}
         {!d?.cerrada && sinCausa > 0 && (
           <p className="text-[11px] text-k-alerta">
             <b>{sinCausa}</b> sin categoría. Ponerla ahora es lo que hace útil el Pareto — después
@@ -294,8 +375,9 @@ export default function CierreSemana({ proyectoId = 1, lunes, onLunes }: {
                     className={`border-t border-k-border ${a.no_planificada ? 'bg-amber-500/5' : ''}`}>
                     <td className="px-2 py-1.5">
                       <div className="text-k-text leading-tight">{a.titulo}</div>
-                      <div className="text-[10px] text-k-text3 flex items-center gap-1.5">
+                      <div className="text-[10px] text-k-text3 flex items-center gap-1.5 flex-wrap">
                         {a.supervisor_nombre ?? '—'}
+                        {!!a.hh && <span className="font-mono" title="Horas del tareo en esta actividad">{a.hh} HH</span>}
                         {a.no_planificada && (
                           <button disabled={d?.cerrada}
                             onClick={() => set(a.actividad_id, { no_planificada: false })}
@@ -303,6 +385,20 @@ export default function CierreSemana({ proyectoId = 1, lunes, onLunes }: {
                             className="text-k-alerta font-bold hover:underline disabled:no-underline">
                             no planificada ✕
                           </button>
+                        )}
+                        {/* El desmarque queda a la vista: un indicador que el
+                            evaluado puede editar sin dejar huella no aguanta una
+                            revisión. */}
+                        {a.no_plan_editada && (
+                          <span className="text-k-blue"
+                            title={`El sistema la propuso como ${a.no_plan_auto ? 'NO planificada' : 'comprometida'} y se cambió al cerrar${d?.cerrado_por ? ` (${d.cerrado_por})` : ''}`}>
+                            ✎ corregida al cerrar
+                          </span>
+                        )}
+                        {a.no_plan_desplaza_tit && (
+                          <span className="text-k-text3" title="Le quitó la cuadrilla a esta comprometida">
+                            desplazó a «{a.no_plan_desplaza_tit}»
+                          </span>
                         )}
                       </div>
                     </td>
@@ -314,10 +410,25 @@ export default function CierreSemana({ proyectoId = 1, lunes, onLunes }: {
                         : a.alcanzado >= a.comprometido ? 'text-k-green' : 'text-k-red'}`}>
                       {a.comprometido > 0 ? `${a.alcanzado}${und(a)}` : '—'}
                     </td>
+                    {/* En una fila NO PLANIFICADA el «¿cumplió?» no significa
+                        nada —está fuera del PPC—, así que ahí va lo que sí hace
+                        falta: por qué entró. */}
                     <td className="px-2 py-1.5 text-center">
-                      <input type="checkbox" checked={a.cumplida} disabled={d?.cerrada}
-                        onChange={e => set(a.actividad_id, { cumplida: e.target.checked })}
-                        title="El sistema lo propone por metrado; puedes corregirlo" />
+                      {a.no_planificada ? (
+                        <select className={`${inputCls} w-full max-w-[190px] ${
+                          a.no_plan_motivo ? '' : 'border-amber-500/50'}`}
+                          disabled={d?.cerrada} value={a.no_plan_motivo ?? ''}
+                          onChange={e => set(a.actividad_id,
+                            { no_plan_motivo: e.target.value || null })}>
+                          <option value="">¿Por qué entró?</option>
+                          {Object.entries(d?.motivos ?? {}).map(([k, v]) =>
+                            <option key={k} value={k}>{v}</option>)}
+                        </select>
+                      ) : (
+                        <input type="checkbox" checked={a.cumplida} disabled={d?.cerrada}
+                          onChange={e => set(a.actividad_id, { cumplida: e.target.checked })}
+                          title="El sistema lo propone por metrado; puedes corregirlo" />
+                      )}
                     </td>
                     {/* La categoría es para el Pareto (contar lo que se repite);
                         el DETALLE es para el cliente, que no entiende «Falta de
