@@ -109,8 +109,10 @@ export default function Programacion() {
   const [vista, setVista] = useState<'semana' | 'lookahead' | 'histograma' | 'ppc'>('semana')
   const [agruparSup, setAgruparSup] = useState(false)   // plan semanal separado por supervisor
   const [lunes, setLunes] = useState(() => iso(lunesDe(new Date())))
-  const [modalAct, setModalAct] = useState<{ modo: 'crear'; fecha: string } | { modo: 'editar'; act: Actividad } | null>(null)
-  const [modalLote, setModalLote] = useState<string | null>(null)   // fecha base del wizard por partidas
+  // `tipo` lo fija el paso 0 de ProgramarLote: 'libre' = actividad nuestra sin
+  // partida (fechas + plazo, sin metrado), 'externa' = la ejecuta otra empresa.
+  const [modalAct, setModalAct] = useState<{ modo: 'crear'; fecha: string; tipo?: 'libre' | 'externa' } | { modo: 'editar'; act: Actividad } | null>(null)
+  const [modalLote, setModalLote] = useState<string | null>(null)   // fecha base del wizard «Programar actividad»
   const [repVer, setRepVer] = useState<Reporte | null>(null)
   const [verAlmacen, setVerAlmacen] = useState(false)
   const [verParte, setVerParte] = useState(false)
@@ -157,8 +159,9 @@ export default function Programacion() {
             dos secundarias de uso diario y el resto —lo de una vez al mes—
             dentro de «Más». Antes eran seis botones idénticos compitiendo. */}
         <div className="flex items-center gap-2">
-          <button onClick={() => setModalLote(lunes)} className="btn btn-primario">
-            <Plus size={14} /> Programar por partidas
+          <button onClick={() => setModalLote(lunes)} className="btn btn-primario"
+            title="Partidas del presupuesto, actividad libre sin metrado o trabajo de otra empresa">
+            <Plus size={14} /> Programar actividad
           </button>
           {(porUbicar.data ?? []).length > 0 && (
             <button onClick={() => setVerUbicar(true)}
@@ -259,7 +262,7 @@ export default function Programacion() {
                   <div className={`text-[10px] uppercase font-bold ${esHoy ? 'text-k-green' : 'text-k-text3'}`}>{DIAS[i]}{esHoy ? ' · HOY' : ''}</div>
                   <div className="text-sm font-bold text-k-text">{fmtDia(f)}</div>
                 </div>
-                <button title="Programar en este día (por partidas)" onClick={() => setModalLote(f)}
+                <button title="Programar en este día" onClick={() => setModalLote(f)}
                   className="p-1 rounded-lg text-k-text3 hover:text-k-amber hover:bg-k-raised"><Plus size={15} /></button>
               </div>
               <div className="p-1.5 space-y-1.5 flex-1">
@@ -303,7 +306,9 @@ export default function Programacion() {
         <span className="text-k-amber font-bold">PROGRAMADO</span> lo crea el planner (asignado a un supervisor y una partida) ·
         pasa a <span className="text-k-green font-bold"> EJECUTADO</span> cuando llega el reporte de campo vinculado ·
         <span className="text-k-red font-bold"> NO CUMPLIDA</span> registra la causa (catálogo CNC) ·
-        ⛔ = restricciones pendientes de liberar.
+        ⛔ = restricciones pendientes de liberar ·
+        <span className="text-violet-300 font-bold"> EXTERNA</span> lo ejecuta otra empresa: ocupa su
+        sitio y arrastra nuestras fechas, pero no cuenta en el PPC.
       </p>
       </>}
 
@@ -311,7 +316,7 @@ export default function Programacion() {
         <ProgramarLote fechaBase={modalLote}
           onClose={() => setModalLote(null)}
           onCreado={() => { invalidar(); setModalLote(null) }}
-          onLibre={() => { const f = modalLote; setModalLote(null); setModalAct({ modo: 'crear', fecha: f }) }} />
+          onLibre={tipo => { const f = modalLote; setModalLote(null); setModalAct({ modo: 'crear', fecha: f, tipo }) }} />
       )}
       {modalAct && (
         <ModalActividad datos={modalAct} repsPorId={repsPorId}
@@ -328,16 +333,27 @@ function TarjetaActividad({ act, reps, onClick }: { act: Actividad; reps: Report
   const thumbs = reps.flatMap(r => r.fotos).filter(f => f.url_thumb).slice(0, 3)
   return (
     <div onClick={onClick}
-      className="rounded-lg border border-k-border bg-k-raised/60 hover:bg-k-raised cursor-pointer p-2 space-y-1">
+      className={`rounded-lg border cursor-pointer p-2 space-y-1 ${act.externa
+        ? 'border-violet-500/30 bg-violet-500/[0.07] hover:bg-violet-500/[0.12]'
+        : 'border-k-border bg-k-raised/60 hover:bg-k-raised'}`}>
       <div className="flex items-center gap-1 flex-wrap">
         {act.otm_id && <span className="font-mono text-[9px] px-1.5 py-0.5 rounded bg-blue-500/15 text-k-blue border border-blue-500/20">{act.otm_id}</span>}
+        {/* La marca de terceros también en el tablero semanal: aquí es donde el
+            planner reparte el trabajo del día y tiene que ver de un vistazo que
+            esta fila no la ejecuta su gente (ni cuenta en su PPC). */}
+        {act.externa && (
+          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded border text-violet-300 bg-violet-500/15 border-violet-500/30"
+            title={`Lo ejecuta ${act.empresa || 'otra empresa'} — no depende de nosotros y no entra al PPC`}>
+            EXTERNA
+          </span>
+        )}
         <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${ESTADO_CLR[act.estado]}`}>{ESTADO_LBL[act.estado]}</span>
         {(act.rest_pend ?? 0) > 0 && (
           <span className="text-[9px] font-bold px-1.5 py-0.5 rounded border text-k-red bg-red-500/10 border-red-500/30"
             title={`${act.rest_pend} restricción(es) pendiente(s) de liberar`}>⛔ {act.rest_pend}</span>
         )}
       </div>
-      <div className="text-[12px] text-k-text leading-snug">{act.titulo}</div>
+      <div className={`text-[12px] leading-snug ${act.externa ? 'text-k-text2 italic' : 'text-k-text'}`}>{act.titulo}</div>
       {act.partida_codigo && (
         <div className="text-[10px] text-k-text3 font-mono truncate" title={`${act.partida_codigo} — ${act.partida_desc ?? ''}`}>
           {act.partida_codigo} {act.partida_desc ? `· ${act.partida_desc.slice(0, 30)}` : ''}
@@ -393,7 +409,7 @@ function TarjetaReporte({ rep, onClick }: { rep: Reporte; onClick: () => void })
 }
 
 function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
-  datos: { modo: 'crear'; fecha: string } | { modo: 'editar'; act: Actividad }
+  datos: { modo: 'crear'; fecha: string; tipo?: 'libre' | 'externa' } | { modo: 'editar'; act: Actividad }
   repsPorId: Map<number, Reporte>
   onClose: () => void
   onChange: () => void
@@ -401,6 +417,10 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
 }) {
   const editar = datos.modo === 'editar'
   const act = editar ? datos.act : null
+  // Alta declarada «sin metrado» (libre o de terceros): el tercer campo es el
+  // PLAZO en días, no el metrado. El metrado solo existe con partida detrás —
+  // sin ella no hay dónde anotar el avance y el PPC la daría por no cumplida.
+  const sinMetrado = !editar && datos.tipo != null
   const [form, setForm] = useState({
     titulo: act?.titulo ?? '', otm_id: act?.otm_id ?? '', descripcion: act?.descripcion ?? '',
     responsable: act?.responsable ?? '', supervisor_id: act?.supervisor_id ?? '',
@@ -417,7 +437,7 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
     dias_medio: act?.dias_medio ?? [],
     // 0042 · trabajo de terceros: ocupa sitio en el cronograma y arrastra
     // nuestras fechas, pero no es un compromiso nuestro.
-    externa: act?.externa ?? false,
+    externa: act?.externa ?? (datos.modo === 'crear' && datos.tipo === 'externa'),
     empresa: act?.empresa ?? '',
     plazo_dias: act?.plazo_dias != null ? String(act.plazo_dias) : '',
   })
@@ -542,7 +562,12 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
       <div className="bg-k-surface border border-k-border rounded-xl p-5 w-[520px] max-h-[85vh] overflow-auto" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-3">
-          <h2 className="font-bold text-k-text">{editar ? 'Actividad' : 'Programar actividad'}</h2>
+          <h2 className="font-bold text-k-text">
+            {editar ? 'Actividad'
+              : form.externa ? 'Programar trabajo de otra empresa'
+              : sinMetrado ? 'Programar actividad libre'
+              : 'Programar actividad'}
+          </h2>
           <div className="flex items-center gap-2">
             {act && <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${ESTADO_CLR[act.estado]}`}>{ESTADO_LBL[act.estado]}</span>}
             <button onClick={onClose} className="text-k-text3 hover:text-k-text"><X size={18} /></button>
@@ -557,6 +582,7 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
               el caso normal no hay que escribir nada aquí. */}
           <input placeholder={form.externa
             ? 'Ej.: ELECTRO SAC — Montaje de bandejas'
+            : sinMetrado ? 'Ej.: Montaje de andamios — zona norte'
             : 'Nombre de la actividad (se completa al elegir la partida)'}
             value={form.titulo} title="Lo que se lee en la fila del LookAhead y en la agenda del supervisor. Puede llevar la etapa o la zona; la partida puede llamarse distinto."
             onChange={e => setForm({ ...form, titulo: e.target.value })} className={inputCls} autoFocus={!editar} />
@@ -601,13 +627,15 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
               <input type="date" value={form.fecha_fin ?? ''} min={form.fecha}
                 onChange={e => setForm({ ...form, fecha_fin: e.target.value })} className={inputCls} />
             </div>
-            {form.externa ? (
-              // Así es como te dan el dato: «nos toma 10 días». El API deriva la
+            {form.externa || (sinMetrado && !form.partida_id) ? (
+              // Así es como llega el dato: «nos toma 10 días». El API deriva la
               // F.Fin saltando los no laborables (mismo cálculo que el resto del
               // LookAhead), así que no hay que contar días a mano en el calendario.
+              // Si luego se elige una partida, vuelve el metrado: ahí sí hay
+              // dónde anotar el avance.
               <div>
                 <label className="text-[9px] uppercase font-bold text-k-text3"
-                  title="Días hábiles que dijeron que les toma. Se calcula la F.Fin saltando domingos y feriados.">
+                  title="Días hábiles que dura. Se calcula la F.Fin saltando domingos y feriados; también puedes poner la F.Fin a mano.">
                   Plazo (días)
                 </label>
                 <input placeholder="10" inputMode="numeric" value={form.plazo_dias}
@@ -745,7 +773,7 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
               onListo={n => {
                 setLotePartidas(false)
                 setAvisoLote(`✓ ${n} partida(s) creadas. Elige aquí la de esta actividad; para programar`
-                  + ' las demás de un golpe usa «Programar por partidas» en la cabecera.')
+                  + ' las demás de un golpe usa «Programar actividad» en la cabecera.')
                 partidas.refetch()
               }} />
           )}

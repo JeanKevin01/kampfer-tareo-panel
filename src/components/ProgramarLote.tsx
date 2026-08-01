@@ -1,11 +1,17 @@
-// Programar por partidas (flujo LookAhead pedido por Jean 2026-07-11):
+// Programar actividad — ÚNICA puerta de entrada del LookAhead (Jean 2026-08-01):
+// paso 0 elige QUÉ se programa (partidas del presupuesto · actividad libre ·
+// trabajo de otra empresa) y de ahí cada camino sigue su flujo. Antes el botón
+// entraba directo al wizard de partidas y los otros dos caminos quedaban
+// escondidos dentro del formulario de actividad: nadie los encontraba.
+//
+// Camino «partidas» (flujo LookAhead pedido por Jean 2026-07-11):
 // 1) eliges el proyecto → 2) ves el árbol del presupuesto (como Valor Ganado ·
 // Partidas) y marcas una o VARIAS partidas → 3) a cada una le pones F.Inic,
 // F.Fin (opcional) y el metrado meta (prellenado con el del presupuesto).
 // El API crea una actividad por partida y prorratea el metrado entre los días.
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { X, Loader2, ChevronRight, Search } from 'lucide-react'
+import { X, Loader2, ChevronRight, Search, ListTree, PencilLine, Building2 } from 'lucide-react'
 import { api } from '@/lib/api'
 
 const PROYECTO_ID = 1
@@ -24,18 +30,46 @@ interface ItemSel { fecha: string; fecha_fin: string; metrado: string; hitos?: I
 const numV = (v: number | string | null | undefined) => {
   const n = Number(v); return Number.isFinite(n) && n !== 0 ? n : null
 }
+const fmtFecha = (f: string) =>
+  new Date(f + 'T12:00:00').toLocaleDateString('es-PE', { weekday: 'long', day: 'numeric', month: 'long' })
+
+// Tarjeta de camino del paso 0. El color no es decoración: es el mismo que la
+// fila lleva después en el LookAhead (ámbar = producción, violeta = terceros).
+const CAMINO = {
+  amber: 'border-amber-500/30 hover:border-amber-500/70 hover:bg-amber-500/[0.07] text-k-amber',
+  blue: 'border-blue-500/30 hover:border-blue-500/70 hover:bg-blue-500/[0.07] text-k-blue',
+  violet: 'border-violet-500/30 hover:border-violet-500/70 hover:bg-violet-500/[0.07] text-violet-300',
+} as const
+
+function Camino({ color, icono, titulo, sub, onClick }: {
+  color: keyof typeof CAMINO; icono: ReactNode; titulo: string; sub: string; onClick: () => void
+}) {
+  return (
+    <button onClick={onClick}
+      className={`w-full flex items-start gap-3 text-left rounded-xl border bg-k-raised/40 px-3.5 py-3 transition-colors ${CAMINO[color]}`}>
+      <span className="mt-0.5 flex-shrink-0">{icono}</span>
+      <span className="flex-1 min-w-0">
+        <span className="block text-sm font-bold text-k-text">{titulo}</span>
+        <span className="block text-[11px] text-k-text3 leading-relaxed">{sub}</span>
+      </span>
+      <ChevronRight size={16} className="mt-1 flex-shrink-0" />
+    </button>
+  )
+}
 
 export function ProgramarLote({ fechaBase, onClose, onCreado, onLibre }: {
   fechaBase: string
   onClose: () => void
   onCreado: () => void
-  onLibre: () => void          // abre el formulario clásico (actividad sin partida)
+  // abre el formulario de actividad suelta: 'libre' = trabajo nuestro sin
+  // partida, 'externa' = lo ejecuta otra empresa (0042)
+  onLibre: (tipo: 'libre' | 'externa') => void
 }) {
   const qc = useQueryClient()
   const [otm, setOtm] = useState('')
   const [filtro, setFiltro] = useState('')
   const [sel, setSel] = useState<Map<number, ItemSel>>(new Map())
-  const [paso, setPaso] = useState<1 | 2>(1)
+  const [paso, setPaso] = useState<0 | 1 | 2>(0)
   const [comun, setComun] = useState({ supervisor_id: '', responsable: '', descripcion: '' })
   const [error, setError] = useState('')
 
@@ -127,18 +161,46 @@ export function ProgramarLote({ fechaBase, onClose, onCreado, onLibre }: {
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-k-surface border border-k-border rounded-xl p-5 w-[860px] max-w-[96vw] max-h-[88vh] overflow-auto" onClick={e => e.stopPropagation()}>
+      {/* El paso 0 son tres tarjetas: a 860px quedarían nadando. El árbol de
+          partidas sí necesita todo el ancho. */}
+      <div className={`bg-k-surface border border-k-border rounded-xl p-5 max-w-[96vw] max-h-[88vh] overflow-auto ${
+        paso === 0 ? 'w-[560px]' : 'w-[860px]'}`} onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-1">
-          <h2 className="font-bold text-k-text">Programar por partidas <span className="text-k-text3 font-normal text-xs">(LookAhead)</span></h2>
+          <h2 className="font-bold text-k-text">Programar actividad <span className="text-k-text3 font-normal text-xs">(LookAhead)</span></h2>
           <button onClick={onClose} className="text-k-text3 hover:text-k-text"><X size={18} /></button>
         </div>
-        <p className="text-[11px] text-k-text3 mb-3">
-          Marca las partidas del presupuesto que se trabajarán; el metrado meta se prellena con el del
-          presupuesto y se prorratea solo entre F.Inicio y F.Fin.{' '}
-          <button onClick={onLibre} className="text-k-amber underline">¿Actividad libre sin partida?</button>
-        </p>
+
+        {/* Paso 0: QUÉ se programa. Los tres caminos que existen, cada uno con lo
+            que lo distingue de verdad: si tiene metrado y si entra al PPC. */}
+        {paso === 0 && <>
+          <p className="text-[11px] text-k-text3 mb-3">
+            Elige qué vas a programar el <b className="text-k-text2">{fmtFecha(fechaBase)}</b>.
+            Todas se vinculan igual entre sí (FS/SS/FF, cascada, medios días).
+          </p>
+          <div className="space-y-2">
+            <Camino color="amber" icono={<ListTree size={18} />}
+              titulo="Partidas del presupuesto"
+              sub="Una o varias de golpe. Heredan metrado, unidad y HH: alimentan el valor ganado y el PPC."
+              onClick={() => setPaso(1)} />
+            <Camino color="blue" icono={<PencilLine size={18} />}
+              titulo="Actividad libre (sin metrado)"
+              sub="Trabajo nuestro que no está en el presupuesto: montaje de andamios, traslados, pruebas. Fechas y plazo en días. Sí entra al PPC."
+              onClick={() => onLibre('libre')} />
+            <Camino color="violet" icono={<Building2 size={18} />}
+              titulo="Lo ejecuta otra empresa"
+              sub="El plazo que te dio el contratista. Arrastra tus fechas por los vínculos pero NO entra al PPC: su atraso no es tu incumplimiento."
+              onClick={() => onLibre('externa')} />
+          </div>
+        </>}
 
         {/* Paso 1: OTM + árbol de partidas */}
+        {paso === 1 && (
+          <p className="text-[11px] text-k-text3 mb-3">
+            <button onClick={() => setPaso(0)} className="text-k-text3 hover:text-k-text underline mr-1">← Cambiar tipo</button>
+            Marca las partidas del presupuesto que se trabajarán; el metrado meta se prellena con el del
+            presupuesto y se prorratea solo entre F.Inicio y F.Fin.
+          </p>
+        )}
         {paso === 1 && <>
           <div className="flex gap-2 mb-2">
             <select value={otm} onChange={e => { setOtm(e.target.value); setSel(new Map()) }} className={inputCls}

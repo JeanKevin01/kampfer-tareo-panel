@@ -847,7 +847,7 @@ export function LookaheadGrid({ onEditar, onProgramar }: {
                     </p>
                     {onProgramar && (
                       <button onClick={onProgramar} className="btn btn-primario mx-auto">
-                        ＋ Programar por partidas
+                        ＋ Programar actividad
                       </button>
                     )}
                     <p className="text-[11px] text-k-text3">

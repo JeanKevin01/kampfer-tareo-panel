@@ -136,9 +136,10 @@ function Contenido({ tema }: { tema: Tema }) {
         la <b>línea base</b> contra la que después se compara todo.
       </P>
       <P>
-        Para varias partidas de golpe usa <b>Programar por partidas</b> en la cabecera: eliges el
-        proyecto, marcas partidas del árbol y pones fechas y metrado a cada una. El metrado viene ya
-        propuesto desde el presupuesto.
+        Todo se programa desde <b>Programar actividad</b>, en la cabecera. Ahí eliges entre tres
+        caminos: <b>partidas del presupuesto</b> (varias de golpe, con el metrado ya propuesto desde
+        el presupuesto), <b>actividad libre</b> sin metrado (fechas y plazo en días) y{' '}
+        <b>lo ejecuta otra empresa</b>, que ocupa su sitio y arrastra tus fechas pero no entra al PPC.
       </P>
       <H>2 · Anotar el avance del día</H>
       <P>
