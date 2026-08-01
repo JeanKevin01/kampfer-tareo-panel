@@ -13,6 +13,7 @@ import { Loader2, Lock, LockOpen, ChevronLeft, ChevronRight } from 'lucide-react
 
 import HistorialSemana from '@/components/HistorialSemana'
 import { api } from '@/lib/api'
+import { currentUser } from '@/lib/auth'
 import { fmtDia } from '@/lib/lookahead'
 import { lunesDe, iso } from '@/lib/semana'
 
@@ -115,11 +116,18 @@ export default function CierreSemana({ proyectoId = 1, lunes, onLunes }: {
     qc.invalidateQueries({ queryKey: ['cierre-semana'] })
     qc.invalidateQueries({ queryKey: ['ppc'] })
   }
+  // Quién hace el acto. Va a la bitácora (0041) y a `cerrado_por`: un registro de
+  // auditoría sin autor no sirve para responder «¿quién reabrió esta semana?».
+  // El nombre real si el token lo trae; si no, el usuario. Nunca vacío.
+  const actor = () => {
+    const u = currentUser()
+    return (u?.nombre || u?.username || '').trim() || null
+  }
   const cerrar = useMutation({
     mutationFn: () => api('/ev/programacion/cierre-semana', {
       method: 'POST',
       body: JSON.stringify({
-        lunes, proyecto_id: proyectoId,
+        lunes, proyecto_id: proyectoId, cerrado_por: actor(),
         actividades: Object.entries(ajustes).map(([id, a]) => ({ actividad_id: Number(id), ...a })),
       }),
     }),
@@ -127,8 +135,8 @@ export default function CierreSemana({ proyectoId = 1, lunes, onLunes }: {
     onError: (e: Error) => setErr(e.message),
   })
   const reabrir = useMutation({
-    mutationFn: () => api(`/ev/programacion/cierre-semana?lunes=${lunes}&proyecto_id=${proyectoId}`,
-      { method: 'DELETE' }),
+    mutationFn: () => api(`/ev/programacion/cierre-semana?lunes=${lunes}&proyecto_id=${proyectoId}`
+      + `&actor=${encodeURIComponent(actor() ?? '')}`, { method: 'DELETE' }),
     onSuccess: refrescar,
     onError: (e: Error) => setErr(e.message),
   })
@@ -139,7 +147,7 @@ export default function CierreSemana({ proyectoId = 1, lunes, onLunes }: {
   const comprometer = useMutation({
     mutationFn: () => api('/ev/programacion/plan-semana', {
       method: 'POST',
-      body: JSON.stringify({ lunes, proyecto_id: proyectoId }),
+      body: JSON.stringify({ lunes, proyecto_id: proyectoId, comprometido_por: actor() }),
     }),
     onSuccess: refrescar,
     onError: (e: Error) => setErr(e.message),
