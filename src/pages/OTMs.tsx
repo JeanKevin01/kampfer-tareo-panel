@@ -11,7 +11,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Search, Plus, X, Loader2, ChevronDown, Upload, Download, FileSpreadsheet, CheckCircle, AlertTriangle } from 'lucide-react'
 import * as XLSX from 'xlsx'
 
-import { api, ApiError } from '@/lib/api'
+import { api, ApiError, descargarPlantilla } from '@/lib/api'
 
 interface Proyecto {
   id: string; descripcion: string; estado: string; area?: string; centro_costo?: string
@@ -69,38 +69,6 @@ export default function OTMs() {
   } | null>(null)
   const [porConfirmar, setPorConfirmar] = useState<{ fila: number; nombre: string; similares: Similar[] }[]>([])
   const [payloadEnviado, setPayloadEnviado] = useState<Record<string, unknown>[]>([])
-
-  function descargarPlantilla() {
-    const datos = [
-      { NOMBRE: 'MONTAJE ESTRUCTURA M-12', AREA: 'PLANTA', ESTADO: 'EJECUCION',
-        CENTRO_COSTO: '', MONEDA: 'PEN', PLAZO: 30, 'FECHA DE INICIO': '2026-01-06',
-        'MONTO CONTRACTUAL': 125000, 'MONTO VALORIZADO': 0, ID: '' },
-      { NOMBRE: 'REUBICACION NIDO DE CICLONES', AREA: 'MINA', ESTADO: 'POR INICIAR',
-        CENTRO_COSTO: '', MONEDA: 'USD', PLAZO: 45, 'FECHA DE INICIO': '2026-01-13',
-        'MONTO CONTRACTUAL': 280000, 'MONTO VALORIZADO': 0, ID: '' },
-    ]
-    const ws = XLSX.utils.json_to_sheet(datos, {
-      header: ['NOMBRE','AREA','ESTADO','CENTRO_COSTO','MONEDA','PLAZO',
-               'FECHA DE INICIO','MONTO CONTRACTUAL','MONTO VALORIZADO','ID'],
-    })
-    ws['!cols'] = [{ wch: 38 }, { wch: 16 }, { wch: 14 }, { wch: 16 }, { wch: 8 },
-                   { wch: 8 }, { wch: 14 }, { wch: 16 }, { wch: 16 }, { wch: 12 }]
-    const leyenda = XLSX.utils.aoa_to_sheet([
-      ['CAMPO', 'VALORES VÁLIDOS / NOTA'],
-      ['ESTADO', ESTADOS.map(e => `${e} (${ESTADO_DESC[e]})`).join(' · ')],
-      ['MONEDA', 'PEN (soles) o USD (dólares) — default PEN'],
-      ['FECHA DE FIN', 'NO se pide: se calcula sola como FECHA DE INICIO + PLAZO (días)'],
-      ['ID', 'Déjalo VACÍO para proyecto nuevo (se genera PROY-#### solo). ' +
-             'Pon un ID existente (ej. PROY-0003) SOLO para actualizar ese proyecto.'],
-      ['DUPLICADOS', 'Si el nombre es parecido o el monto contractual está a menos de 100 ' +
-                     'de un proyecto ya cargado, el sistema pedirá confirmación antes de crear.'],
-    ])
-    leyenda['!cols'] = [{ wch: 16 }, { wch: 100 }]
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, 'PROYECTOS')
-    XLSX.utils.book_append_sheet(wb, leyenda, 'LEYENDA')
-    XLSX.writeFile(wb, 'plantilla_proyectos_kampfer.xlsx')
-  }
 
   function handleImportFile(file: File) {
     const reader = new FileReader()
@@ -512,7 +480,7 @@ export default function OTMs() {
                     El código PROY-#### se genera solo (columna ID únicamente para ACTUALIZAR uno existente).
                     La F.Fin se calcula: inicio + plazo. Ver hoja LEYENDA de la plantilla.
                   </p>
-                  <button onClick={descargarPlantilla}
+                  <button onClick={() => descargarPlantilla('proyectos', 'plantilla_proyectos.xlsx')}
                     className="flex items-center gap-1.5 text-xs font-bold text-k-amber bg-amber-500/10 border border-amber-500/20 px-3 py-2 rounded-lg hover:bg-amber-500/20 transition-colors flex-shrink-0">
                     <Download size={12} /> Plantilla
                   </button>

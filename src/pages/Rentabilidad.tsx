@@ -6,7 +6,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Loader2, Upload, Download, X, Plus, TrendingUp, DollarSign, Wallet, Percent } from 'lucide-react'
 import * as XLSX from 'xlsx'
 
-import { api } from '@/lib/api'
+import { api, descargarPlantilla } from '@/lib/api'
 const PROYECTO_ID = 1
 
 interface Fila {
@@ -111,17 +111,6 @@ export default function Rentabilidad() {
   const [aj, setAj] = useState({ tipo: 'ADICIONAL', fase: '', monto: '' })
 
   const t = ro.data?.totales
-
-  function descargarPlantilla() {
-    const datos = [
-      { FASE: '10', TIPO_RECURSO: 'MAT', DIRECTO: 'SI', PERIODO: '2026-06-01', MONTO: 101073, FUENTE: 'Factura', NOTA: '' },
-      { FASE: '11', TIPO_RECURSO: 'SUB', DIRECTO: 'SI', PERIODO: '2026-06-01', MONTO: 13247, FUENTE: 'Subcontrato', NOTA: '' },
-      { FASE: '', TIPO_RECURSO: 'GG', DIRECTO: 'NO', PERIODO: '2026-06-01', MONTO: 60781, FUENTE: 'GG mes', NOTA: 'indirecto' },
-    ]
-    const ws = XLSX.utils.json_to_sheet(datos, { header: ['FASE', 'TIPO_RECURSO', 'DIRECTO', 'PERIODO', 'MONTO', 'FUENTE', 'NOTA'] })
-    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Costos')
-    XLSX.writeFile(wb, 'plantilla_costos_ro.xlsx')
-  }
 
   function parseArchivo(file: File) {
     setImpError('')
@@ -272,7 +261,7 @@ export default function Rentabilidad() {
             </div>
             <p className="text-xs text-k-text3 mb-3">La Mano de Obra NO se importa aquí: sale del tareo (HH×tarifa). Tipos válidos: MAT, EQP, EQT, SUB, DIR, GG.</p>
             <div className="flex items-center gap-2 mb-3">
-              <button onClick={descargarPlantilla} className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-k-border bg-k-raised text-k-text2 hover:bg-k-border">
+              <button onClick={() => descargarPlantilla('costos_ro', 'plantilla_costos_agregados_ro.xlsx')} className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-k-border bg-k-raised text-k-text2 hover:bg-k-border">
                 <Download size={14} /> Descargar plantilla
               </button>
               <label className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg bg-k-amber hover:bg-k-amber2 text-black font-bold cursor-pointer">

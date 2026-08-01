@@ -6,7 +6,7 @@ import {
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 
-import { api, apiBlob, descargarBlob, ApiError } from '@/lib/api'
+import { api, descargarPlantilla, ApiError } from '@/lib/api'
 import { RECURSOS_APU, nombreLargo } from '@/lib/catalogos'
 
 const PROYECTO_ID = 1   // TODO: vendrá del selector de proyecto (tenant) cuando se active el scoping
@@ -116,16 +116,6 @@ export default function Presupuesto() {
     onError: (e: Error) => alert(e.message),
   })
 
-  function descargarPlantilla() {
-    const datos = [
-      { CODIGO: '10.01', DESCRIPCION: 'Movilización', UNIDAD: 'GLB', FASE: '10', SUB_FASE: '10.01', METRADO: 1, PRECIO_UNITARIO: 2500, HH_META: 200 },
-      { CODIGO: '40.01.01', DESCRIPCION: 'Acero en zapatas', UNIDAD: 'KG', FASE: '40', SUB_FASE: '40.01', METRADO: 168375, PRECIO_UNITARIO: 2.5, HH_META: 12576 },
-    ]
-    const ws = XLSX.utils.json_to_sheet(datos, { header: ['CODIGO', 'DESCRIPCION', 'UNIDAD', 'FASE', 'SUB_FASE', 'METRADO', 'PRECIO_UNITARIO', 'HH_META'] })
-    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Presupuesto')
-    XLSX.writeFile(wb, 'plantilla_presupuesto.xlsx')
-  }
-
   function parseArchivo(file: File) {
     setImportError('')
     const reader = new FileReader()
@@ -190,7 +180,7 @@ export default function Presupuesto() {
         ) : (
           <button onClick={() => setShowImportPU(true)}
             className="flex items-center gap-2 bg-k-amber hover:bg-k-amber2 text-black font-bold text-sm px-4 py-2.5 rounded-lg transition-colors">
-            <Upload size={16} /> Importar plantilla PU (.xls)
+            <Upload size={16} /> Importar plantilla PU
           </button>
         )}
       </div>
@@ -230,7 +220,7 @@ export default function Presupuesto() {
           {versionesTipo.length === 0 && (
             <p className="text-k-text3 text-sm">
               {tipo === 'META'
-                ? 'Aún no hay presupuesto META. Impórtalo desde la plantilla PU (.xls) del presupuesto.'
+                ? 'Aún no hay presupuesto META. Impórtalo desde la plantilla PU del presupuesto.'
                 : 'Aún no hay versiones. Crea la primera (puedes sembrarla desde las partidas actuales).'}
             </p>
           )}
@@ -317,7 +307,7 @@ export default function Presupuesto() {
               <button onClick={() => setShowImport(false)} className="text-k-text3 hover:text-k-text"><X size={18} /></button>
             </div>
             <div className="flex items-center gap-2 mb-3">
-              <button onClick={descargarPlantilla}
+              <button onClick={() => descargarPlantilla('presupuesto', 'plantilla_presupuesto_control.xlsx')}
                 className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-k-border bg-k-raised text-k-text2 hover:bg-k-border">
                 <Download size={14} /> Descargar plantilla
               </button>
@@ -486,7 +476,7 @@ function FilaMeta({ linea: r }: { linea: Linea }) {
   )
 }
 
-// ── Modal: importar plantilla PU (.xls) → preview → confirmar ──
+// ── Modal: importar plantilla PU (.xlsx o .xls) → preview → confirmar ──
 function ModalImportPU({ onClose, onDone }: { onClose: () => void; onDone: (id: number) => void }) {
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<{ resumen: ResumenImportPU; muestra: Linea[] } | null>(null)
@@ -494,7 +484,7 @@ function ModalImportPU({ onClose, onDone }: { onClose: () => void; onDone: (id: 
 
   const subir = useMutation({
     mutationFn: async (confirmar: boolean) => {
-      if (!file) throw new Error('Elige el archivo .xls')
+      if (!file) throw new Error('Elige el archivo del presupuesto')
       const fd = new FormData()
       fd.append('file', file)
       return api(`/ev/presupuesto/importar-pu?proyecto_id=${PROYECTO_ID}&confirmar=${confirmar}`,
@@ -522,19 +512,19 @@ function ModalImportPU({ onClose, onDone }: { onClose: () => void; onDone: (id: 
           <button onClick={onClose} className="text-k-text3 hover:text-k-text"><X size={18} /></button>
         </div>
         <p className="text-xs text-k-text3 mb-4">
-          El .xls con hojas <b>PtoMeta</b> y <b>PU-Meta</b> (formato del presupuesto meta con APU).
+          El Excel con hojas <b>PtoMeta</b> y <b>PU-Meta</b>. Sirve tanto la plantilla nueva (.xlsx) como el presupuesto de siempre (.xls).
           Crea una versión nueva en borrador; nada se activa hasta que la congeles.
         </p>
 
         <div className="flex items-center gap-2 mb-3">
           <label className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg bg-k-amber hover:bg-k-amber2 text-black font-bold cursor-pointer w-fit">
-            <Upload size={14} /> {file ? file.name : 'Elegir archivo .xls'}
-            <input type="file" accept=".xls" className="hidden"
+            <Upload size={14} /> {file ? file.name : 'Elegir archivo'}
+            <input type="file" accept=".xlsx,.xls" className="hidden"
               onChange={e => { setFile(e.target.files?.[0] ?? null); setPreview(null); setError('') }} />
           </label>
           <button
             onClick={async () => {
-              try { descargarBlob(await apiBlob('/ev/presupuesto/plantilla-pu'), 'plantilla_pu.xls') }
+              try { await descargarPlantilla('pu', 'plantilla_presupuesto_meta_pu.xlsx') }
               catch (e) { setError((e as Error).message) }
             }}
             className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-k-border bg-k-raised text-k-text2 hover:bg-k-border">

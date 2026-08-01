@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as XLSX from 'xlsx'
 import { Upload, FileSpreadsheet, CheckCircle, XCircle, Loader2, Download, X, UserCog, HardHat } from 'lucide-react'
 
-import { api } from '@/lib/api'
+import { api, descargarPlantilla } from '@/lib/api'
 
 interface Fila {
   nombre: string; cargo: string; dni: string; tipo: string
@@ -41,21 +41,6 @@ function normalizar(obj: Record<string, unknown>) {
     tipo:   tipoRaw === 'INDIRECTO' ? 'INDIRECTO' : 'DIRECTO',
     es_sup,
   }
-}
-
-function descargarPlantilla() {
-  const datos = [
-    { NOMBRE: 'GARCIA FLORES JUAN PABLO', CARGO: 'OFICIAL MECANICO',      DNI: '12345678', TIPO: 'DIRECTO',   ES_SUPERVISOR: 'NO' },
-    { NOMBRE: 'QUISPE MAMANI ROSA',       CARGO: 'LIDER MECANICO',        DNI: '87654321', TIPO: 'DIRECTO',   ES_SUPERVISOR: 'NO' },
-    { NOMBRE: 'LOPEZ TORRES CARLOS',      CARGO: 'CONDUCTOR',             DNI: '',         TIPO: 'INDIRECTO', ES_SUPERVISOR: 'NO' },
-    { NOMBRE: 'RIOS HUANCA JUAN',         CARGO: 'SUPERVISOR DE CALIDAD', DNI: '11223344', TIPO: 'INDIRECTO', ES_SUPERVISOR: 'NO' },
-    { NOMBRE: 'MAMANI CCOPA DAVID',       CARGO: 'SUPERVISOR DE CAMPO',   DNI: '55667788', TIPO: 'INDIRECTO', ES_SUPERVISOR: 'SI' },
-  ]
-  const ws = XLSX.utils.json_to_sheet(datos, { header: ['NOMBRE','CARGO','DNI','TIPO','ES_SUPERVISOR'] })
-  ws['!cols'] = [{ wch: 40 }, { wch: 25 }, { wch: 12 }, { wch: 12 }, { wch: 14 }]
-  const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, ws, 'Personal')
-  XLSX.writeFile(wb, 'plantilla_personal_kampfer.xlsx')
 }
 
 export default function ImportarPersonal() {
@@ -263,7 +248,7 @@ export default function ImportarPersonal() {
               queda solo como personal indirecto. Reimportar no duplica: si la persona ya existe se reutiliza
               su ficha —y su contraseña— tal como está.
             </p>
-            <button onClick={e => { e.stopPropagation(); descargarPlantilla() }}
+            <button onClick={e => { e.stopPropagation(); descargarPlantilla('personal', 'plantilla_personal.xlsx') }}
               className="flex items-center gap-1.5 text-xs font-bold text-k-amber bg-amber-500/10 border border-amber-500/20 px-3 py-2 rounded-lg hover:bg-amber-500/20 transition-colors flex-shrink-0">
               <Download size={12} /> Plantilla
             </button>

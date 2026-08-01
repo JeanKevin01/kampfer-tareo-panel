@@ -1,8 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Loader2, Lock, Unlock, Upload, Trash2, X, Calendar, Download } from 'lucide-react'
-import * as XLSX from 'xlsx'
-import { api } from '@/lib/api'
+import { api, descargarPlantilla } from '@/lib/api'
 import {
   RECURSOS, RECURSOS_ALTA_MANUAL, TIPOS_DOC, TIPOS_DOC_ALTA_MANUAL,
   etiqueta, nombreLargo, type Fase, etiquetaFase, nombreFase,
@@ -206,7 +205,7 @@ export default function Costos() {
         </div>
       </div>
 
-      {showImport && <ModalImport fases={fases.data ?? []} onClose={() => { setShowImport(false); invalidar() }} />}
+      {showImport && <ModalImport onClose={() => { setShowImport(false); invalidar() }} />}
       {showNuevaFase && (
         <ModalNuevaFase
           onClose={() => setShowNuevaFase(false)}
@@ -255,34 +254,7 @@ function ModalNuevaFase({ onClose, onCreada }: { onClose: () => void; onCreada: 
   )
 }
 
-function descargarPlantillaCostos(fases: Fase[]) {
-  const wb = XLSX.utils.book_new()
-  const docsWs = XLSX.utils.json_to_sheet([
-    { PROVEEDOR: 'FERRETERIA EL SOL SAC', NUMERO_DOC: 'F001-000123', FECHA: '2026-07-05', TIPO_DOC: 'FACTURA',
-      TIPO_RECURSO: 'MAT', DIRECTO: 'SI', FASE: fases[0]?.codigo ?? '11', MONEDA: 'PEN', MONTO: 1250.5, GLOSA: 'Pernos y soldadura' },
-    { PROVEEDOR: 'GRUAS ANDINAS EIRL', NUMERO_DOC: 'F002-000456', FECHA: '2026-07-08', TIPO_DOC: 'OC',
-      TIPO_RECURSO: 'EQT', DIRECTO: 'SI', FASE: fases[0]?.codigo ?? '11', MONEDA: 'PEN', MONTO: 3800, GLOSA: 'Alquiler grúa 25t' },
-  ], { header: ['PROVEEDOR', 'NUMERO_DOC', 'FECHA', 'TIPO_DOC', 'TIPO_RECURSO', 'DIRECTO', 'FASE', 'MONEDA', 'MONTO', 'GLOSA'] })
-  docsWs['!cols'] = [{ wch: 28 }, { wch: 14 }, { wch: 12 }, { wch: 10 }, { wch: 13 }, { wch: 9 }, { wch: 8 }, { wch: 8 }, { wch: 10 }, { wch: 30 }]
-  XLSX.utils.book_append_sheet(wb, docsWs, 'DOCUMENTOS')
-
-  const leyenda = [
-    { CAMPO: 'TIPO_DOC', VALOR: '', SIGNIFICADO: 'Tipo de documento — valores válidos:' },
-    ...TIPOS_DOC_ALTA_MANUAL.map(t => ({ CAMPO: '', VALOR: t, SIGNIFICADO: TIPOS_DOC[t] })),
-    { CAMPO: 'TIPO_RECURSO', VALOR: '', SIGNIFICADO: 'Tipo de recurso — valores válidos (la MO no se importa: sale del tareo):' },
-    ...RECURSOS_ALTA_MANUAL.map(t => ({ CAMPO: '', VALOR: t, SIGNIFICADO: RECURSOS[t] })),
-    { CAMPO: 'DIRECTO', VALOR: 'SI / NO', SIGNIFICADO: 'SI = costo directo de obra · NO = indirecto (DIR y GG siempre son NO)' },
-    { CAMPO: 'FECHA', VALOR: 'YYYY-MM-DD', SIGNIFICADO: 'Determina el mes contable (el periodo debe estar ABIERTO)' },
-    { CAMPO: 'FASE', VALOR: '', SIGNIFICADO: 'Fases del catálogo del proyecto:' },
-    ...fases.map(f => ({ CAMPO: '', VALOR: f.codigo, SIGNIFICADO: f.nombre })),
-  ]
-  const leyWs = XLSX.utils.json_to_sheet(leyenda, { header: ['CAMPO', 'VALOR', 'SIGNIFICADO'] })
-  leyWs['!cols'] = [{ wch: 16 }, { wch: 14 }, { wch: 60 }]
-  XLSX.utils.book_append_sheet(wb, leyWs, 'LEYENDA')
-  XLSX.writeFile(wb, 'plantilla_costos_kampfer.xlsx')
-}
-
-function ModalImport({ fases, onClose }: { fases: Fase[]; onClose: () => void }) {
+function ModalImport({ onClose }: { onClose: () => void }) {
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<{ resumen: { filas: number; total: number; errores: string[] } } | null>(null)
   const [error, setError] = useState('')
@@ -307,7 +279,7 @@ function ModalImport({ fases, onClose }: { fases: Fase[]; onClose: () => void })
         <p className="text-xs text-k-text3 mb-3">
           Columnas: PROVEEDOR, NUMERO_DOC, FECHA (YYYY-MM-DD), TIPO_DOC, TIPO_RECURSO, DIRECTO, FASE, MONEDA, MONTO, GLOSA.
           Reimportar el mismo archivo REEMPLAZA sus documentos (idempotente).
-          La hoja LEYENDA de la plantilla lista los valores válidos y las fases del proyecto.
+          La plantilla trae los valores válidos y las fases de este proyecto en su hoja CATÁLOGOS, y avisa en rojo lo que falte.
         </p>
         <div className="flex items-center gap-2 mb-3">
           <label className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg bg-k-amber text-black font-bold cursor-pointer w-fit">
@@ -315,7 +287,7 @@ function ModalImport({ fases, onClose }: { fases: Fase[]; onClose: () => void })
             <input type="file" accept=".xlsx" className="hidden"
               onChange={e => { setFile(e.target.files?.[0] ?? null); setPreview(null); setError(''); setOk('') }} />
           </label>
-          <button onClick={() => descargarPlantillaCostos(fases)}
+          <button onClick={() => descargarPlantilla('costos', 'plantilla_costos_documentos.xlsx')}
             className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-k-border bg-k-raised text-k-text2 hover:bg-k-border">
             <Download size={14} /> Descargar plantilla
           </button>

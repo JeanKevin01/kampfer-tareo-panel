@@ -65,6 +65,17 @@ export async function apiBlob(path: string, init: RequestInit = {}): Promise<Blo
   return res.blob()
 }
 
+/** Descarga una plantilla Excel generada por el API.
+ *
+ *  Las plantillas ya no se arman aquí con SheetJS: la versión community
+ *  DESCARTA los estilos de celda en silencio, así que era imposible darles un
+ *  formato profesional. El API las genera con openpyxl —con colores,
+ *  desplegables y las instrucciones dentro— y además las rellena con los
+ *  catálogos reales del proyecto. Ver `plantillas/` en el API. */
+export async function descargarPlantilla(clave: string, nombre: string) {
+  descargarBlob(await apiBlob(`/ev/plantillas/${clave}`), nombre)
+}
+
 /** Dispara la descarga de un Blob en el navegador con el nombre dado. */
 export function descargarBlob(blob: Blob, nombre: string) {
   const url = URL.createObjectURL(blob)

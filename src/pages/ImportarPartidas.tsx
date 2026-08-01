@@ -20,7 +20,7 @@ import {
   Upload, FileSpreadsheet, CheckCircle, XCircle, Loader2, Download, X, AlertTriangle,
 } from 'lucide-react'
 
-import { api } from '@/lib/api'
+import { api, descargarPlantilla } from '@/lib/api'
 
 interface OTMItem { otm_id: string; descripcion?: string; partidas: number }
 
@@ -89,27 +89,6 @@ function leerHitosEnLinea(n: Record<string, string>): HitoFila[] {
     hitos[maxIdx].es_principal = true
   }
   return hitos
-}
-
-function descargarPlantilla() {
-  // Una sola hoja. Nodos PADRE: FASE vacía (solo agrupan). Nodos HOJA: FASE llena.
-  // Los hitos van en línea: por cada hito su descripción y su peso (decimales que suman 1.00).
-  const partidas = [
-    { CODIGO:'02',             FASE:'',    DESCRIPCION:'TRABAJOS GENERALES',             UNIDAD:'',   METRADO_PRESUP:'', METRADO_PROYEC:'', HH_PRESUP:'',    NATURALEZA:'',            HH_GASTADAS_INICIAL:'', HH_GANADAS_INICIAL:'', HITO1_DESC:'',            HITO1_PESO:'',  HITO2_DESC:'',         HITO2_PESO:'',  HITO3_DESC:'', HITO3_PESO:'', HITO4_DESC:'', HITO4_PESO:'', HITO5_DESC:'', HITO5_PESO:'' },
-    { CODIGO:'02.01',          FASE:'',    DESCRIPCION:'DIVERTER DV-041',                UNIDAD:'',   METRADO_PRESUP:'', METRADO_PROYEC:'', HH_PRESUP:'',    NATURALEZA:'',            HH_GASTADAS_INICIAL:'', HH_GANADAS_INICIAL:'', HITO1_DESC:'',            HITO1_PESO:'',  HITO2_DESC:'',         HITO2_PESO:'',  HITO3_DESC:'', HITO3_PESO:'', HITO4_DESC:'', HITO4_PESO:'', HITO5_DESC:'', HITO5_PESO:'' },
-    { CODIGO:'02.01.01.01.01', FASE:'AND', DESCRIPCION:'TRANSPORTE INTERNO CAMIÓN GRÚA', UNIDAD:'hm', METRADO_PRESUP:16, METRADO_PROYEC:'', HH_PRESUP:17.57, HH_ACTUALIZADO:18, NATURALEZA:'CONTRACTUAL', HH_GASTADAS_INICIAL:'', HH_GANADAS_INICIAL:'', HITO1_DESC:'Preparación', HITO1_PESO:0.10, HITO2_DESC:'Ejecución', HITO2_PESO:0.90, HITO3_DESC:'', HITO3_PESO:'', HITO4_DESC:'', HITO4_PESO:'', HITO5_DESC:'', HITO5_PESO:'' },
-    { CODIGO:'02.01.01.01.02', FASE:'EST', DESCRIPCION:'PERSONAL DE APOYO CARGUÍO',      UNIDAD:'hh', METRADO_PRESUP:32, METRADO_PROYEC:'', HH_PRESUP:160,   HH_ACTUALIZADO:'', NATURALEZA:'ADICIONAL',   HH_GASTADAS_INICIAL:'', HH_GANADAS_INICIAL:'', HITO1_DESC:'Ejecución',   HITO1_PESO:1.00, HITO2_DESC:'',         HITO2_PESO:'',  HITO3_DESC:'', HITO3_PESO:'', HITO4_DESC:'', HITO4_PESO:'', HITO5_DESC:'', HITO5_PESO:'' },
-  ]
-  const wb = XLSX.utils.book_new()
-  const header = ['CODIGO','FASE','DESCRIPCION','UNIDAD','METRADO_PRESUP','METRADO_PROYEC',
-                  'HH_PRESUP','HH_ACTUALIZADO','NATURALEZA','HH_GASTADAS_INICIAL','HH_GANADAS_INICIAL',
-                  'HITO1_DESC','HITO1_PESO','HITO2_DESC','HITO2_PESO','HITO3_DESC','HITO3_PESO',
-                  'HITO4_DESC','HITO4_PESO','HITO5_DESC','HITO5_PESO']
-  const ws1 = XLSX.utils.json_to_sheet(partidas, { header })
-  ws1['!cols'] = [{wch:14},{wch:8},{wch:34},{wch:8},{wch:14},{wch:14},{wch:12},{wch:14},{wch:13},{wch:18},{wch:18},
-                  {wch:16},{wch:10},{wch:16},{wch:10},{wch:16},{wch:10},{wch:16},{wch:10},{wch:16},{wch:10}]
-  XLSX.utils.book_append_sheet(wb, ws1, 'PARTIDAS')
-  XLSX.writeFile(wb, 'plantilla_partidas_valor_ganado.xlsx')
 }
 
 export default function ImportarPartidas() {
@@ -306,7 +285,7 @@ export default function ImportarPartidas() {
             Los <span className="text-k-text2 font-bold">hitos van en línea</span> (HITO1_DESC/HITO1_PESO … HITO5): pesos que
             suman <span className="text-k-text2 font-bold">1.00</span>; sin hitos se asigna uno al 100%.
           </p>
-          <button onClick={descargarPlantilla}
+          <button onClick={() => descargarPlantilla('partidas', 'plantilla_partidas.xlsx')}
             className="bg-k-raised border border-k-border text-k-text2 font-bold text-sm px-4 py-2.5 rounded-lg hover:bg-k-border transition-colors flex items-center gap-2 flex-shrink-0">
             <Download size={14} /> Descargar plantilla
           </button>
