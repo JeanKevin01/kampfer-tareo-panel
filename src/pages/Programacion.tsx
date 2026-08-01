@@ -1420,7 +1420,10 @@ function PanelPPC() {
     semanal: { lunes: string; comprometidas: number; cumplidas: number; no_cumplidas: number
       ppc: number | null
       /** congelada = ya se cerró y su número no volverá a cambiar */
-      congelada?: boolean; parcial?: boolean; no_planificadas?: number }[]
+      congelada?: boolean; parcial?: boolean; no_planificadas?: number
+      /** 0041 — contra qué plan se midió. COMPROMETIDO ya no se mueve por
+       *  reprogramar, aunque la semana siga abierta; VIGENTE sí. */
+      origen?: 'CERRADA' | 'COMPROMETIDO' | 'VIGENTE' }[]
     cnc: { causa: string; etiqueta: string; n: number }[]
     pareto_restricciones?: { causa: string; etiqueta: string; n: number }[]
     por_supervisor: { supervisor_id: string; nombre?: string; comprometidas: number; cumplidas: number; ppc: number | null }[]
@@ -1597,13 +1600,19 @@ function PanelPPC() {
           <div className="space-y-2">
             {(d?.semanal ?? []).map(w => (
               <div key={w.lunes} className="flex items-center gap-2">
-                {/* El candado distingue lo firme de lo que todavía se mueve: una
-                    semana sin cerrar se recalcula sobre el plan vigente. */}
+                {/* Tres estados, no dos (0041): cerrada (el veredicto ya no se
+                    recalcula), comprometida (el DENOMINADOR está congelado, así
+                    que reprogramar no la mueve aunque siga abierta) y vigente
+                    (se recalcula con el plan de hoy). Antes las dos últimas se
+                    veían igual, y eran cosas muy distintas. */}
                 <span title={w.congelada
                   ? `Semana cerrada${w.parcial ? ' con corte parcial' : ''}: este número ya no cambia`
-                  : 'Semana sin cerrar: se calcula sobre el plan vigente y aún puede cambiar'}
-                  className={`w-3 flex-shrink-0 text-[9px] ${w.congelada ? 'text-k-green' : 'text-k-text3/50'}`}>
-                  {w.congelada ? '🔒' : '○'}
+                  : w.origen === 'COMPROMETIDO'
+                    ? 'Semana comprometida: el denominador está congelado, reprogramar ya no mueve este número'
+                    : 'Semana sin comprometer: se calcula sobre el plan vigente y aún puede cambiar'}
+                  className={`w-3 flex-shrink-0 text-[9px] ${w.congelada ? 'text-k-green'
+                    : w.origen === 'COMPROMETIDO' ? 'text-k-blue' : 'text-k-text3/50'}`}>
+                  {w.congelada ? '🔒' : w.origen === 'COMPROMETIDO' ? '◉' : '○'}
                 </span>
                 <span className="text-[10px] text-k-text3 font-mono w-20 flex-shrink-0">{fmtDia(w.lunes)}</span>
                 <div className="flex-1 h-4 bg-k-raised rounded overflow-hidden">

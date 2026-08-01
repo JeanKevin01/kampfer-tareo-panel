@@ -11,6 +11,7 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2, Lock, LockOpen, ChevronLeft, ChevronRight } from 'lucide-react'
 
+import HistorialSemana from '@/components/HistorialSemana'
 import { api } from '@/lib/api'
 import { fmtDia } from '@/lib/lookahead'
 import { lunesDe, iso } from '@/lib/semana'
@@ -66,6 +67,11 @@ interface Cierre {
    *  congelado (exacto, no se discute) o de la fecha de creación (deducido). */
   compromiso?: 'congelado' | 'deducido'
   comprometido_en?: string | null
+  /** 0041 — contra qué plan se está midiendo, y cuántas comprometidas ya no
+   *  tienen metrado en el plan de hoy (las movieron o cancelaron después de
+   *  prometerlas). El PPC ya no se mueve por eso, pero hay que verlo. */
+  origen?: 'CERRADA' | 'COMPROMETIDO' | 'VIGENTE'
+  reprogramadas?: number
   sin_clasificar?: number
   motivos?: Record<string, string>
   hh_total?: number
@@ -329,6 +335,18 @@ export default function CierreSemana({ proyectoId = 1, lunes, onLunes }: {
           <p className="text-[11px] text-k-green">
             Compromiso congelado{d.comprometido_en ? ` el ${fmtDia(d.comprometido_en.slice(0, 10))}` : ''}:
             lo que entró después no cuenta en el PPC, y no hace falta discutirlo.
+            {' '}El metrado también quedó fijo, así que reprogramar ya no mueve este número.
+          </p>
+        )}
+        {/* Comprometidas que hoy ya no están en el plan. Antes de 0041 esto era
+            invisible PORQUE el indicador se limpiaba solo; ahora el número no se
+            mueve y lo que queda es avisar de que alguien las movió. */}
+        {!d?.cerrada && (d?.reprogramadas ?? 0) > 0 && (
+          <p className="text-[11px] text-k-alerta leading-relaxed">
+            <b>{d?.reprogramadas}</b> actividad(es) comprometida(s) ya no tienen metrado en el
+            plan de esta semana: las movieron o las cancelaron después de prometerlas. Siguen
+            contando en el PPC con lo que se comprometió — si de verdad no tocaban esta semana,
+            la conversación es esa, no el número.
           </p>
         )}
         {!d?.cerrada && (d?.sin_clasificar ?? 0) > 0 && (
@@ -489,6 +507,10 @@ export default function CierreSemana({ proyectoId = 1, lunes, onLunes }: {
             {d.cerrado_por ? ` por ${d.cerrado_por}` : ''} · reprogramar ya no la cambia.
           </p>
         )}
+
+        {/* Quién congeló qué y cuándo. Va al final porque no se consulta a
+            diario — se consulta el día que alguien pregunta por un número. */}
+        <HistorialSemana proyectoId={proyectoId} lunes={lunes} />
       </div>
     </div>
   )
