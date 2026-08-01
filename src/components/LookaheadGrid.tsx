@@ -42,6 +42,9 @@ export interface ActGrid {
   // Árbol del LookAhead (0038): de qué fila cuelga, de qué tipo es y cuántas
   // sub-filas tiene. Con sub-filas la fila deja de editarse: es un contenedor.
   padre_id?: number | null; es_frente?: boolean; n_subfilas?: number
+  /** 0042 — la ejecuta otra empresa: no es nuestro compromiso (fuera del PPC),
+   *  no tiene metrado ni partida, pero sí arrastra nuestras fechas. */
+  externa?: boolean; empresa?: string | null
 }
 export interface GridResp {
   desde: string; hasta: string
@@ -1746,6 +1749,10 @@ function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, 
         const esSubetapa = !!a.padre_id && a.es_frente === false
         return (
           <tr key={a.id} className={`${a.estado === 'CANCELADO' ? 'opacity-50' : ''} ${claseCadena} ${esPrimera ? 'bg-amber-500/15' : ''} ${
+              // 0042 · trabajo de terceros. Banda violeta tenue en TODA la fila:
+              // tiene que leerse «esto no lo hacemos nosotros» sin acercarse a
+              // mirar, porque es lo que cambia cómo se lee un atraso.
+              a.externa ? 'bg-violet-500/[0.07]' : ''} ${
               expandida ? 'ring-1 ring-inset ring-k-green/50 bg-k-green/5' : ''}`}
             // Tocar CUALQUIER otra fila vuelve a unir la que estuviera abierta:
             // el detalle es una mirada, no un modo en el que uno se queda.
@@ -1801,7 +1808,16 @@ function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, 
                 : `${a.titulo}${a.partida_desc ? `\n📌 ${a.partida_codigo} — ${a.partida_desc}` : ''}${a.hito_desc ? `\n◆ Etapa: ${a.hito_desc}` : ''}\n(clic para editar: meta, fechas, saltos, antecesoras, restricciones)`}>
               <div className={`flex items-center gap-1.5${color ? ' pl-2' : ''}`}>
                 <span className={`w-2 h-2 rounded-full flex-shrink-0 ${ESTADO_DOT[a.estado] ?? 'bg-zinc-500'}`} />
-                <span className="text-k-text leading-tight">{a.titulo}</span>
+                {/* Etiqueta explícita, no solo el color: el fondo tenue se
+                    pierde al imprimir y en pantallas malas de obra. */}
+                {a.externa && (
+                  <span className="text-[8px] font-bold uppercase tracking-wide flex-shrink-0
+                    px-1 py-0.5 rounded bg-violet-500/20 border border-violet-500/50 text-violet-300"
+                    title={`Lo ejecuta ${a.empresa || 'otra empresa'}. No depende de nosotros: arrastra nuestras fechas pero NO cuenta en el PPC.`}>
+                    Externa
+                  </span>
+                )}
+                <span className={`leading-tight ${a.externa ? 'text-k-text2 italic' : 'text-k-text'}`}>{a.titulo}</span>
                 {revisar && (
                   <span title={revisar} className="text-[9px] font-bold text-k-red flex-shrink-0
                     px-1 rounded bg-red-500/15 border border-red-500/40 cursor-help">🔴</span>

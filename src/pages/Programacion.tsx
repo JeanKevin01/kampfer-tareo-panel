@@ -46,6 +46,12 @@ export interface Actividad {
   dias_salto?: string[]; dias_medio?: string[]
   causa_nc_planner?: string | null; causa_nc_planner_cat?: string | null
   creado_por?: string; reportes: number[]
+  /** Plazo en días hábiles; con él el API deriva la fecha que falte (0034). */
+  plazo_dias?: number | null
+  /** 0042 — la ejecuta otra empresa: ocupa sitio en el cronograma y arrastra
+   *  nuestras fechas, pero NO entra al PPC (su atraso no es nuestro
+   *  incumplimiento) ni tiene partida, metrado ni supervisor. */
+  externa?: boolean; empresa?: string | null
 }
 export interface Restriccion {
   id: number; actividad_id: number; descripcion: string; tipo: string
@@ -409,6 +415,11 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
     desglose_2: act?.desglose_2 ?? '',
     dias_salto: act?.dias_salto ?? [],
     dias_medio: act?.dias_medio ?? [],
+    // 0042 · trabajo de terceros: ocupa sitio en el cronograma y arrastra
+    // nuestras fechas, pero no es un compromiso nuestro.
+    externa: act?.externa ?? false,
+    empresa: act?.empresa ?? '',
+    plazo_dias: act?.plazo_dias != null ? String(act.plazo_dias) : '',
   })
   const [error, setError] = useState('')
   const [showNC, setShowNC] = useState(false)
@@ -424,6 +435,14 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
   const sups = useQuery<{ id: string; nombre: string }[]>({
     queryKey: ['supervisores-lista'],
     queryFn: () => api('/api/supervisores'),
+  })
+  // Empresas ya escritas (0042). Se autoalimenta con lo usado — no hay catálogo
+  // que administrar: la lista existe para que la segunda vez se elija en vez de
+  // teclearse, que es lo que evita «ELECTRO SAC» y «Electro S.A.C.».
+  const empresas = useQuery<{ empresa: string; n: number }[]>({
+    queryKey: ['empresas-usadas'],
+    queryFn: () => api('/ev/programacion/empresas'),
+    enabled: form.externa,
   })
   // Partidas de control de la OTM elegida (LPS: 1 actividad = 1 partida).
   // Sin OTM se ofrecen las de la bandeja «por ubicar»: en misceláneos se
@@ -459,19 +478,32 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
 
   const guardar = useMutation({
     mutationFn: () => {
-      const base = {
+      // Una fila de terceros no lleva partida, metrado ni supervisor: se manda
+      // limpia para que el API no tenga que rechazar restos del formulario.
+      const base = form.externa ? {
+        titulo: form.titulo, descripcion: form.descripcion, responsable: form.responsable,
+        otm_id: form.otm_id || null, supervisor_id: null, partida_id: null,
+        und: null, desglose_1: null, desglose_2: null,
+        externa: true, empresa: form.empresa.trim() || null,
+      } : {
         titulo: form.titulo, descripcion: form.descripcion, responsable: form.responsable,
         otm_id: form.otm_id || null, supervisor_id: form.supervisor_id || null,
         partida_id: form.partida_id || null, und: form.und.trim() || null,
         desglose_1: form.desglose_1.trim() || null,
         desglose_2: form.desglose_2.trim() || null,
+        externa: false, empresa: form.empresa.trim() || null,
       }
-      const metrado = form.metrado_prog.trim() === '' ? null : Number(form.metrado_prog)
+      const metrado = form.externa ? null
+        : form.metrado_prog.trim() === '' ? null : Number(form.metrado_prog)
+      // Con plazo el API deriva la fecha que falte (0034). Solo viaja si el
+      // planner lo escribió: mandarlo vacío desactivaría el modo por fechas.
+      const plazo = form.plazo_dias.trim() === '' ? null : Number(form.plazo_dias)
       if (!editar) {
         return api('/ev/programacion/actividades', {
           method: 'POST',
           body: JSON.stringify({ ...base, proyecto_id: PROYECTO_ID, fecha: form.fecha,
             fecha_fin: form.fecha_fin || null, metrado_prog: metrado,
+            ...(plazo ? { plazo_dias: plazo } : {}),
             dias_salto: form.dias_salto, dias_medio: form.dias_medio }),
         })
       }
@@ -482,6 +514,7 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
       if (form.fecha !== act!.fecha) body.fecha = form.fecha
       if ((form.fecha_fin || null) !== (act!.fecha_fin ?? null)) body.fecha_fin = form.fecha_fin || null
       if ((metrado ?? null) !== (act!.metrado_prog ?? null)) body.metrado_prog = metrado
+      if ((plazo ?? null) !== (act!.plazo_dias ?? null)) body.plazo_dias = plazo
       if (form.dias_salto.join(',') !== (act!.dias_salto ?? []).join(',')) body.dias_salto = form.dias_salto
       if (form.dias_medio.join(',') !== (act!.dias_medio ?? []).join(',')) body.dias_medio = form.dias_medio
       return api(`/ev/programacion/actividades/${act!.id}`, { method: 'PUT', body: JSON.stringify(body) })
@@ -522,9 +555,42 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
               y suele llevar la etapa o la zona («… — Batido de material»). Al
               elegir una partida se rellena solo con su descripción, así que en
               el caso normal no hay que escribir nada aquí. */}
-          <input placeholder="Nombre de la actividad (se completa al elegir la partida)"
+          <input placeholder={form.externa
+            ? 'Ej.: ELECTRO SAC — Montaje de bandejas'
+            : 'Nombre de la actividad (se completa al elegir la partida)'}
             value={form.titulo} title="Lo que se lee en la fila del LookAhead y en la agenda del supervisor. Puede llevar la etapa o la zona; la partida puede llamarse distinto."
             onChange={e => setForm({ ...form, titulo: e.target.value })} className={inputCls} autoFocus={!editar} />
+
+          {/* Trabajo de terceros (0042). Arriba del todo y con su propia banda
+              porque cambia lo que significa TODO el formulario de abajo: sin
+              metrado, sin partida y sin supervisor, y fuera del PPC. */}
+          <label className={`flex items-start gap-2 rounded-lg px-3 py-2 border cursor-pointer ${
+            form.externa ? 'border-violet-500/50 bg-violet-500/10' : 'border-k-border bg-k-raised/40'}`}>
+            <input type="checkbox" checked={form.externa} className="mt-0.5"
+              onChange={e => setForm({ ...form, externa: e.target.checked })} />
+            <span className="text-[11px] leading-relaxed">
+              <b className="text-k-text">Lo ejecuta otra empresa</b>
+              <span className="text-k-text2"> — no depende de nosotros.</span>
+              <span className="block text-k-text3">
+                Ocupa su sitio en el cronograma y arrastra nuestras fechas con los mismos
+                vínculos, pero <b>no entra al PPC</b>: su atraso no es nuestro incumplimiento.
+              </span>
+            </span>
+          </label>
+
+          {form.externa && (
+            <div>
+              <label className="text-[9px] uppercase font-bold text-k-text3">
+                Empresa <span className="normal-case font-normal">(opcional — sirve para agrupar sus retrasos)</span>
+              </label>
+              <input list="empresas-usadas" placeholder="ELECTRO SAC" value={form.empresa}
+                maxLength={80} onChange={e => setForm({ ...form, empresa: e.target.value })}
+                className={inputCls} />
+              <datalist id="empresas-usadas">
+                {(empresas.data ?? []).map(e => <option key={e.empresa} value={e.empresa} />)}
+              </datalist>
+            </div>
+          )}
           <div className="grid grid-cols-3 gap-2">
             <div>
               <label className="text-[9px] uppercase font-bold text-k-text3">F. Inicio</label>
@@ -535,21 +601,35 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
               <input type="date" value={form.fecha_fin ?? ''} min={form.fecha}
                 onChange={e => setForm({ ...form, fecha_fin: e.target.value })} className={inputCls} />
             </div>
-            <div>
-              <label className="text-[9px] uppercase font-bold text-k-text3" title="Se distribuye por día entre F.Inicio y F.Fin (LookAhead)">Metrado + und</label>
-              <div className="flex gap-1">
-                <input placeholder="90" inputMode="decimal" value={form.metrado_prog}
-                  onChange={e => setForm({ ...form, metrado_prog: e.target.value })} className={inputCls} />
-                <input placeholder="m3" value={form.und ?? ''} maxLength={10}
-                  onChange={e => setForm({ ...form, und: e.target.value })} className={`${inputCls} w-16`} style={{ width: 64 }} />
+            {form.externa ? (
+              // Así es como te dan el dato: «nos toma 10 días». El API deriva la
+              // F.Fin saltando los no laborables (mismo cálculo que el resto del
+              // LookAhead), así que no hay que contar días a mano en el calendario.
+              <div>
+                <label className="text-[9px] uppercase font-bold text-k-text3"
+                  title="Días hábiles que dijeron que les toma. Se calcula la F.Fin saltando domingos y feriados.">
+                  Plazo (días)
+                </label>
+                <input placeholder="10" inputMode="numeric" value={form.plazo_dias}
+                  onChange={e => setForm({ ...form, plazo_dias: e.target.value })} className={inputCls} />
               </div>
-            </div>
+            ) : (
+              <div>
+                <label className="text-[9px] uppercase font-bold text-k-text3" title="Se distribuye por día entre F.Inicio y F.Fin (LookAhead)">Metrado + und</label>
+                <div className="flex gap-1">
+                  <input placeholder="90" inputMode="decimal" value={form.metrado_prog}
+                    onChange={e => setForm({ ...form, metrado_prog: e.target.value })} className={inputCls} />
+                  <input placeholder="m3" value={form.und ?? ''} maxLength={10}
+                    onChange={e => setForm({ ...form, und: e.target.value })} className={`${inputCls} w-16`} style={{ width: 64 }} />
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Desglose + saldo: la partida grande que se ejecuta en porciones.
               Solo tiene sentido con partida elegida — sin ella no hay de qué
               descontar ni qué subdividir. */}
-          {form.partida_id > 0 && (
+          {!form.externa && form.partida_id > 0 && (
             <DesglosePartida partidaId={form.partida_id} excluir={act?.id ?? 0}
               metrado={form.metrado_prog}
               d1={form.desglose_1} d2={form.desglose_2}
@@ -611,7 +691,9 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
               ))}
             </select>
           </div>
-          <select value={form.partida_id || ''}
+          {/* Partida, avisos y desglose no aplican a una fila de terceros: no
+              ejecutamos ese trabajo, así que no hay avance nuestro que anotar. */}
+          {!form.externa && <select value={form.partida_id || ''}
             onChange={e => {
               if (e.target.value === '__nueva') { setNuevaPartida(true); setLotePartidas(false); return }
               if (e.target.value === '__lote') { setLotePartidas(true); setNuevaPartida(false); return }
@@ -625,8 +707,8 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
             ))}
             <option value="__nueva">＋ Nueva partida (olvidada del presupuesto o adicional)…</option>
             <option value="__lote">＋＋ Varias partidas de una vez (pegar desde Excel)…</option>
-          </select>
-          {!form.otm_id && (
+          </select>}
+          {!form.externa && !form.otm_id && (
             <p className="text-[10px] text-k-text3">
               Sin OTM se listan las partidas <b>por ubicar</b> (las que aún no se sabe a qué obra
               van). Elige la OTM arriba para ver las suyas.
@@ -672,13 +754,20 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
               {avisoLote}
             </p>
           )}
+          {/* Sin supervisor en las filas de terceros: nuestro supervisor no
+              tarea trabajo ajeno, y asignárselo se la metería en su agenda de
+              campo. El «responsable» sí queda — ahí va el contacto de la otra
+              empresa, que es a quien se le reclama la fecha. */}
           <div className="grid grid-cols-2 gap-2">
-            <select value={form.supervisor_id ?? ''} onChange={e => setForm({ ...form, supervisor_id: e.target.value })}
-              className={inputCls} title="Supervisor asignado: la actividad le aparecerá en su app de campo">
-              <option value="">Sin supervisor asignado</option>
-              {(sups.data ?? []).map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
-            </select>
-            <input placeholder="Responsable / cuadrilla" value={form.responsable ?? ''}
+            {!form.externa && (
+              <select value={form.supervisor_id ?? ''} onChange={e => setForm({ ...form, supervisor_id: e.target.value })}
+                className={inputCls} title="Supervisor asignado: la actividad le aparecerá en su app de campo">
+                <option value="">Sin supervisor asignado</option>
+                {(sups.data ?? []).map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+              </select>
+            )}
+            <input placeholder={form.externa ? 'Contacto en la otra empresa' : 'Responsable / cuadrilla'}
+              value={form.responsable ?? ''}
               onChange={e => setForm({ ...form, responsable: e.target.value })} className={inputCls} />
           </div>
           <textarea placeholder="Descripción (alcance del día, metrados previstos…)" value={form.descripcion ?? ''}
