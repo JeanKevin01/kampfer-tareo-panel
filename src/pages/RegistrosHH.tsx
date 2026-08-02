@@ -6,12 +6,13 @@
 // la obra agrupada por semana o por mes.
 import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Calendar, Download, Loader2, Table2, BarChart3, Users } from 'lucide-react'
+import { Calendar, Download, Loader2, Table2, BarChart3, Users, CalendarRange } from 'lucide-react'
 
 import { api } from '@/lib/api'
 import { TabsPagina } from '@/components/TabsPagina'
 import { useTab, type TabDef } from '@/lib/tabs'
 import HistogramaPersonal from '@/components/HistogramaPersonal'
+import HojaSemanal from '@/components/HojaSemanal'
 import Reportes from '@/pages/Reportes'
 
 interface Registro { id: number; trab_id: string; otm_id: string; supervisor_id: string; fecha: string; hora: string; hh: number | null }
@@ -25,6 +26,10 @@ const hoy = () => {
 
 const TABS: TabDef[] = [
   { id: 'registros',   label: 'Registros del día', icon: Table2 },
+  // La hoja va junto a los registros y no en la Matriz histórica a propósito:
+  // la celda de la matriz es una SUMA de partidas y proyectos, así que editarla
+  // sería adivinar a qué partida quitarle las horas.
+  { id: 'semana',      label: 'Hoja semanal · editar HH', icon: CalendarRange },
   { id: 'analytics',   label: 'Analytics',         icon: BarChart3 },
   { id: 'histograma',  label: 'Histograma de personal', icon: Users },
 ]
@@ -35,6 +40,7 @@ export default function RegistrosHH() {
     <div className="space-y-5">
       <TabsPagina tabs={TABS} activo={tab} onCambiar={setTab} />
       {tab === 'registros'  && <PanelRegistros />}
+      {tab === 'semana'     && <HojaSemanal />}
       {tab === 'analytics'  && <Reportes />}
       {tab === 'histograma' && <HistogramaPersonal />}
     </div>
