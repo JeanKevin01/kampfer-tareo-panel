@@ -350,6 +350,19 @@ function Contenido({ tema }: { tema: Tema }) {
         borra, y el enlace se puede mandar: quien lo abra ve exactamente esta pantalla, con estos
         filtros, en estas fechas.
       </P>
+      <H>Inteligente / Todo</H>
+      <P>
+        No es un filtro: no cambia qué actividades hay, quita de la vista las que{' '}
+        <b>en estas semanas no dicen nada</b> — ni metrado programado ni avance anotado. Son las que
+        cruzan la ventana por sus fechas pero ya se terminaron antes, o cuyo saldo se re-prorrateó
+        fuera. Antes la única forma de quitarlas era <b>borrar el historial de la actividad</b>: perder
+        el dato para ganar sitio.
+      </P>
+      <P>
+        Lo que pide acción <b>nunca</b> se oculta: una fila con <b className="text-k-red">⛔</b>{' '}
+        restricción sin liberar o <b className="text-k-red">🔴</b> por revisar se queda aunque esté
+        vacía. Al lado del conmutador se dice cuántas se están ocultando; <b>Todo</b> las devuelve.
+      </P>
       <Tabla cab={['Herramienta', 'Qué filtra']} filas={[
         [<b>Buscador</b>, <>Título, código o descripción de la partida, etapa, responsable,
           empresa o <b>#</b>. Ignora tildes: «liberacion» encuentra «Liberación». Escribe

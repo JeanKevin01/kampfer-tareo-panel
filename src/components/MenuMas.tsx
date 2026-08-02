@@ -36,32 +36,51 @@ export default function MenuMas({ items, etiqueta = 'Más' }: {
     return () => { document.removeEventListener('mousedown', fuera); window.removeEventListener('keydown', esc) }
   }, [abierto])
 
-  const alguoActivo = items.some(i => i.activo)
+  const activos = items.filter(i => i.activo)
 
   return (
     <div className="relative" ref={caja}>
       <button onClick={() => setAbierto(v => !v)}
-        title={`${etiqueta}: ${items.map(i => i.texto).join(' · ')}`}
+        // El tooltip dice QUÉ está puesto, no solo qué hay dentro: con el menú
+        // cerrado esa es la única forma de saberlo sin abrirlo.
+        title={activos.length
+          ? `${etiqueta} — activo: ${activos.map(i => i.texto).join(' · ')}`
+          : `${etiqueta}: ${items.map(i => i.texto).join(' · ')}`}
         aria-haspopup="menu" aria-expanded={abierto}
-        className={`btn ${abierto || alguoActivo ? 'btn-on' : 'btn-terciario'}`}>
+        className={`btn ${abierto || activos.length ? 'btn-on' : 'btn-terciario'}`}>
         <MoreHorizontal size={16} /> {etiqueta}
+        {activos.length > 0 && <span className="font-bold">({activos.length})</span>}
       </button>
       {abierto && (
         <div role="menu"
           className="absolute right-0 top-full mt-1 z-40 w-64 rounded-xl border border-k-border
                      bg-k-surface shadow-2xl overflow-hidden">
-          {items.map(it => (
-            <button key={it.texto} role="menuitem"
-              onClick={() => { it.onClick(); setAbierto(false) }}
+          {items.map(it => {
+            // `activo` presente = es un INTERRUPTOR (se queda puesto), no una
+            // acción de una vez. Los dos se comportan distinto:
+            //  · el interruptor lleva ✓/○ y NO cierra el menú — si cerrara, se
+            //    marcaría y no verías que quedó marcado, que es justo lo que
+            //    pasaba: «le doy a Fijar columnas y no sé qué elegí»;
+            //  · la acción (Contraer todo) sí cierra: ya hizo lo suyo.
+            const esToggle = it.activo !== undefined
+            return (
+            <button key={it.texto} role={esToggle ? 'menuitemcheckbox' : 'menuitem'}
+              aria-checked={esToggle ? !!it.activo : undefined}
+              onClick={() => { it.onClick(); if (!esToggle) setAbierto(false) }}
               className={`w-full text-left px-3 py-2.5 flex items-start gap-2 border-b border-k-border
-                          last:border-b-0 hover:bg-k-raised ${it.activo ? 'text-k-amber' : 'text-k-text2'}`}>
-              <span className="mt-0.5 flex-shrink-0">{it.icono}</span>
+                          last:border-b-0 ${it.activo ? 'bg-amber-500/10 hover:bg-amber-500/15' : 'hover:bg-k-raised'}`}>
+              <span className={`mt-0.5 flex-shrink-0 ${it.activo ? 'text-k-amber' : 'text-k-text3'}`}>
+                {esToggle ? (it.activo ? '✓' : '○') : it.icono}
+              </span>
               <span className="min-w-0">
-                <span className="block text-sm font-medium text-k-text">{it.texto}</span>
+                <span className={`block text-sm ${it.activo ? 'font-bold text-k-amber' : 'font-medium text-k-text'}`}>
+                  {it.texto}
+                </span>
                 {it.ayuda && <span className="block text-[11px] text-k-text3 leading-snug">{it.ayuda}</span>}
               </span>
             </button>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>

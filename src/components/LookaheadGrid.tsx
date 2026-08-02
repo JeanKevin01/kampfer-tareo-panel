@@ -199,6 +199,11 @@ export function LookaheadGrid({ onEditar, onProgramar }: {
   // Panel de filtros plegado. Cerrado la cabecera es una línea; lo que esté
   // puesto se ve igual, en los chips de al lado.
   const [verFiltros, setVerFiltros] = useState(false)
+  // Vista inteligente por defecto (?vista=todo la apaga). No es un filtro más:
+  // no cambia QUÉ hay, quita las filas que en esta ventana no dicen nada. Por
+  // eso vive fuera del panel de filtros y no entra en el contador de chips.
+  const [modoVista, setModoVista] = useParamTexto('vista', 'auto')
+  const soloConTrabajo = modoVista !== 'todo'
   // En qué bandas se ordenan las porciones dentro de su fila. Son ETIQUETAS,
   // no jerarquía: la misma porción se mira por área o por frente según lo que
   // toque presentar, sin crear una fila más ni obligar a elegir al programar.
@@ -500,8 +505,55 @@ export function LookaheadGrid({ onEditar, onProgramar }: {
     return { d1: soloVacio(l1) ? [] : l1, d2: soloVacio(l2) ? [] : l2 }
   }, [d, enArbol, ocultarHechas])
 
+  // ── Vista inteligente ────────────────────────────────────────────────────
+  // El API ya trae solo lo que CRUZA la ventana por fechas, pero una actividad
+  // puede cruzarla y tener todos sus días visibles en cero: la partida se
+  // terminó antes, el saldo se re-prorrateó fuera, o son puros saltos. Esas
+  // filas ocupan alto sin decir nada, y la única forma de quitarlas era borrar
+  // el historial de la actividad — es decir, perder el dato para ganar sitio.
+  //
+  // Se queda si tiene metrado programado o avance real en algún día visible;
+  // una fila sin metrado (terceros, libre) se queda si su barra cruza la
+  // ventana, que es su forma de «tener algo». Y NUNCA se oculta lo que pide
+  // acción —⛔ restricción sin liberar, 🔴 mal formada—: se volvería invisible
+  // justo cuando hay que atenderla (decisión de Jean, 2026-08-02).
+  const fechasVentana = useMemo(() => d?.fechas ?? [], [d])
+  const porId = useMemo(() => {
+    const m = new Map<number, ActGrid>()
+    for (const g of d?.grupos ?? []) for (const a of g.actividades) m.set(a.id, a)
+    return m
+  }, [d])
+  const tieneAlgo = useCallback((a: ActGrid) => {
+    if ((a.rest_pend ?? 0) > 0 || porRevisar(a)) return true
+    const saltos = new Set(a.dias_salto ?? [])
+    for (const f of fechasVentana) {
+      if (saltos.has(f)) continue
+      if ((a.prog[f] ?? 0) > 0 || a.real[f] != null) return true
+    }
+    // Sin metrado por diseño: su contenido es la barra de fechas.
+    if (!a.metrado_prog && fechasVentana.length) {
+      const fin = a.fecha_fin || a.fecha
+      if (a.fecha <= fechasVentana[fechasVentana.length - 1] && fin >= fechasVentana[0]) return true
+    }
+    return false
+  }, [fechasVentana])
+
   const grupos = useMemo(() => {
     let todos = d?.grupos ?? []
+    if (soloConTrabajo) {
+      // Un padre se conserva si ALGUNA de sus sub-filas tiene trabajo: la fila
+      // padre es un contenedor y su vacío no significa que la rama esté vacía.
+      const salvados = new Set<number>()
+      for (const g of todos) for (const a of g.actividades) {
+        if (!tieneAlgo(a)) continue
+        salvados.add(a.id)
+        let p = a.padre_id
+        while (p) { salvados.add(p); p = porId.get(p)?.padre_id ?? null }
+      }
+      todos = todos
+        .map(g => ({ ...g, actividades: g.actividades.filter(a => salvados.has(a.id)) }))
+        .filter(g => g.actividades.length > 0)
+    }
     if (enArbol) {
       // Fuera de la lista plana: las sub-filas se dibujan dentro de su padre, y
       // con un área aislada solo quedan las filas que tienen algo en ella.
@@ -540,9 +592,13 @@ export function LookaheadGrid({ onEditar, onProgramar }: {
         .filter(g => g.actividades.length > 0)
     }
     return todos
-  }, [d, q, fSup, fEstado, fEmpresa, soloRest, soloRevisar, hayFiltro, enArbol, hijosDe, selD1, selD2])
+  }, [d, q, fSup, fEstado, fEmpresa, soloRest, soloRevisar, hayFiltro, enArbol, hijosDe, selD1, selD2,
+      soloConTrabajo, tieneAlgo, porId])
   const nTotal = (d?.grupos ?? []).reduce((s, g) => s + g.actividades.length, 0)
   const nVisible = grupos.reduce((s, g) => s + g.actividades.length, 0)
+  // Cuántas se está tragando la vista inteligente. Solo tiene sentido sin
+  // filtros puestos: con filtros, el «X de Y» ya explica la diferencia.
+  const nOcultas = soloConTrabajo && !hayFiltro ? Math.max(0, nTotal - nVisible) : 0
   const limpiarFiltros = () => {
     setBusca(''); setFSup(''); setFEstado(''); setFEmpresa('')
     setSoloRest(false); setSoloRevisar(false)
@@ -682,10 +738,22 @@ export function LookaheadGrid({ onEditar, onProgramar }: {
             {ch.txt} <span className="text-k-amber/70">✕</span>
           </button>
         ))}
+        {/* Conmutador de vista. El número de ocultas va EN el botón: una fila
+            que desaparece sin decir cuántas son se lee como un dato perdido. */}
+        <div className="flex items-center rounded-lg border border-k-border overflow-hidden">
+          {([['auto', 'Inteligente', 'Oculta las filas que no tienen nada programado ni avance en estas semanas. Lo que tiene ⛔ restricción o 🔴 por revisar se conserva siempre.'],
+             ['todo', 'Todo', 'Todas las actividades cuyas fechas cruzan la ventana, tengan o no trabajo en ella.']] as const).map(([k, l, ay]) => (
+            <button key={k} onClick={() => setModoVista(k)} title={ay}
+              className={`text-[11px] px-2.5 py-1.5 font-medium ${modoVista === k
+                ? 'bg-amber-500/15 text-k-amber font-bold' : 'text-k-text3 hover:bg-k-raised'}`}>
+              {l}
+            </button>
+          ))}
+        </div>
         <span className="text-[11px] text-k-text3">
           {hayFiltro
             ? <><b className="text-k-amber">{nVisible}</b> de {nTotal} actividades</>
-            : <>{nTotal} actividades en el rango</>}
+            : <>{nVisible} actividades{nOcultas > 0 && <> · <b className="text-k-text2">{nOcultas}</b> sin trabajo en estas semanas</>}</>}
         </span>
         {activos.length > 1 && (
           <button onClick={limpiarFiltros}
