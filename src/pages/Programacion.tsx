@@ -17,6 +17,7 @@ import { CalendarioLaboral } from '@/components/CalendarioLaboral'
 import HistogramaMO from '@/components/HistogramaMO'
 import MenuMas from '@/components/MenuMas'
 import AyudaPPC from '@/components/AyudaPPC'
+import Fiabilidad from '@/components/Fiabilidad'
 import { useTab } from '@/lib/tabs'
 import type { TabDef } from '@/lib/tabs'
 
@@ -29,8 +30,12 @@ const TABS_PROG: TabDef[] = [
   { id: 'lookahead', label: 'Lookahead' },
   { id: 'histograma', label: 'Histograma · Ratios' },
   { id: 'ppc', label: 'PPC · Causas' },
+  { id: 'fiabilidad', label: 'Fiabilidad' },
 ]
 const MESES = ['', 'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
+/** Días entre dos ISO (b - a). Positivo = la segunda es posterior. */
+const diasEntre = (a: string, b: string) =>
+  Math.round((new Date(b + 'T12:00:00').getTime() - new Date(a + 'T12:00:00').getTime()) / 86400000)
 const inputCls = 'bg-k-raised border border-k-border rounded-lg px-2.5 py-2 text-sm text-k-text outline-none focus:border-k-amber w-full'
 
 export interface Foto { id: number; url: string | null; url_thumb: string | null; purgada: boolean; bytes: number; ancho?: number | null; alto?: number | null }
@@ -68,6 +73,15 @@ export interface Restriccion {
   id: number; actividad_id: number; descripcion: string; tipo: string
   responsable?: string | null; fecha_requerida?: string | null
   liberada: boolean; liberada_en?: string | null
+  /** 0044: el eje del análisis es el área del catálogo, no el texto libre. */
+  responsable_id?: number | null; responsable_nombre?: string | null
+  /** 0044: la fecha REAL de liberación, distinta del sello `liberada_en`. */
+  liberada_el?: string | null
+}
+
+export interface AreaResp {
+  id: number; nombre: string; tipo: string; activo: boolean
+  supervisor_nombre?: string | null; n_restricciones?: number
 }
 
 export interface Semana { lunes: string; fechas: string[]; actividades: Actividad[]; reportes: Reporte[] }
@@ -242,6 +256,7 @@ export default function Programacion() {
       {vista === 'histograma' && <HistogramaMO />}
 
       {vista === 'ppc' && <PanelPPC />}
+      {vista === 'fiabilidad' && <Fiabilidad />}
 
       {/* La vista de mes se retiró: el plan semanal es semanal por definición
           (Last Planner) y el horizonte largo ya lo da el LookAhead. */}
@@ -1220,22 +1235,52 @@ function Antecesoras({ act, onCambio }: { act: Actividad; onCambio: () => void }
 
 function Restricciones({ actId, onCambio }: { actId: number; onCambio: () => void }) {
   const qc = useQueryClient()
-  const [nueva, setNueva] = useState({ descripcion: '', tipo: 'MATERIALES', responsable: '', fecha_requerida: '' })
+  const [nueva, setNueva] = useState({ descripcion: '', tipo: 'MATERIALES', responsable_id: '', fecha_requerida: '' })
   const rests = useQuery<Restriccion[]>({
     queryKey: ['restricciones', actId],
     queryFn: () => api(`/ev/programacion/actividades/${actId}/restricciones`),
   })
+  // El responsable sale del catálogo (0044) y no de un input libre: es el eje
+  // por el que se agrupa la latencia, y con texto libre «Logística»,
+  // «LOGISTICA» y «logistica » son tres responsables distintos.
+  const areas = useQuery<AreaResp[]>({
+    queryKey: ['responsables'], queryFn: () => api('/ev/responsables'),
+    staleTime: 5 * 60 * 1000,
+  })
   const invalidar = () => { qc.invalidateQueries({ queryKey: ['restricciones', actId] }); onCambio() }
   const crear = useMutation({
     mutationFn: () => api(`/ev/programacion/actividades/${actId}/restricciones`, {
-      method: 'POST', body: JSON.stringify({ ...nueva, fecha_requerida: nueva.fecha_requerida || null }),
+      method: 'POST',
+      body: JSON.stringify({
+        descripcion: nueva.descripcion, tipo: nueva.tipo,
+        responsable_id: nueva.responsable_id ? Number(nueva.responsable_id) : null,
+        fecha_requerida: nueva.fecha_requerida || null,
+      }),
     }),
-    onSuccess: () => { setNueva({ descripcion: '', tipo: 'MATERIALES', responsable: '', fecha_requerida: '' }); invalidar() },
+    onSuccess: () => { setNueva({ descripcion: '', tipo: 'MATERIALES', responsable_id: '', fecha_requerida: '' }); invalidar() },
+    onError: (e: Error) => alert(e.message),
+  })
+  const nuevaArea = useMutation({
+    mutationFn: (nombre: string) => api<AreaResp>('/ev/responsables', {
+      method: 'POST', body: JSON.stringify({ nombre }),
+    }),
+    onSuccess: (a) => {
+      qc.invalidateQueries({ queryKey: ['responsables'] })
+      setNueva(n => ({ ...n, responsable_id: String(a.id) }))
+    },
     onError: (e: Error) => alert(e.message),
   })
   const toggle = useMutation({
     mutationFn: (r: Restriccion) => api(`/ev/programacion/restricciones/${r.id}`, {
       method: 'PUT', body: JSON.stringify({ liberada: !r.liberada }),
+    }),
+    onSuccess: invalidar, onError: (e: Error) => alert(e.message),
+  })
+  // La fecha real de liberación es editable: si el planner limpia el viernes lo
+  // que llegó el martes, el libro mayor tiene que medir el martes.
+  const fecharLiberacion = useMutation({
+    mutationFn: (v: { id: number; fecha: string }) => api(`/ev/programacion/restricciones/${v.id}`, {
+      method: 'PUT', body: JSON.stringify({ liberada_el: v.fecha }),
     }),
     onSuccess: invalidar, onError: (e: Error) => alert(e.message),
   })
@@ -1260,8 +1305,26 @@ function Restricciones({ actId, onCambio }: { actId: number; onCambio: () => voi
             <div className="flex-1 min-w-0">
               <span className={`text-[11px] ${r.liberada ? 'line-through text-k-text3' : 'text-k-text2'}`}>{r.descripcion}</span>
               <span className="text-[10px] text-k-text3 ml-1.5">
-                {TIPOS_RESTRICCION[r.tipo] ?? r.tipo}{r.responsable ? ` · ${r.responsable}` : ''}{r.fecha_requerida ? ` · para ${r.fecha_requerida}` : ''}
+                {TIPOS_RESTRICCION[r.tipo] ?? r.tipo}
+                {(r.responsable_nombre || r.responsable) ? ` · ${r.responsable_nombre || r.responsable}` : ''}
+                {r.fecha_requerida ? ` · para ${r.fecha_requerida}` : ''}
               </span>
+              {r.liberada && (
+                <span className="block text-[10px] text-k-text3 mt-0.5">
+                  Liberada el{' '}
+                  <input type="date" value={r.liberada_el ?? ''}
+                    onChange={e => e.target.value && fecharLiberacion.mutate({ id: r.id, fecha: e.target.value })}
+                    title="La fecha REAL en que se liberó. Es la que mide la latencia del responsable, no el día en que lo marcaste aquí."
+                    className="bg-transparent border-b border-dashed border-k-border text-k-text2 outline-none focus:border-k-amber" />
+                  {r.fecha_requerida && r.liberada_el && (
+                    <b className={diasEntre(r.fecha_requerida, r.liberada_el) > 0 ? ' text-k-alerta' : ' text-k-green'}>
+                      {' '}{diasEntre(r.fecha_requerida, r.liberada_el) > 0
+                        ? `+${diasEntre(r.fecha_requerida, r.liberada_el)} d tarde`
+                        : 'a tiempo'}
+                    </b>
+                  )}
+                </span>
+              )}
             </div>
             <button onClick={() => borrar.mutate(r.id)} className="text-k-text3 hover:text-k-red"><Trash2 size={11} /></button>
           </div>
@@ -1276,8 +1339,20 @@ function Restricciones({ actId, onCambio }: { actId: number; onCambio: () => voi
         <select value={nueva.tipo} onChange={e => setNueva({ ...nueva, tipo: e.target.value })} className={inputCls} style={{ width: 'auto' }}>
           {Object.entries(TIPOS_RESTRICCION).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
-        <input placeholder="Responsable" value={nueva.responsable}
-          onChange={e => setNueva({ ...nueva, responsable: e.target.value })} className={inputCls} style={{ width: 110 }} />
+        <select value={nueva.responsable_id} className={inputCls} style={{ width: 'auto' }}
+          title="Área responsable de liberarla. Es el eje con el que se mide quién tarda."
+          onChange={e => {
+            if (e.target.value === '__nueva') {
+              const n = window.prompt('Nombre del área responsable (ej. LOGÍSTICA, ALMACÉN, CLIENTE)')
+              if (n && n.trim()) nuevaArea.mutate(n)
+              return
+            }
+            setNueva({ ...nueva, responsable_id: e.target.value })
+          }}>
+          <option value="">— Responsable —</option>
+          {(areas.data ?? []).map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}
+          <option value="__nueva">+ Nueva área…</option>
+        </select>
         <input type="date" value={nueva.fecha_requerida}
           onChange={e => setNueva({ ...nueva, fecha_requerida: e.target.value })} className={inputCls} style={{ width: 'auto' }} />
         <button onClick={() => crear.mutate()} disabled={crear.isPending || !nueva.descripcion.trim()}
