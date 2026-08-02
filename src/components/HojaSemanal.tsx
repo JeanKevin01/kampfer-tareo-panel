@@ -14,7 +14,7 @@
 // exceso del día no vive en ninguna fila. Por eso el aviso ⚠ se pinta en TODAS
 // sus celdas de ese día —en todos los proyectos— y el desglose cruza proyectos
 // aunque se esté mirando uno solo.
-import { Fragment, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import {
   ChevronLeft, ChevronRight, ChevronDown, Loader2, Download, Plus,
@@ -24,6 +24,7 @@ import * as XLSX from 'xlsx'
 
 import { api } from '@/lib/api'
 import { iso, lunesDe } from '@/lib/semana'
+import { mapaColorPersona, fondoDe, type ColorPersona } from '@/lib/colorPersona'
 
 const DIAS = ['Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sá', 'Do']
 const inputCls = 'bg-k-raised border border-k-border rounded-lg px-2.5 py-2 text-sm text-k-text outline-none focus:border-k-amber'
@@ -92,6 +93,16 @@ export default function HojaSemanal() {
     onSuccess: () => { setMsg('✓ Línea anulada'); invalidar() },
     onError: (e: Error) => setMsg(`✗ ${e.message}`),
   })
+  // Escribir sobre una celda VACÍA crea la línea: la fila ya dice proyecto,
+  // partida y persona, y la columna dice el día — no falta ningún dato que
+  // haya que preguntar. El botón + de la partida sigue estando para el caso en
+  // que la persona todavía no aparece en esa partida.
+  const crear = useMutation({
+    mutationFn: (v: { trabajador_id: string; partida_id: number; fecha: string; hh: number }) =>
+      api('/ev/tareo-linea', { method: 'POST', body: JSON.stringify(v) }),
+    onSuccess: () => { setMsg('✓ HH agregadas'); invalidar() },
+    onError: (e: Error) => setMsg(`✗ ${e.message}`),
+  })
 
   const mover = (dias: number) => {
     const d = new Date(lunes + 'T12:00:00')
@@ -106,6 +117,13 @@ export default function HojaSemanal() {
   // con TODOS los proyectos aunque la vista esté filtrada por uno.
   const estadoDia = (trab_id: string, fecha: string) =>
     hoja.data?.totales_persona_dia[`${trab_id}|${fecha}`]
+
+  // Un color por persona en conflicto: el ⚠ ya dice «hay un problema», el color
+  // dice de QUIÉN. Sin esto, cuatro personas en el mismo día son una mancha
+  // naranja continua y no se puede seguir a una entre partidas y proyectos.
+  const colorPersona = useMemo(
+    () => mapaColorPersona((hoja.data?.avisos ?? []).map(a => a.trab_id)),
+    [hoja.data])
 
   const fechas = hoja.data?.fechas ?? []
   const nCols = fechas.length + 2
@@ -176,15 +194,21 @@ export default function HojaSemanal() {
             {hoja.data.avisos.length} {hoja.data.avisos.length === 1 ? 'persona supera' : 'personas superan'} su jornada esta semana
           </p>
           <div className="flex flex-wrap gap-1.5 mt-1.5">
-            {hoja.data.avisos.map(a => (
-              <button key={`${a.trab_id}|${a.fecha}`} onClick={() => setDetalle({ trab_id: a.trab_id, fecha: a.fecha })}
-                title={`${a.hh} HH registradas contra una jornada de ${a.jornada} · ${a.n_otms} proyecto(s)`}
-                className="text-[11px] px-2 py-1 rounded-lg border border-k-alerta/40 bg-k-surface hover:bg-k-raised">
-                <b className="text-k-text">{a.nombre.split(' ').slice(0, 2).join(' ')}</b>
-                <span className="text-k-text3"> · {a.fecha.slice(5)} · </span>
-                <b className="text-k-alerta">+{fmt(a.diff)}</b>
-              </button>
-            ))}
+            {hoja.data.avisos.map(a => {
+              const c = colorPersona.get(a.trab_id)
+              return (
+                <button key={`${a.trab_id}|${a.fecha}`} onClick={() => setDetalle({ trab_id: a.trab_id, fecha: a.fecha })}
+                  title={`${a.hh} HH registradas contra una jornada de ${a.jornada} · ${a.n_otms} proyecto(s)`}
+                  style={c ? { borderColor: c.color, background: fondoDe(c.color, 0.14) } : undefined}
+                  className="text-[11px] px-2 py-1 rounded-lg border bg-k-surface hover:brightness-110">
+                  <span className="inline-block w-2 h-2 rounded-full mr-1.5 align-middle"
+                    style={c ? { background: c.color } : undefined} />
+                  <b className="text-k-text">{a.nombre.split(' ').slice(0, 2).join(' ')}</b>
+                  <span className="text-k-text3"> · {a.fecha.slice(5)} · </span>
+                  <b style={c ? { color: c.color } : undefined}>+{fmt(a.diff)}</b>
+                </button>
+              )
+            })}
           </div>
         </div>
       )}
@@ -213,8 +237,11 @@ export default function HojaSemanal() {
               {(hoja.data?.proyectos ?? []).map(p => (
                 <BloqueProyecto key={p.otm_id} p={p} fechas={fechas}
                   cerrados={cerrados} onToggle={toggle} estadoDia={estadoDia}
+                  colorPersona={colorPersona}
                   onCelda={(trab_id, fecha) => setDetalle({ trab_id, fecha })}
                   onEditar={(id, hh) => editar.mutate({ id, hh })}
+                  onCrear={(trabajador_id, partida_id, fecha, hh) =>
+                    crear.mutate({ trabajador_id, partida_id, fecha, hh })}
                   onAgregar={pa => setAgregar({ partida: pa, otm_id: p.otm_id })} />
               ))}
               {hoja.data && !hoja.data.proyectos.length && (
@@ -238,8 +265,10 @@ export default function HojaSemanal() {
           </table>
         </div>
         <p className="px-4 py-2 text-[10px] text-k-text3 border-t border-k-border">
-          Clic en una celda para editar sus HH · ⚠ = esa persona pasa de su jornada ese día (sumando todos los proyectos) ·
-          ✎ = corregido desde oficina, el reenvío del supervisor ya no lo pisa.
+          Clic en cualquier celda para escribir sus HH — también en las vacías, que crean el registro ·
+          ⚠ = esa persona pasa de su jornada ese día sumando todos los proyectos, y <b>el color es el de esa persona</b>,
+          para seguirla entre partidas · ✎ = corregido desde oficina, el reenvío del supervisor ya no lo pisa ·
+          un número volado (²) = dos registros en la misma celda: se abre el desglose para elegir cuál sobra.
         </p>
       </div>
 
@@ -258,12 +287,15 @@ export default function HojaSemanal() {
 }
 
 // ── Un proyecto: sus partidas y, dentro, su personal ─────────
-function BloqueProyecto({ p, fechas, cerrados, onToggle, estadoDia, onCelda, onEditar, onAgregar }: {
+function BloqueProyecto({ p, fechas, cerrados, onToggle, estadoDia, colorPersona,
+                         onCelda, onEditar, onCrear, onAgregar }: {
   p: Proyecto; fechas: string[]
   cerrados: Set<string>; onToggle: (k: string) => void
   estadoDia: (t: string, f: string) => TotalDia | undefined
+  colorPersona: Map<string, ColorPersona>
   onCelda: (trab_id: string, fecha: string) => void
   onEditar: (id: number, hh: number) => void
+  onCrear: (trab_id: string, partida_id: number, fecha: string, hh: number) => void
   onAgregar: (pa: Partida) => void
 }) {
   const abierto = !cerrados.has(p.otm_id)
@@ -306,20 +338,32 @@ function BloqueProyecto({ p, fechas, cerrados, onToggle, estadoDia, onCelda, onE
               <td className="px-2 py-1 text-right font-bold text-k-text2 border-l border-k-border">{fmt(pa.total)}</td>
             </tr>
 
-            {abiertaPa && pa.personas.map(pe => (
-              <tr key={`${kp}|${pe.trab_id}`} className="border-b border-k-border/30 hover:bg-k-raised/20">
-                <td className="sticky left-0 z-10 bg-k-surface px-2 py-1 border-r border-k-border">
-                  <span className="pl-10 text-k-text">{pe.nombre}</span>
-                  <span className="text-k-text3 text-[10px]"> · {pe.cargo}</span>
-                </td>
-                {fechas.map(f => (
-                  <CeldaHH key={f} celda={pe.celdas[f]} estado={estadoDia(pe.trab_id, f)}
-                    onAbrir={() => onCelda(pe.trab_id, f)}
-                    onEditar={hh => pe.celdas[f]?.n === 1 && onEditar(pe.celdas[f].lineas[0].id, hh)} />
-                ))}
-                <td className="px-2 py-1 text-right font-bold text-k-text border-l border-k-border">{fmt(pe.total)}</td>
-              </tr>
-            ))}
+            {abiertaPa && pa.personas.map(pe => {
+              const c = colorPersona.get(pe.trab_id)
+              return (
+                <tr key={`${kp}|${pe.trab_id}`} className="border-b border-k-border/30 hover:bg-k-raised/20">
+                  <td className="sticky left-0 z-10 bg-k-surface px-2 py-1 border-r border-k-border">
+                    {/* El punto ata la fila con sus celdas de color: es la
+                        codificación secundaria que exige la paleta. */}
+                    <span className="pl-10 inline-flex items-center gap-1.5">
+                      {c && <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: c.color }} />}
+                      <span className="text-k-text">{pe.nombre}</span>
+                    </span>
+                    <span className="text-k-text3 text-[10px]"> · {pe.cargo}</span>
+                  </td>
+                  {fechas.map(f => (
+                    <CeldaHH key={f} celda={pe.celdas[f]} estado={estadoDia(pe.trab_id, f)} color={c}
+                      onAbrir={() => onCelda(pe.trab_id, f)}
+                      onEditar={hh => {
+                        const cel = pe.celdas[f]
+                        if (cel?.n === 1) onEditar(cel.lineas[0].id, hh)
+                        else if (!cel) onCrear(pe.trab_id, pa.partida_id, f, hh)
+                      }} />
+                  ))}
+                  <td className="px-2 py-1 text-right font-bold text-k-text border-l border-k-border">{fmt(pe.total)}</td>
+                </tr>
+              )
+            })}
           </Fragment>
         )
       })}
@@ -338,8 +382,8 @@ function BloqueProyecto({ p, fechas, cerrados, onToggle, estadoDia, onCelda, onE
 }
 
 // ── Celda editable ───────────────────────────────────────────
-function CeldaHH({ celda, estado, onAbrir, onEditar }: {
-  celda?: Celda; estado?: TotalDia
+function CeldaHH({ celda, estado, color, onAbrir, onEditar }: {
+  celda?: Celda; estado?: TotalDia; color?: ColorPersona
   onAbrir: () => void; onEditar: (hh: number) => void
 }) {
   const [editando, setEditando] = useState(false)
@@ -350,33 +394,50 @@ function CeldaHH({ celda, estado, onAbrir, onEditar }: {
   // desglose para elegir cuál es el que sobra.
   const multi = (celda?.n ?? 0) > 1
 
-  if (!celda) {
-    return <td className="px-2 py-1 text-right text-k-text3/40 hover:bg-k-raised/40 cursor-pointer" onClick={onAbrir}>·</td>
-  }
-
   const guardar = () => {
     const v = parseFloat(valor.replace(',', '.'))
     setEditando(false)
-    if (!isNaN(v) && Math.abs(v - celda.hh) > 0.0001) onEditar(v)
+    if (isNaN(v) || v < 0) return
+    if (!celda) { if (v > 0) onEditar(v); return }   // celda vacía → crear
+    if (Math.abs(v - celda.hh) > 0.0001) onEditar(v)
   }
 
+  const abrirEditor = () => {
+    if (multi) { onAbrir(); return }                 // desambiguar en el desglose
+    setValor(celda ? String(celda.hh) : '')
+    setEditando(true)
+  }
+
+  // El color de la alerta es el de la PERSONA, no un ámbar genérico: así se
+  // sigue a una misma persona entre partidas y proyectos. El ⚠ es el que dice
+  // que hay alerta, y sostiene el significado para quien no distinga los tonos.
+  const estilo = alerta && color
+    ? { background: fondoDe(color.color, 0.22), boxShadow: `inset 3px 0 0 ${color.color}` }
+    : undefined
+
   return (
-    <td className={`px-1 py-1 text-right whitespace-nowrap cursor-pointer
-                    ${alerta ? 'bg-k-alerta/15' : 'hover:bg-k-raised/50'}`}
-      title={celda.lineas.map(l => `${l.hh} HH · ${l.supervisor ?? '—'}${l.editado_por ? ` · corregido por ${l.editado_por}` : ''}`).join('\n')
-        + (estado ? `\n\nTotal del día: ${estado.hh} HH · jornada ${estado.jornada}${estado.n_otms > 1 ? ` · ${estado.n_otms} proyectos` : ''}` : '')}>
+    <td onClick={editando ? undefined : abrirEditor}
+      className={`px-1 py-1 text-right whitespace-nowrap cursor-pointer
+                  ${alerta ? '' : 'hover:bg-k-raised/50'}`}
+      style={estilo}
+      title={celda
+        ? celda.lineas.map(l => `${l.hh} HH · ${l.supervisor ?? '—'}${l.editado_por ? ` · corregido por ${l.editado_por}` : ''}`).join('\n')
+          + (estado ? `\n\nTotal del día: ${estado.hh} HH · jornada ${estado.jornada}${estado.n_otms > 1 ? ` · ${estado.n_otms} proyectos` : ''}` : '')
+        : 'Sin registro — escribe las HH para agregarlo'}>
       {editando ? (
-        <input autoFocus type="number" step="0.5" value={valor}
+        <input autoFocus type="number" step="0.5" value={valor} placeholder="0"
           onChange={e => setValor(e.target.value)} onBlur={guardar}
           onKeyDown={e => { if (e.key === 'Enter') guardar(); if (e.key === 'Escape') setEditando(false) }}
           className="w-14 bg-k-raised border border-k-amber rounded px-1 py-0.5 text-right text-k-text outline-none" />
+      ) : !celda ? (
+        <span className="text-k-text3/40">·</span>
       ) : (
-        <span className="inline-flex items-center gap-0.5 justify-end w-full"
-          onClick={() => { if (multi) { onAbrir(); return } setValor(String(celda.hh)); setEditando(true) }}>
-          {alerta && <AlertTriangle size={9} className="text-k-alerta flex-shrink-0" />}
+        <span className="inline-flex items-center gap-0.5 justify-end w-full">
+          {alerta && <AlertTriangle size={9} className="flex-shrink-0"
+            style={{ color: color?.color ?? 'currentColor' }} />}
           {celda.editado && <PencilLine size={9} className="text-k-blue flex-shrink-0" />}
           <span className={celda.hh ? 'text-k-text' : 'text-k-text3 line-through'}>{fmt(celda.hh)}</span>
-          {multi && <sup className="text-k-alerta font-bold">{celda.n}</sup>}
+          {multi && <sup className="text-k-red font-bold">{celda.n}</sup>}
         </span>
       )}
     </td>
