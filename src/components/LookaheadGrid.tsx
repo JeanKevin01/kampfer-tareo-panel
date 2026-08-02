@@ -13,6 +13,7 @@ import { CNC } from '@/lib/catalogos'
 import { mapaColores, COLOR_EMPRESA_OTRAS } from '@/lib/empresas'
 import type { EmpresaUsada } from '@/lib/empresas'
 import { useParamTexto, useParamBool, useParamNum } from '@/lib/filtrosUrl'
+import { pasaFiltros, tieneTrabajoEn, PARAMS_FILTRO } from '@/lib/lookaheadFiltros'
 import MenuMas from '@/components/MenuMas'
 import { lunesDe, iso } from '@/lib/semana'
 import { DIAS_1, fmtDia, fmtCorta, num, isoDow, clrRealTxt, parseDeps, fmtDeps, runsDeFila, tramosDeFila, numCorto, numerosDeGrid } from '@/lib/lookahead'
@@ -34,6 +35,9 @@ export interface ActGrid {
   rest_pend?: number; rest_total?: number
   und?: string | null; metrado_prog?: number | null
   metrado_base?: number | null; acum_real?: number | null; saldo?: number | null
+  /** Metrado que quedó repartido en días, en TODO el rango (no solo la ventana).
+   *  0 con metrado comprometido = el plan diario nunca llegó a existir. */
+  prog_total?: number | null
   hito_id?: number | null; hito_desc?: string | null; hito_peso?: number | null
   dias_salto?: string[]; dias_medio?: string[]
   plazo_dias?: number | null; modo_fecha?: string | null
@@ -106,6 +110,16 @@ const ROTULO: React.CSSProperties = {
  *  · partida sin HH presupuestadas → normalmente un ADICIONAL al que todavía
  *    no le llegó el dato (se sabe al aprobarlo o al terminarlo). */
 const motivoRevisar = (a: ActGrid): string | null => {
+  // Metrado comprometido que NUNCA llegó a repartirse en días: la actividad se
+  // quedó sin días hábiles (todos saltos ∅, feriados, o ya congelados con
+  // avance). El plan diario no existe, pero el compromiso sí — y el PPC la
+  // juzga igual. Va aquí, y no en un aviso aparte, para que herede todo lo que
+  // ya sabe tratar un 🔴: la marca en la fila, el filtro «Por revisar» y —lo
+  // importante— la garantía de que la vista inteligente NO la esconde.
+  // `prog_total` viene del API; sin él (API viejo) no se evalúa.
+  if (a.prog_total != null && (a.metrado_prog ?? 0) > 0
+      && a.prog_total <= 0.0005 && (a.acum_real ?? 0) <= 0.0005)
+    return 'El metrado está comprometido pero NO se repartió en ningún día: la actividad no tiene días hábiles en su rango (todos son saltos ∅, feriados o días ya cerrados con avance).\nEl PPC la va a juzgar igual, así que arregla el rango o quita algún salto.'
   if ((a.metrado_prog ?? 0) > 0 && !a.partida_id)
     return 'Tiene metrado pero NO tiene partida: no se puede registrar su avance real, no suma al valor ganado y el PPC la contará como no cumplida.\nÁbrela y elige la partida, o bórrale el metrado si es una actividad de apoyo.'
   if (a.partida_id && (a.partida_hh_presup ?? 0) <= 0)
@@ -523,20 +537,8 @@ export function LookaheadGrid({ onEditar, onProgramar }: {
     for (const g of d?.grupos ?? []) for (const a of g.actividades) m.set(a.id, a)
     return m
   }, [d])
-  const tieneAlgo = useCallback((a: ActGrid) => {
-    if ((a.rest_pend ?? 0) > 0 || porRevisar(a)) return true
-    const saltos = new Set(a.dias_salto ?? [])
-    for (const f of fechasVentana) {
-      if (saltos.has(f)) continue
-      if ((a.prog[f] ?? 0) > 0 || a.real[f] != null) return true
-    }
-    // Sin metrado por diseño: su contenido es la barra de fechas.
-    if (!a.metrado_prog && fechasVentana.length) {
-      const fin = a.fecha_fin || a.fecha
-      if (a.fecha <= fechasVentana[fechasVentana.length - 1] && fin >= fechasVentana[0]) return true
-    }
-    return false
-  }, [fechasVentana])
+  const tieneAlgo = useCallback(
+    (a: ActGrid) => tieneTrabajoEn(a, fechasVentana, porRevisar), [fechasVentana])
 
   const grupos = useMemo(() => {
     let todos = d?.grupos ?? []
@@ -576,29 +578,35 @@ export function LookaheadGrid({ onEditar, onProgramar }: {
     if (hayFiltro) {
       todos = todos
         .map(g => ({ ...g, actividades: g.actividades.filter(a => {
-          if (fSup && (a.supervisor_id ?? '') !== fSup) return false
-          if (fEstado && a.estado !== fEstado) return false
-          // '__ext' = todo lo de terceros, sea cual sea la empresa: es la
-          // pregunta «qué de este plan no depende de mí».
-          if (fEmpresa === '__ext' && !a.externa) return false
-          if (fEmpresa && fEmpresa !== '__ext' && (a.empresa ?? '') !== fEmpresa) return false
-          if (soloRest && !(a.rest_pend ?? 0)) return false
-          if (soloRevisar && !porRevisar(a)) return false
-          if (!q) return true
-          return norm([a.titulo, a.partida_codigo, a.partida_desc, a.hito_desc,
-                       a.supervisor_nombre, a.responsable, a.empresa, `#${a.id}`]
-            .filter(Boolean).join(' ')).includes(q)
+          // Mismas reglas que usa la vista imprimible: una sola definición
+          // (§ lib/lookaheadFiltros) para que el PDF no salga distinto.
+          return pasaFiltros(a, {
+            q: busca, supervisor: fSup, estado: fEstado, empresa: fEmpresa,
+            soloRestriccion: soloRest, soloRevisar,
+          }, porRevisar)
         }) }))
         .filter(g => g.actividades.length > 0)
     }
     return todos
-  }, [d, q, fSup, fEstado, fEmpresa, soloRest, soloRevisar, hayFiltro, enArbol, hijosDe, selD1, selD2,
+  }, [d, busca, fSup, fEstado, fEmpresa, soloRest, soloRevisar, hayFiltro, enArbol, hijosDe, selD1, selD2,
       soloConTrabajo, tieneAlgo, porId])
   const nTotal = (d?.grupos ?? []).reduce((s, g) => s + g.actividades.length, 0)
   const nVisible = grupos.reduce((s, g) => s + g.actividades.length, 0)
   // Cuántas se está tragando la vista inteligente. Solo tiene sentido sin
   // filtros puestos: con filtros, el «X de Y» ya explica la diferencia.
   const nOcultas = soloConTrabajo && !hayFiltro ? Math.max(0, nTotal - nVisible) : 0
+  // Los mismos filtros, en la URL de impresión.
+  const urlImprimir = (() => {
+    const p = new URLSearchParams({ desde, semanas: String(nSemanas) })
+    if (busca) p.set(PARAMS_FILTRO.q, busca)
+    if (fSup) p.set(PARAMS_FILTRO.supervisor, fSup)
+    if (fEstado) p.set(PARAMS_FILTRO.estado, fEstado)
+    if (fEmpresa) p.set(PARAMS_FILTRO.empresa, fEmpresa)
+    if (soloRest) p.set(PARAMS_FILTRO.soloRestriccion, '1')
+    if (soloRevisar) p.set(PARAMS_FILTRO.soloRevisar, '1')
+    if (!soloConTrabajo) p.set(PARAMS_FILTRO.vista, 'todo')
+    return p.toString()
+  })()
   const limpiarFiltros = () => {
     setBusca(''); setFSup(''); setFEstado(''); setFEmpresa('')
     setSoloRest(false); setSoloRevisar(false)
@@ -652,19 +660,28 @@ export function LookaheadGrid({ onEditar, onProgramar }: {
   })()
 
   return (
-    <div ref={cajaRef} className="space-y-3" style={{ paddingBottom: altoDock }}>
+    <div ref={cajaRef} className="space-y-2" style={{ paddingBottom: altoDock }}>
+      {/* ── Barra de mandos ───────────────────────────────────────────────
+          Todo lo que gobierna la cuadrícula, en UNA banda con fondo propio:
+          antes eran cuatro franjas sueltas flotando sobre el mismo fondo que la
+          tabla, y en un portátil el 46% de la pantalla era cabecera — se veían
+          cuatro o cinco actividades sin hacer scroll. La banda separa «los
+          mandos» de «los datos» y junta las líneas que se habían ido sumando
+          una a una. */}
+      <div className="rounded-xl border border-k-border bg-k-raised/40 px-2.5 py-2 space-y-2">
       <div className="flex items-center gap-2 flex-wrap">
-        <button onClick={() => mover(-7)} className="p-1.5 rounded-lg border border-k-border text-k-text2 hover:bg-k-raised"><ChevronLeft size={15} /></button>
+        <button onClick={() => mover(-7)} className="p-1 rounded-lg border border-k-border text-k-text2 hover:bg-k-raised"><ChevronLeft size={15} /></button>
         <span className="text-sm font-bold text-k-text">LookAhead desde {fmtDia(desde)}</span>
-        <button onClick={() => mover(7)} className="p-1.5 rounded-lg border border-k-border text-k-text2 hover:bg-k-raised"><ChevronRight size={15} /></button>
-        <button onClick={() => setDesde(iso(lunesDe(new Date())))} className="text-xs px-2.5 py-1.5 rounded-lg border border-k-border text-k-text3 hover:bg-k-raised">Hoy</button>
+        <button onClick={() => mover(7)} className="p-1 rounded-lg border border-k-border text-k-text2 hover:bg-k-raised"><ChevronRight size={15} /></button>
+        <button onClick={() => setDesde(iso(lunesDe(new Date())))} className="text-xs px-2 py-1 rounded-lg border border-k-border text-k-text3 hover:bg-k-raised">Hoy</button>
         <select value={nSemanas} onChange={e => setNSemanas(Number(e.target.value))}
-          className="bg-k-raised border border-k-border rounded-lg px-2.5 py-2 text-sm text-k-text outline-none">
+          className="bg-k-surface border border-k-border rounded-lg px-2 py-1 text-xs text-k-text outline-none">
           {[3, 4, 5, 6].map(n => <option key={n} value={n}>{n} semanas</option>)}
         </select>
         <input type="date" value={desde} title="Saltar a la semana de una fecha"
           onChange={e => { if (e.target.value) setDesde(iso(lunesDe(new Date(e.target.value + 'T12:00:00')))) }}
-          className="bg-k-raised border border-k-border rounded-lg px-2 py-1.5 text-xs text-k-text2 outline-none" />
+          className="bg-k-surface border border-k-border rounded-lg px-2 py-1 text-xs text-k-text2 outline-none" />
+        <span className="w-px h-5 bg-k-border mx-0.5" />
         <button onClick={() => { setVincular(v => v.on ? { on: false, primera: null } : { on: true, primera: null }); setPanelDe(null) }}
           title="Vincular actividades con dos clics: primero la que va PRIMERO, luego la que sigue (FS). Esc para salir."
           className={`btn font-bold ${vincular.on ? 'btn-on' : 'btn-secundario'}`}>
@@ -686,9 +703,13 @@ export function LookaheadGrid({ onEditar, onProgramar }: {
             onClick: () => setMostrarRel(v => !v), activo: mostrarRel },
         ]} />
         {/* Exportar es un botón, no un menú: meter una acción de un clic detrás
-            de un desplegable la encarece sin ordenar nada. */}
-        <button onClick={() => window.open(`/programacion/lookahead-imprimir?desde=${desde}&semanas=${nSemanas}`, '_blank')}
-          title="Vista imprimible en A3 apaisado, con la ventana de fechas de ahora"
+            de un desplegable la encarece sin ordenar nada.
+            El PDF se lleva los MISMOS filtros que hay puestos: exportar algo
+            distinto de lo que se está mirando es peor que no exportar. */}
+        <button onClick={() => window.open(`/programacion/lookahead-imprimir?${urlImprimir}`, '_blank')}
+          title={activos.length
+            ? `Vista imprimible en A3, con los ${activos.length} filtro(s) puestos`
+            : 'Vista imprimible en A3 apaisado, con la ventana de fechas de ahora'}
           className="btn btn-terciario">
           <Printer size={14} /> Exportar PDF
         </button>
@@ -696,12 +717,15 @@ export function LookaheadGrid({ onEditar, onProgramar }: {
             gris: es la puerta de entrada del planner que abre esto por primera
             vez, y en gris se perdía entre los demás controles. */}
         <button onClick={() => setAyuda(true)} title="Cómo se usa el LookAhead"
-          className="flex items-center justify-center w-8 h-8 rounded-full border font-bold
+          className="flex items-center justify-center w-7 h-7 rounded-full border font-bold text-sm
                      border-k-blue/50 text-k-blue hover:bg-k-blue/10">?</button>
         {grid.isFetching && <Loader2 size={14} className="animate-spin text-k-text3" />}
+        {/* El aviso ocupaba una franja entera para una línea de texto. Como chip
+            corto con el detalle en el tooltip cabe en esta misma barra. */}
         {desde < iso(lunesDe(new Date())) && (
-          <span className="text-[11px] font-bold text-k-amber bg-amber-500/10 border border-amber-500/30 rounded-lg px-2.5 py-1.5">
-            ⏪ Semana pasada — puedes registrar avances y programar retroactivamente
+          <span title="Puedes registrar avances y programar retroactivamente en semanas pasadas"
+            className="ml-auto text-[11px] font-bold text-k-amber bg-amber-500/10 border border-amber-500/30 rounded-lg px-2 py-1">
+            ⏪ Semana pasada
           </span>
         )}
       </div>
@@ -764,13 +788,13 @@ export function LookaheadGrid({ onEditar, onProgramar }: {
       </div>
 
       {verFiltros && (
-      <div className="flex items-center gap-2 flex-wrap rounded-xl border border-k-border bg-k-raised/40 p-2.5">
+      <div className="flex items-center gap-2 flex-wrap border-t border-k-border pt-2">
         <div className="relative">
           <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-k-text3 pointer-events-none" />
           <input value={busca} onChange={e => setBusca(e.target.value)}
             placeholder="Buscar actividad, partida, código, empresa…"
             title="Filtra las filas por título, código o descripción de la partida, etapa, responsable, empresa o #"
-            className="w-[300px] bg-k-raised border border-k-border rounded-lg pl-8 pr-7 py-2 text-sm text-k-text outline-none focus:border-k-amber placeholder:text-k-text3" />
+            className="w-[300px] bg-k-surface border border-k-border rounded-lg pl-8 pr-7 py-1.5 text-sm text-k-text outline-none focus:border-k-amber placeholder:text-k-text3" />
           {busca && (
             <button onClick={() => setBusca('')} title="Limpiar la búsqueda"
               className="absolute right-2 top-1/2 -translate-y-1/2 text-k-text3 hover:text-k-text text-sm">✕</button>
@@ -818,13 +842,25 @@ export function LookaheadGrid({ onEditar, onProgramar }: {
           <input type="checkbox" checked={soloRest} onChange={e => setSoloRest(e.target.checked)} className="accent-amber-500" />
           ⛔ Con restricción
         </label>
-        <label className="flex items-center gap-1.5 text-xs text-k-text2 px-2.5 py-2 rounded-lg border border-k-border bg-k-raised cursor-pointer select-none"
-          title="Las que hay que revisar: con metrado pero sin partida (no se puede anotar su avance y el PPC las castiga), o con la partida sin presupuesto de HH cargado">
+        <label className="flex items-center gap-1.5 text-xs text-k-text2 px-2.5 py-1.5 rounded-lg border border-k-border bg-k-surface cursor-pointer select-none"
+          title="Las que hay que revisar: con metrado pero sin partida (no se puede anotar su avance y el PPC las castiga), con la partida sin HH cargadas, o con metrado que no se pudo repartir en ningún día">
           <input type="checkbox" checked={soloRevisar} onChange={e => setSoloRevisar(e.target.checked)} className="accent-red-500" />
           🔴 Por revisar
         </label>
+        {/* «Ocultar terminadas» vive aquí desde que existe la vista inteligente:
+            suelta entre los chips de área parecía otra versión de lo mismo, y no
+            lo es — esta oculta porciones EJECUTADAS aunque tengan trabajo esta
+            semana; la vista inteligente oculta lo que no tiene trabajo, esté
+            terminado o no. Juntas en el mismo sitio, la diferencia se lee. */}
+        <label className="flex items-center gap-1.5 text-xs text-k-text2 px-2.5 py-1.5 rounded-lg border border-k-border bg-k-surface cursor-pointer select-none"
+          title="Oculta las porciones ya ejecutadas para dejar a la vista lo que falta. Siguen en el historial de la partida.">
+          <input type="checkbox" checked={ocultarHechas} className="accent-green-600"
+            onChange={e => setOcultarHechas(e.target.checked)} />
+          ✓ Ocultar terminadas
+        </label>
       </div>
       )}
+      </div>
 
       {/* Chips por etiqueta: aislar una porción de la obra es lo que se hace en
           la reunión («veamos solo el valle principal»). Las dos etiquetas tienen
@@ -857,12 +893,6 @@ export function LookaheadGrid({ onEditar, onProgramar }: {
                 ))}
               </div>
             ))}
-          <label className="flex items-center gap-1 text-[11px] text-k-text3 cursor-pointer select-none"
-            title="Oculta las porciones ya ejecutadas para dejar a la vista lo que falta. Siguen en el historial de la partida.">
-            <input type="checkbox" checked={ocultarHechas} className="accent-green-600"
-              onChange={e => setOcultarHechas(e.target.checked)} />
-            Ocultar terminadas
-          </label>
         </div>
       )}
 
@@ -2103,9 +2133,14 @@ function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, 
                 // Sin antecesoras el «—» no dice nada: una actividad suelta en
                 // la red es justo lo que el planner quiere detectar de un
                 // vistazo. El botón abre el panel de dependencias para atarla.
+                //
+                // En AZUL y no en rojo: en la paleta el rojo significa PROBLEMA,
+                // y una actividad sin vincular no lo es —muchas arrancan solas—.
+                // Pintada de rojo, la columna entera parecía un campo de alertas
+                // y el rojo dejaba de avisar de nada.
                 <button onClick={() => onPanel(a.id)}
                   title="Esta actividad no depende de ninguna otra: abre el panel para vincularla"
-                  className="w-full text-[8px] font-bold text-k-red hover:underline">⛓ vincular</button>
+                  className="w-full text-[8px] font-bold text-k-blue/70 hover:text-k-blue hover:underline">⛓ vincular</button>
               )}
             </td>
             {a.externa

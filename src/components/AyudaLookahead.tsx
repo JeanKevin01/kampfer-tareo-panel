@@ -363,6 +363,15 @@ function Contenido({ tema }: { tema: Tema }) {
         restricción sin liberar o <b className="text-k-red">🔴</b> por revisar se queda aunque esté
         vacía. Al lado del conmutador se dice cuántas se están ocultando; <b>Todo</b> las devuelve.
       </P>
+      <P>
+        <b>No confundir con «✓ Ocultar terminadas»</b>, que está al lado: esa oculta las porciones ya
+        ejecutadas <i>aunque tengan trabajo esta semana</i>; la vista inteligente oculta lo que no
+        tiene trabajo, esté terminado o no.
+      </P>
+      <P>
+        <b>Exportar PDF</b> se lleva los mismos filtros y la misma vista. Si el papel es un recorte,
+        lo dice en su cabecera — quien lo recibe tiene que saber que faltan filas.
+      </P>
       <Tabla cab={['Herramienta', 'Qué filtra']} filas={[
         [<b>Buscador</b>, <>Título, código o descripción de la partida, etapa, responsable,
           empresa o <b>#</b>. Ignora tildes: «liberacion» encuentra «Liberación». Escribe
@@ -372,8 +381,10 @@ function Contenido({ tema }: { tema: Tema }) {
           de un golpe todo lo que no depende de ti. Aparece solo si hay filas de terceros.</>],
         [<b>Estado</b>, <>Programado, ejecutado, no cumplida, cancelado.</>],
         [<b>⛔ Con restricción</b>, <>Las que todavía tienen restricciones sin liberar.</>],
-        [<b>🔴 Por revisar</b>, <>Las que están mal formadas: con metrado pero sin partida, o con la
-          partida sin HH cargadas.</>],
+        [<b>🔴 Por revisar</b>, <>Las que están mal formadas: con metrado pero sin partida, con la
+          partida sin HH cargadas, o con <b>metrado que no se pudo repartir en ningún día</b> porque
+          la actividad se quedó sin días hábiles (todos saltos ∅ o feriados). Esta última es la
+          peligrosa: el compromiso existe y el PPC la juzga, pero no hay plan diario que mirar.</>],
       ]} />
       <P>
         <b>Ojo:</b> el LookAhead solo trae las actividades que <b>cruzan las semanas visibles</b>, así

@@ -185,15 +185,21 @@ export default function Programacion() {
               ⚑ Por completar ({(porUbicar.data ?? []).length})
             </button>
           )}
+          {/* El COLOR lo pone el icono, no el botón: los que abren un panel de
+              consulta llevan icono azul (= información en la paleta), los que
+              generan un documento llevan el gris de la impresora. Antes estos
+              dos eran idénticos —mismo gris, mismo peso— y no se distinguían de
+              un vistazo. Pintar cada botón de un color distinto habría roto la
+              regla de que el color significa algo. */}
           <button onClick={() => setVerCalendario(v => !v)}
             title="Días de trabajo de la semana y feriados del proyecto"
             className={`btn ${verCalendario ? 'btn-on' : 'btn-secundario'}`}>
-            <CalendarDays size={14} /> Calendario laboral
+            <CalendarDays size={14} className={verCalendario ? '' : 'text-k-blue'} /> Calendario laboral
           </button>
           <button onClick={() => setVerSustento(true)}
             title="Sustento de valorización: partes y fotos por partida"
             className="btn btn-secundario">
-            <FileText size={14} /> Reporte por partida
+            <FileText size={14} className="text-k-text3" /> Reporte por partida
           </button>
           <MenuMas items={[
             { icono: <ClipboardList size={14} />, texto: 'Parte del día',

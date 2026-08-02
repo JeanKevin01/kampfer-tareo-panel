@@ -9,6 +9,7 @@ import BrandDoc from '@/components/print/BrandDoc'
 import { fmtDeps, numerosDeGrid } from '@/lib/lookahead'
 import type { MapaNumeros } from '@/lib/lookahead'
 import type { GridResp } from '@/components/LookaheadGrid'
+import { leerFiltrosDeUrl, pasaFiltros, tieneTrabajoEn, describirFiltros } from '@/lib/lookaheadFiltros'
 
 const PROYECTO_ID = 1
 const DIAS_1 = ['L', 'M', 'M', 'J', 'V', 'S', 'D']
@@ -25,20 +26,53 @@ export default function LookaheadPrint() {
   const [params] = useSearchParams()
   const desde = params.get('desde') || iso(lunesDe(new Date()))
   const semanas = Math.min(8, Math.max(1, Number(params.get('semanas') || 4)))
+  const filtros = leerFiltrosDeUrl(params)
 
   const grid = useQuery<GridResp>({
     queryKey: ['lookahead-grid-print', desde, semanas],
     queryFn: () => api(`/ev/programacion/lookahead-grid?proyecto_id=${PROYECTO_ID}&desde=${desde}&semanas=${semanas}`),
   })
   if (!grid.data) return <div style={{ padding: 40, fontFamily: "'Geist Variable', sans-serif", color: '#55606f' }}>Cargando LookAhead…</div>
-  const d = grid.data
+  const bruto = grid.data
+  const nTotal = bruto.grupos.reduce((s, g) => s + g.actividades.length, 0)
+  // Los MISMOS filtros de la pantalla (llegan en la URL). Antes esta vista
+  // ignoraba los filtros: se miraba una obra recortada, se imprimía la entera,
+  // y el papel decía otra cosa que la reunión.
+  const porId = new Map(bruto.grupos.flatMap(g => g.actividades).map(a => [a.id, a]))
+  const salvados = new Set<number>()
+  if (filtros.soloConTrabajo) {
+    for (const g of bruto.grupos) for (const a of g.actividades) {
+      if (!tieneTrabajoEn(a, bruto.fechas, () => false)) continue
+      salvados.add(a.id)
+      let p = a.padre_id
+      while (p) { salvados.add(p); p = porId.get(p)?.padre_id ?? null }
+    }
+  }
+  const d = {
+    ...bruto,
+    grupos: bruto.grupos
+      .map(g => ({ ...g, actividades: g.actividades.filter(a =>
+        (!filtros.soloConTrabajo || salvados.has(a.id)) && pasaFiltros(a, filtros, () => false)) }))
+      .filter(g => g.actividades.length > 0),
+  }
   const nActs = d.grupos.reduce((s, g) => s + g.actividades.length, 0)
+  const recorte = describirFiltros(filtros)
 
   return (
     <BrandDoc
       tipo="Look Ahead"
       titulo={`Del ${fmtLarga(d.desde)} al ${fmtLarga(d.hasta)} · ${semanas} semanas`}
       meta={<>
+        {/* Si el papel es un recorte hay que decirlo ARRIBA: quien lo recibe no
+            sabe que faltan filas, y un informe incompleto sin avisar engaña. */}
+        {nActs < nTotal && (
+          <b style={{ color: '#8a5a00' }}>
+            Vista filtrada: {nActs} de {nTotal} actividades
+            {recorte.length ? ` — ${recorte.join(' · ')}` : ''}
+            {filtros.soloConTrabajo && !recorte.length ? ' — solo las que tienen trabajo en el periodo' : ''}
+            {' · '}
+          </b>
+        )}
         {nActs} actividades · celda: programado (azul) / real (verde = más, ámbar = igual,
         rojo = menos que lo programado) · ∅ = salto intencional
       </>}
