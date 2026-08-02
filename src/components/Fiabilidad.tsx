@@ -14,8 +14,8 @@
 // responsable» es un conteo, no una distribución: no necesita historia para
 // significar algo, y es la frase que mueve a alguien a actuar.
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { AlertTriangle, Loader2, ShieldCheck, Repeat, Clock } from 'lucide-react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Check, Loader2, ShieldCheck, Repeat, Clock, ListChecks } from 'lucide-react'
 
 import { api } from '@/lib/api'
 import { TIPOS_RESTRICCION } from '@/lib/catalogos'
@@ -29,14 +29,18 @@ interface Celda {
 interface FilaTipo extends Celda { tipo: string }
 interface FilaResp extends Celda { responsable_id: number | null; responsable: string }
 interface FilaCruce extends Celda { tipo: string; responsable: string }
-interface Vencida {
-  id: number; tipo: string; responsable: string; descripcion: string
-  actividad: string | null; actividad_id: number; fecha_requerida: string; dias: number
-}
 interface Libro {
   total: Celda; por_tipo: FilaTipo[]; por_responsable: FilaResp[]
-  reincidencia: FilaCruce[]; vencidas: Vencida[]; n_minimo: number; hoy: string
+  reincidencia: FilaCruce[]; n_minimo: number; hoy: string
 }
+interface Pendiente {
+  id: number; descripcion: string; tipo: string
+  responsable_id: number | null; responsable: string
+  fecha_requerida: string | null; dias: number | null
+  actividad_id: number; actividad: string | null; actividad_fecha: string | null
+  estado: string; otm_id: string | null
+}
+interface Bandeja { hoy: string; pendientes: Pendiente[] }
 
 const etiquetaTipo = (t: string) => TIPOS_RESTRICCION[t] ?? t
 const dias = (v: number | null) => v == null ? '—' : `${v > 0 ? '+' : ''}${v} d`
@@ -74,6 +78,25 @@ export default function Fiabilidad() {
       </div>
 
       {q.isError && <p className="text-k-red text-sm">{(q.error as Error).message}</p>}
+
+      {d && d.total.n > 0 && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <Tarjeta label="Restricciones" valor={d.total.n} />
+          <Tarjeta label="Pendientes" valor={d.total.n_pendientes}
+            color={d.total.n_pendientes ? 'text-k-alerta' : 'text-k-text'} />
+          <Tarjeta label="Vencidas" valor={d.total.n_vencidas}
+            color={d.total.n_vencidas ? 'text-k-red' : 'text-k-green'} />
+          <Tarjeta label="Liberadas a tiempo"
+            valor={d.total.pct_a_tiempo == null ? '—' : `${d.total.pct_a_tiempo}%`}
+            pie={`${d.total.n_medidas} medidas`} />
+        </div>
+      )}
+
+      {/* La bandeja NO se filtra por el rango de fechas de arriba: ese rango
+          acota el análisis del pasado, y una restricción abierta hay que verla
+          aunque se haya creado fuera de la ventana que se está mirando. */}
+      <BandejaLiberacion />
+
       {d && d.total.n === 0 && (
         <p className="text-sm text-k-text3 border border-k-border rounded-xl px-4 py-6 text-center">
           Todavía no hay restricciones registradas en este rango. Este cuadro se llena solo
@@ -83,41 +106,6 @@ export default function Fiabilidad() {
 
       {d && d.total.n > 0 && (
         <>
-          {/* Resumen */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <Tarjeta label="Restricciones" valor={d.total.n} />
-            <Tarjeta label="Pendientes" valor={d.total.n_pendientes}
-              color={d.total.n_pendientes ? 'text-k-alerta' : 'text-k-text'} />
-            <Tarjeta label="Vencidas" valor={d.total.n_vencidas}
-              color={d.total.n_vencidas ? 'text-k-red' : 'text-k-green'} />
-            <Tarjeta label="Liberadas a tiempo"
-              valor={d.total.pct_a_tiempo == null ? '—' : `${d.total.pct_a_tiempo}%`}
-              pie={`${d.total.n_medidas} medidas`} />
-          </div>
-
-          {/* Vencidas: lo accionable de hoy, antes que cualquier estadística */}
-          {!!d.vencidas.length && (
-            <section className="rounded-xl border border-k-red/30 bg-k-red/5 p-3">
-              <h3 className="text-xs font-bold text-k-red flex items-center gap-1.5 mb-2">
-                <AlertTriangle size={13} /> {d.vencidas.length} restricciones pasadas de fecha y sin liberar
-              </h3>
-              <div className="space-y-1">
-                {d.vencidas.slice(0, 8).map(v => (
-                  <div key={v.id} className="flex items-baseline gap-2 text-[11px]">
-                    <b className="text-k-red w-14 flex-shrink-0">{v.dias} d</b>
-                    <span className="text-k-text2 flex-1 min-w-0 truncate">
-                      {v.descripcion} <span className="text-k-text3">· {etiquetaTipo(v.tipo)} · {v.responsable}</span>
-                    </span>
-                    <span className="text-k-text3 truncate max-w-[180px]">{v.actividad}</span>
-                  </div>
-                ))}
-                {d.vencidas.length > 8 && (
-                  <p className="text-[10px] text-k-text3">…y {d.vencidas.length - 8} más.</p>
-                )}
-              </div>
-            </section>
-          )}
-
           {/* Reincidencia */}
           {!!d.reincidencia.length && (
             <section>
@@ -160,6 +148,170 @@ export default function Fiabilidad() {
         </>
       )}
     </div>
+  )
+}
+
+// ── Bandeja de liberación ────────────────────────────────────
+// La otra mitad del módulo: el libro mayor de arriba mide el pasado, esto
+// resuelve el presente. El viernes el planner repasa lo que sigue restringido y
+// declara, fila por fila, QUÉ DÍA se liberó de verdad — si el fierro llegó el
+// martes, la latencia del responsable tiene que medir el martes y no el día en
+// que hubo tiempo de limpiar la lista. Por eso la fecha por defecto es hoy pero
+// cada fila la puede cambiar.
+function BandejaLiberacion() {
+  const qc = useQueryClient()
+  const [fecha, setFecha] = useState('')
+  const [porFila, setPorFila] = useState<Record<number, string>>({})
+  const [sel, setSel] = useState<Set<number>>(new Set())
+  const [resp, setResp] = useState('')
+  const [msg, setMsg] = useState('')
+
+  const q = useQuery<Bandeja>({
+    queryKey: ['fiab-pendientes'],
+    queryFn: () => api('/ev/fiabilidad/pendientes'),
+  })
+
+  const hoy = q.data?.hoy ?? ''
+  // La fecha de referencia sale del API (hora de Lima) y no del navegador: el
+  // `new Date()` del cliente se equivoca de día por poco cerca de medianoche.
+  const fechaUso = fecha || hoy
+  const todas = q.data?.pendientes ?? []
+  const claveResp = (p: Pendiente) => p.responsable_id == null ? 'sin' : String(p.responsable_id)
+  const lista = resp ? todas.filter(p => claveResp(p) === resp) : todas
+  const areas = [...new Map(todas.map(p => [claveResp(p), p.responsable])).entries()]
+    .sort((a, b) => a[1].localeCompare(b[1]))
+  const nVencidas = lista.filter(p => (p.dias ?? -1) > 0).length
+
+  const liberar = useMutation({
+    mutationFn: (items: { id: number; liberada_el: string }[]) =>
+      api<{ liberadas: number[]; omitidas: number[] }>('/ev/fiabilidad/liberar', {
+        method: 'POST', body: JSON.stringify({ items }),
+      }),
+    onSuccess: r => {
+      setSel(new Set()); setPorFila({})
+      setMsg(`${r.liberadas.length} liberada(s)`
+        + (r.omitidas.length ? ` · ${r.omitidas.length} ya lo estaba(n)` : ''))
+      // La liberación cambia el conteo de restricciones pendientes que pintan el
+      // Lookahead y el plan semanal, no solo esta pantalla.
+      for (const k of ['fiab-pendientes', 'fiabilidad', 'programacion', 'lookahead',
+        'lookahead-grid', 'restricciones', 'ppc'])
+        qc.invalidateQueries({ queryKey: [k] })
+    },
+    onError: e => setMsg((e as Error).message),
+  })
+
+  const fechaDe = (p: Pendiente) => porFila[p.id] ?? fechaUso
+  const marcar = (id: number) => setSel(s => {
+    const n = new Set(s)
+    if (n.has(id)) n.delete(id); else n.add(id)
+    return n
+  })
+  const todosMarcados = lista.length > 0 && lista.every(p => sel.has(p.id))
+
+  const plazo = (v: number | null) => {
+    if (v == null) return <span className="text-k-text3">sin fecha</span>
+    if (v > 0) return <b className="text-k-red">+{v} d</b>
+    if (v === 0) return <b className="text-k-alerta">hoy</b>
+    return <span className="text-k-text3">en {-v} d</span>
+  }
+
+  if (q.isLoading) return <p className="text-xs text-k-text3">Cargando pendientes…</p>
+  if (q.isError) return <p className="text-k-red text-sm">{(q.error as Error).message}</p>
+  if (!todas.length) return (
+    <p className="text-xs text-k-green border border-k-green/30 bg-k-green/5 rounded-xl px-4 py-3">
+      No queda ninguna restricción abierta.
+    </p>
+  )
+
+  return (
+    <section className="rounded-xl border border-k-border overflow-hidden">
+      <header className="flex items-center gap-2 flex-wrap px-3 py-2 bg-k-raised border-b border-k-border">
+        <h3 className="text-xs font-bold text-k-text flex items-center gap-1.5">
+          <ListChecks size={13} className="text-k-amber" /> Pendientes por liberar
+          <span className="font-normal text-k-text3">
+            {lista.length}
+            {nVencidas > 0 && <span className="text-k-red font-bold"> · {nVencidas} vencidas</span>}
+          </span>
+        </h3>
+        <div className="ml-auto flex items-center gap-2">
+          {areas.length > 1 && (
+            <select value={resp} onChange={e => setResp(e.target.value)}
+              className="bg-k-surface border border-k-border rounded-lg px-2 py-1.5 text-[11px] text-k-text2 outline-none">
+              <option value="">Todos los responsables</option>
+              {areas.map(([k, n]) => <option key={k} value={k}>{n}</option>)}
+            </select>
+          )}
+          <label className="text-[11px] text-k-text3">Se liberó el</label>
+          <input type="date" value={fechaUso} max={hoy} onChange={e => setFecha(e.target.value)}
+            title="Fecha que se aplica a las filas que no tengan una propia"
+            className="bg-k-surface border border-k-border rounded-lg px-2 py-1.5 text-[11px] text-k-text outline-none" />
+          <button className="btn btn-primario btn-sm" disabled={!sel.size || liberar.isPending}
+            onClick={() => liberar.mutate(lista.filter(p => sel.has(p.id))
+              .map(p => ({ id: p.id, liberada_el: fechaDe(p) })))}>
+            {liberar.isPending ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+            Liberar{sel.size ? ` ${sel.size}` : ''}
+          </button>
+        </div>
+      </header>
+
+      {msg && <p className="px-3 py-1.5 text-[11px] text-k-text2 bg-k-amber/5">{msg}</p>}
+
+      <div className="overflow-x-auto">
+        <table className="w-full text-[11px]">
+          <thead>
+            <tr className="text-[10px] uppercase text-k-text3 border-b border-k-border">
+              <th className="px-2 py-1.5 w-8">
+                <input type="checkbox" checked={todosMarcados} aria-label="Marcar todas"
+                  onChange={() => setSel(todosMarcados ? new Set() : new Set(lista.map(p => p.id)))} />
+              </th>
+              <th className="text-left px-1 py-1.5 w-16">Plazo</th>
+              <th className="text-left px-2 py-1.5">Restricción</th>
+              <th className="text-left px-2 py-1.5">Actividad</th>
+              <th className="px-2 py-1.5 w-36">Se liberó el</th>
+              <th className="w-10" />
+            </tr>
+          </thead>
+          <tbody>
+            {lista.map(p => (
+              <tr key={p.id}
+                className={`border-b border-k-border/40 last:border-0 ${sel.has(p.id) ? 'bg-k-amber/5' : ''}`}>
+                <td className="px-2 py-1.5 text-center">
+                  <input type="checkbox" checked={sel.has(p.id)} onChange={() => marcar(p.id)}
+                    aria-label={`Marcar ${p.descripcion}`} />
+                </td>
+                <td className="px-1 py-1.5 whitespace-nowrap">{plazo(p.dias)}</td>
+                <td className="px-2 py-1.5">
+                  <div className="text-k-text truncate max-w-[340px]">{p.descripcion}</div>
+                  <div className="text-k-text3">{etiquetaTipo(p.tipo)} · {p.responsable}</div>
+                </td>
+                <td className="px-2 py-1.5 text-k-text3">
+                  <div className="truncate max-w-[200px]">{p.actividad}</div>
+                  {p.estado === 'CANCELADO' && <span className="text-k-red">actividad cancelada</span>}
+                </td>
+                <td className="px-2 py-1.5">
+                  <input type="date" value={fechaDe(p)} max={hoy}
+                    onChange={e => setPorFila(f => ({ ...f, [p.id]: e.target.value }))}
+                    className="bg-k-surface border border-k-border rounded-lg px-1.5 py-1 text-[11px] text-k-text outline-none focus:border-k-amber w-full" />
+                </td>
+                <td className="px-1 py-1.5">
+                  <button className="btn btn-terciario btn-sm" disabled={liberar.isPending}
+                    title="Liberar solo esta, con la fecha de su fila"
+                    onClick={() => liberar.mutate([{ id: p.id, liberada_el: fechaDe(p) }])}>
+                    <Check size={13} />
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <p className="px-3 py-2 text-[10px] text-k-text3 border-t border-k-border">
+        La fecha de cada fila es la <b>real</b> de liberación, no la de hoy: es la que mide la
+        latencia del responsable. No se aceptan fechas futuras. Marca varias y libéralas de una
+        sola vez, o usa el ✓ de la fila para una sola.
+      </p>
+    </section>
   )
 }
 
