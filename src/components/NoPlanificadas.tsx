@@ -66,13 +66,16 @@ const CLR_MOTIVO: Record<string, string> = {
   ADELANTO: 'text-k-green border-green-500/40 bg-green-500/10',
 }
 
-export default function NoPlanificadas({ proyectoId = 1, nSem }: {
+export default function NoPlanificadas({ proyectoId = 1, nSem, lunes }: {
   proyectoId?: number
   /** El mismo rango que los indicadores del tab: dos ventanas distintas en la
    *  misma pantalla no son dos vistas, son una contradicción. */
   nSem: number
+  /** Lunes que se está mirando arriba, para poder acotar la bandeja a él. */
+  lunes?: string
 }) {
   const qc = useQueryClient()
+  const [soloSemana, setSoloSemana] = useState(false)
   const [abierta, setAbierta] = useState<number | null>(null)
   const [foto, setFoto] = useState<string | null>(null)
   const [err, setErr] = useState('')
@@ -111,7 +114,12 @@ export default function NoPlanificadas({ proyectoId = 1, nSem }: {
   }
 
   const d = q.data
-  const actos = d?.actividades ?? []
+  // El API ya devuelve qué actividad cae en qué semana, así que acotar es
+  // filtrar en cliente: ni una consulta más ni un endpoint nuevo.
+  const idsDeLaSemana = soloSemana && lunes
+    ? new Set((d?.semanas ?? []).filter(s => s.lunes === lunes).flatMap(s => s.actividades))
+    : null
+  const actos = (d?.actividades ?? []).filter(a => !idsDeLaSemana || idsDeLaSemana.has(a.actividad_id))
   // A quién pudo desplazar: las comprometidas que NO cumplieron en la semana de
   // esta actividad. Es de donde salió la cuadrilla.
   const candidatasDe = (actId: number) => {
@@ -124,10 +132,24 @@ export default function NoPlanificadas({ proyectoId = 1, nSem }: {
       <div className="flex items-center gap-2 px-4 py-2.5 border-b border-k-border flex-wrap">
         <AlertTriangle size={14} className="text-k-alerta flex-shrink-0" />
         <p className="text-xs font-bold text-k-text">Trabajo no planificado</p>
+        {/* Esta bandeja NO sigue la navegación de semana de arriba (esa es del
+            cierre): es un acumulado de las últimas N semanas, para clasificar de
+            una vez todo lo pendiente. Como está justo debajo del navegador de
+            semana, parecía roto — «cambio de semana y no cambia». Ahora lo dice,
+            y se puede acotar a la semana que se está mirando. */}
         {!!d && (
           <span className="text-[10px] text-k-text3 font-mono">
-            {fmtDia(d.desde)} → {fmtDia(d.hasta)}
+            {soloSemana && lunes ? `solo la semana del ${fmtDia(lunes)}`
+              : `${fmtDia(d.desde)} → ${fmtDia(d.hasta)} · acumulado`}
           </span>
+        )}
+        {!!lunes && (
+          <label className="flex items-center gap-1.5 text-[10px] text-k-text2 cursor-pointer select-none"
+            title="La bandeja junta varias semanas a propósito: clasificar de una vez sale más barato que ir semana por semana. Marca esto para ver solo la que tienes arriba.">
+            <input type="checkbox" checked={soloSemana} className="accent-amber-500"
+              onChange={e => setSoloSemana(e.target.checked)} />
+            Solo la semana de arriba
+          </label>
         )}
         {q.isFetching && <Loader2 size={13} className="animate-spin text-k-text3" />}
         {!!d?.pendientes && (
@@ -149,7 +171,11 @@ export default function NoPlanificadas({ proyectoId = 1, nSem }: {
 
         {!actos.length && !q.isLoading && (
           <p className="text-xs text-k-text3 py-4 text-center">
-            Nada fuera del plan en este periodo.
+            {soloSemana && (d?.actividades ?? []).length > 0
+              ? <>Nada fuera del plan en esta semana — pero hay{' '}
+                  <b className="text-k-text2">{(d?.actividades ?? []).length}</b> en el acumulado.
+                  Desmarca «Solo la semana de arriba» para verlas.</>
+              : 'Nada fuera del plan en este periodo.'}
           </p>
         )}
 

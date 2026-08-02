@@ -16,9 +16,19 @@ import { ProgramarLote } from '@/components/ProgramarLote'
 import { CalendarioLaboral } from '@/components/CalendarioLaboral'
 import HistogramaMO from '@/components/HistogramaMO'
 import MenuMas from '@/components/MenuMas'
+import { useTab } from '@/lib/tabs'
+import type { TabDef } from '@/lib/tabs'
 
 const PROYECTO_ID = 1
 const DIAS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
+// La pestaña viaja en ?tab= (misma convención que el resto del panel), para que
+// un enlace al LookAhead abra el LookAhead y no el plan semanal.
+const TABS_PROG: TabDef[] = [
+  { id: 'semana', label: 'Plan semanal' },
+  { id: 'lookahead', label: 'Lookahead' },
+  { id: 'histograma', label: 'Histograma · Ratios' },
+  { id: 'ppc', label: 'PPC · Causas' },
+]
 const MESES = ['', 'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
 const inputCls = 'bg-k-raised border border-k-border rounded-lg px-2.5 py-2 text-sm text-k-text outline-none focus:border-k-amber w-full'
 
@@ -106,7 +116,11 @@ function agrupaPorSup(acts: Actividad[], libres: Reporte[]) {
 
 export default function Programacion() {
   const qc = useQueryClient()
-  const [vista, setVista] = useState<'semana' | 'lookahead' | 'histograma' | 'ppc'>('semana')
+  // La pestaña TAMBIÉN va en la URL. Sin esto los filtros del LookAhead viajaban
+  // en el enlace pero eran inalcanzables: al abrirlo la página volvía al plan
+  // semanal, así que parecía que no se había guardado nada (Jean, 2026-08-01).
+  const [vista, setVista] = useTab(TABS_PROG, 'semana') as
+    [ 'semana' | 'lookahead' | 'histograma' | 'ppc', (v: string) => void ]
   const [agruparSup, setAgruparSup] = useState(false)   // plan semanal separado por supervisor
   const [lunes, setLunes] = useState(() => iso(lunesDe(new Date())))
   // `tipo` lo fija el paso 0 de ProgramarLote: 'libre' = actividad nuestra sin
@@ -202,7 +216,7 @@ export default function Programacion() {
 
       {/* Vistas Last Planner: plan semanal / lookahead / aprendizaje */}
       <div className="flex gap-2">
-        {([['semana', 'Plan semanal'], ['lookahead', 'Lookahead'], ['histograma', 'Histograma · Ratios'], ['ppc', 'PPC · Causas']] as const).map(([k, l]) => (
+        {TABS_PROG.map(({ id: k, label: l }) => (
           <button key={k} onClick={() => setVista(k)}
             className={`text-sm px-3 py-2 rounded-lg border font-medium ${
               vista === k ? 'border-k-amber bg-amber-500/10 text-k-amber' : 'border-k-border text-k-text2 hover:bg-k-raised'}`}>
@@ -1697,7 +1711,7 @@ function PanelPPC() {
       )}
 
       {/* La bandeja: el parte y las fotos que mandó campo, para clasificarlo. */}
-      <NoPlanificadas proyectoId={PROYECTO_ID} nSem={nSem} />
+      <NoPlanificadas proyectoId={PROYECTO_ID} nSem={nSem} lunes={lunes} />
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         {/* PPC semanal (meta lean: ≥75%) */}
