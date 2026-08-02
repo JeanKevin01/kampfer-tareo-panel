@@ -5,11 +5,13 @@
 // ev_avances_diarios, la MISMA tabla del módulo de Valor Ganado).
 // EvaluacionSemanal = el formato "F030b - Planeamiento" (comprometido vs
 // alcanzado de la semana, con cumplimiento SI/NO y causa).
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { ChevronLeft, ChevronRight, Loader2, Printer, Search } from 'lucide-react'
 import { api } from '@/lib/api'
 import { CNC } from '@/lib/catalogos'
+import { mapaColores, COLOR_EMPRESA_OTRAS } from '@/lib/empresas'
+import type { EmpresaUsada } from '@/lib/empresas'
 import { lunesDe, iso } from '@/lib/semana'
 import { DIAS_1, fmtDia, fmtCorta, num, isoDow, clrRealTxt, parseDeps, fmtDeps, runsDeFila, tramosDeFila, numCorto, numerosDeGrid } from '@/lib/lookahead'
 import type { TipoDep, MapaNumeros } from '@/lib/lookahead'
@@ -184,6 +186,10 @@ export function LookaheadGrid({ onEditar, onProgramar }: {
   const [fEstado, setFEstado] = useState('')
   const [soloRest, setSoloRest] = useState(false)
   const [soloRevisar, setSoloRevisar] = useState(false)
+  // Filtro por empresa (0042). Sin él el color de la barra sirve para ubicar
+  // pero no para aislar: «enséñame TODO lo que depende de OPEMIP» es la
+  // pregunta que se hace cuando un contratista se atrasa.
+  const [fEmpresa, setFEmpresa] = useState('')
   // En qué bandas se ordenan las porciones dentro de su fila. Son ETIQUETAS,
   // no jerarquía: la misma porción se mira por área o por frente según lo que
   // toque presentar, sin crear una fila más ni obligar a elegir al programar.
@@ -243,6 +249,17 @@ export function LookaheadGrid({ onEditar, onProgramar }: {
     queryKey: ['supervisores-lista'],
     queryFn: () => api('/api/supervisores'),
   })
+  // Catálogo de empresas: da el ORDEN (primera aparición) del que sale el color
+  // de cada barra, y alimenta el filtro.
+  const empresas = useQuery<EmpresaUsada[]>({
+    queryKey: ['empresas-usadas'],
+    queryFn: () => api('/ev/programacion/empresas'),
+    staleTime: 5 * 60 * 1000,
+  })
+  const coloresEmpresa = useMemo(() => mapaColores(empresas.data), [empresas.data])
+  const colorEmpresa = useCallback(
+    (e: string | null | undefined) => (e && coloresEmpresa.get(e)) || COLOR_EMPRESA_OTRAS,
+    [coloresEmpresa])
   const grid = useQuery<GridResp>({
     queryKey: ['lookahead-grid', desde, nSemanas],
     queryFn: () => api(`/ev/programacion/lookahead-grid?proyecto_id=${PROYECTO_ID}&desde=${desde}&semanas=${nSemanas}`),
@@ -398,7 +415,7 @@ export function LookaheadGrid({ onEditar, onProgramar }: {
   // Se normalizan tildes para que «liberacion» encuentre «Liberación».
   const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
   const q = norm(busca.trim())
-  const hayFiltro = !!(q || fSup || fEstado || soloRest || soloRevisar)
+  const hayFiltro = !!(q || fSup || fEstado || fEmpresa || soloRest || soloRevisar)
   const supervisores = useMemo(() => {
     const m = new Map<string, string>()
     for (const g of d?.grupos ?? []) {
@@ -500,20 +517,27 @@ export function LookaheadGrid({ onEditar, onProgramar }: {
         .map(g => ({ ...g, actividades: g.actividades.filter(a => {
           if (fSup && (a.supervisor_id ?? '') !== fSup) return false
           if (fEstado && a.estado !== fEstado) return false
+          // '__ext' = todo lo de terceros, sea cual sea la empresa: es la
+          // pregunta «qué de este plan no depende de mí».
+          if (fEmpresa === '__ext' && !a.externa) return false
+          if (fEmpresa && fEmpresa !== '__ext' && (a.empresa ?? '') !== fEmpresa) return false
           if (soloRest && !(a.rest_pend ?? 0)) return false
           if (soloRevisar && !porRevisar(a)) return false
           if (!q) return true
           return norm([a.titulo, a.partida_codigo, a.partida_desc, a.hito_desc,
-                       a.supervisor_nombre, a.responsable, `#${a.id}`]
+                       a.supervisor_nombre, a.responsable, a.empresa, `#${a.id}`]
             .filter(Boolean).join(' ')).includes(q)
         }) }))
         .filter(g => g.actividades.length > 0)
     }
     return todos
-  }, [d, q, fSup, fEstado, soloRest, soloRevisar, hayFiltro, enArbol, hijosDe, selD1, selD2])
+  }, [d, q, fSup, fEstado, fEmpresa, soloRest, soloRevisar, hayFiltro, enArbol, hijosDe, selD1, selD2])
   const nTotal = (d?.grupos ?? []).reduce((s, g) => s + g.actividades.length, 0)
   const nVisible = grupos.reduce((s, g) => s + g.actividades.length, 0)
-  const limpiarFiltros = () => { setBusca(''); setFSup(''); setFEstado(''); setSoloRest(false) }
+  const limpiarFiltros = () => {
+    setBusca(''); setFSup(''); setFEstado(''); setFEmpresa('')
+    setSoloRest(false); setSoloRevisar(false)
+  }
   // Contraer todo = compactar toda partida con 2+ etapas Y contraer los proyectos.
   const contraerTodo = () => {
     const pids = new Set<number>()
@@ -633,6 +657,19 @@ export function LookaheadGrid({ onEditar, onProgramar }: {
           {['PROGRAMADO', 'EJECUTADO', 'NO_CUMPLIDA', 'CANCELADO'].map(e =>
             <option key={e} value={e}>{e === 'NO_CUMPLIDA' ? 'NO CUMPLIDA' : e[0] + e.slice(1).toLowerCase()}</option>)}
         </select>
+        {/* Empresa: solo si hay alguna registrada — sin filas de terceros este
+            selector sería una caja vacía más en una barra que ya está llena. */}
+        {(empresas.data ?? []).length > 0 && (
+          <select value={fEmpresa} onChange={e => setFEmpresa(e.target.value)}
+            title="Aislar lo que ejecuta un tercero: qué de este plan no depende de nosotros"
+            className="bg-k-raised border border-k-border rounded-lg px-2.5 py-2 text-sm text-k-text2 outline-none">
+            <option value="">Todas las empresas</option>
+            <option value="__ext">— Solo trabajo de terceros —</option>
+            {(empresas.data ?? []).map(e => (
+              <option key={e.empresa} value={e.empresa}>{e.empresa} ({e.n})</option>
+            ))}
+          </select>
+        )}
         {/* En qué bandas se ordenan las porciones DENTRO de su fila. No cambia
             qué se ve, solo cómo se ordena — que es lo que se decide justo antes
             de una reunión y cambia de una semana a otra. */}
@@ -799,7 +836,7 @@ export function LookaheadGrid({ onEditar, onProgramar }: {
               <GrupoOTM key={g.otm_id ?? '-'} grupo={g} fechas={d!.fechas} hoy={hoy}
                 laborable={laborable} onEditar={onEditar} cadena={cadena}
                 fijar={fijarCols} sel={sel} onSel={toggleSel}
-                compacto={compacto}
+                compacto={compacto} colorEmpresa={colorEmpresa}
                 abierta={abierta} onAbrir={verDetalle}
                 compactas={compactas} onCompactar={toggleCompacta}
                 contraido={contraidos.has(g.otm_id ?? '-')}
@@ -1304,6 +1341,10 @@ interface Vincular { on: boolean; primera: number | null }
 interface PropsFila {
   fijar: boolean
   compacto: boolean
+  /** Color de la barra de una fila de terceros (0042). Viaja por aquí porque
+   *  `PropsFila` es el único canal que llega hasta la fila sin enhebrarlo a
+   *  mano por los tres niveles de la rama. */
+  colorEmpresa: (empresa: string | null | undefined) => { barra: string; texto: string }
   sel: number[]; onSel: (id: number) => void
   onEncadenar: (ids: number[]) => void
   onDeps: (a: ActGrid, txt: string) => void
@@ -1679,7 +1720,7 @@ function FilaPartidaCompacta({ acts, color, fechas, hoy, laborable, onToggle, fi
   )
 }
 
-function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, onReal, onProg, color, vincular, onPick, onPanel, onHover, fijar, compacto, sel, onSel, onDeps, onCampo, abierta, onAbrir, numero, numeros, sangria, etiquetas, onSubfila, onHistorial }: {
+function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, onReal, onProg, color, colorEmpresa, vincular, onPick, onPanel, onHover, fijar, compacto, sel, onSel, onDeps, onCampo, abierta, onAbrir, numero, numeros, sangria, etiquetas, onSubfila, onHistorial }: {
   a: ActGrid; fechas: string[]; hoy: string
   laborable: (f: string) => boolean
   cadena: { focal: number; azules: Set<number>; verdes: Set<number> } | null
@@ -1961,7 +2002,67 @@ function FilaActividad({ a, fechas, hoy, laborable, cadena, onCadena, onEditar, 
                   className="w-full text-[8px] font-bold text-k-red hover:underline">⛓ vincular</button>
               )}
             </td>
-            {verBarra
+            {a.externa
+              ? (() => {
+                // ── Barra de terceros: la duración ES el dato ──────────────
+                // Una fila externa no tiene metrado que prorratear, así que sus
+                // días salían VACÍOS: la única fila cuyo contenido es «ocupo del
+                // 27 al 3» no dibujaba nada y había que leer dos columnas de
+                // fechas para saberlo. Se pinta el tramo completo F.Inic→F.Fin,
+                // que es la información que sí existe.
+                //
+                // El color identifica a la empresa (ver lib/empresas.ts), pero
+                // el NOMBRE va escrito dentro de la barra: el color acelera, no
+                // sostiene — con 5 empresas o con daltonismo se sigue leyendo.
+                const c = colorEmpresa(a.empresa)
+                const ocupa = (f: string) => f >= a.fecha && f <= (a.fecha_fin || a.fecha) && !saltos.has(f)
+                const trs = tramosDeFila(fechas, ocupa)
+                if (!trs.length) {
+                  return fechas.map((f, i) => (
+                    <CeldaDia key={f} prog={undefined} real={undefined}
+                      esSalto={saltos.has(f)} esMedio={false} laborable={laborable(f)}
+                      editable={false} onRegistrar={() => {}}
+                      esHoy={f === hoy} finSemana={(i + 1) % 7 === 0} />
+                  ))
+                }
+                const mayor = trs.reduce((m, t) => (t.largo > m.largo ? t : m), trs[0])
+                const enTramo = new Map<number, { largo: number; ancho: boolean }>()
+                const dentro = new Set<number>()
+                for (const t of trs) {
+                  enTramo.set(t.i, { largo: t.largo, ancho: t === mayor })
+                  for (let k = t.i; k < t.i + t.largo; k++) dentro.add(k)
+                }
+                const etq = a.empresa || 'Otra empresa'
+                const ayuda = `${etq} — ${fmtCorta(a.fecha)} → ${fmtCorta(a.fecha_fin || a.fecha)}`
+                  + `${a.plazo_dias ? ` (${num(a.plazo_dias)} d)` : ''}`
+                  + '\nNo depende de nosotros: arrastra nuestras fechas por los vínculos,'
+                  + '\npero no cuenta en el PPC.'
+                return fechas.map((f, i) => {
+                  const t = enTramo.get(i)
+                  if (t) {
+                    return (
+                      <td key={f} colSpan={t.largo} onClick={() => onEditar(a)} title={ayuda}
+                        className="relative border-b border-k-border/50 p-0 cursor-pointer">
+                        {/* mx-px = los 2px de aire entre barras contiguas que
+                            evitan que dos empresas seguidas se lean como una */}
+                        <div className="my-0.5 mx-px min-h-[1.15rem] rounded-md overflow-hidden
+                          font-bold text-[10px] flex items-center justify-center px-1.5 truncate hover:brightness-110"
+                          style={{ background: c.barra, color: c.texto }}>
+                          {t.ancho ? etq : null}
+                        </div>
+                      </td>
+                    )
+                  }
+                  if (dentro.has(i)) return null
+                  return (
+                    <CeldaDia key={f} prog={undefined} real={undefined}
+                      esSalto={saltos.has(f)} esMedio={false} laborable={laborable(f)}
+                      editable={false} onRegistrar={() => {}}
+                      esHoy={f === hoy} finSemana={(i + 1) % 7 === 0} />
+                  )
+                })
+              })()
+              : verBarra
               ? (() => {
                 // Barra única: un <td colSpan> por tramo (el fin de semana lo
                 // parte, como en Project) y el total en el más ancho. El resto

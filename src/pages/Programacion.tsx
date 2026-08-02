@@ -496,6 +496,21 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
   const metradoNum = form.metrado_prog.trim() === '' ? null : Number(form.metrado_prog)
   const faltaPartida = !!metradoNum && !form.partida_id
 
+  // Texto libre fuera de la producción: «Responsable / cuadrilla» y la
+  // descripción se llenaban con prosa que no se puede filtrar, ordenar ni
+  // sumar — en el LookAhead ocupaban sitio sin responder ninguna pregunta. En
+  // una fila de terceros el dato que sí sirve es la EMPRESA, que agrupa; en una
+  // libre, las fechas. Se piden solo donde hay producción detrás (con partida).
+  // Si una actividad ya tenía escrito algo, el campo sigue a la vista para poder
+  // borrarlo: ocultar texto que existe es esconderlo, no simplificar.
+  const sinProduccion = form.externa || !form.partida_id
+  const verResponsable = !sinProduccion || !!act?.responsable
+  const verDescripcion = !sinProduccion || !!act?.descripcion
+  // La empresa deja de ser opcional en una fila de terceros: es lo único que
+  // queda para analizar (color de la barra, filtro, «cuántos días nos corrió»).
+  // Se exige al crear; una fila vieja sin empresa se puede seguir guardando.
+  const faltaEmpresa = form.externa && !form.empresa.trim() && !editar
+
   const guardar = useMutation({
     mutationFn: () => {
       // Una fila de terceros no lleva partida, metrado ni supervisor: se manda
@@ -607,11 +622,11 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
           {form.externa && (
             <div>
               <label className="text-[9px] uppercase font-bold text-k-text3">
-                Empresa <span className="normal-case font-normal">(opcional — sirve para agrupar sus retrasos)</span>
+                Empresa <span className="normal-case font-normal">(da el color de su barra y agrupa sus retrasos)</span>
               </label>
               <input list="empresas-usadas" placeholder="ELECTRO SAC" value={form.empresa}
                 maxLength={80} onChange={e => setForm({ ...form, empresa: e.target.value })}
-                className={inputCls} />
+                className={`${inputCls} ${faltaEmpresa ? 'border-red-500/70' : ''}`} />
               <datalist id="empresas-usadas">
                 {(empresas.data ?? []).map(e => <option key={e.empresa} value={e.empresa} />)}
               </datalist>
@@ -784,9 +799,8 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
           )}
           {/* Sin supervisor en las filas de terceros: nuestro supervisor no
               tarea trabajo ajeno, y asignárselo se la metería en su agenda de
-              campo. El «responsable» sí queda — ahí va el contacto de la otra
-              empresa, que es a quien se le reclama la fecha. */}
-          <div className="grid grid-cols-2 gap-2">
+              campo. */}
+          <div className={sinProduccion ? '' : 'grid grid-cols-2 gap-2'}>
             {!form.externa && (
               <select value={form.supervisor_id ?? ''} onChange={e => setForm({ ...form, supervisor_id: e.target.value })}
                 className={inputCls} title="Supervisor asignado: la actividad le aparecerá en su app de campo">
@@ -794,16 +808,27 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
                 {(sups.data ?? []).map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
               </select>
             )}
-            <input placeholder={form.externa ? 'Contacto en la otra empresa' : 'Responsable / cuadrilla'}
-              value={form.responsable ?? ''}
-              onChange={e => setForm({ ...form, responsable: e.target.value })} className={inputCls} />
+            {verResponsable && (
+              <input placeholder={form.externa ? 'Contacto en la otra empresa' : 'Responsable / cuadrilla'}
+                value={form.responsable ?? ''}
+                onChange={e => setForm({ ...form, responsable: e.target.value })} className={inputCls} />
+            )}
           </div>
-          <textarea placeholder="Descripción (alcance del día, metrados previstos…)" value={form.descripcion ?? ''}
-            onChange={e => setForm({ ...form, descripcion: e.target.value })} rows={3} className={inputCls} />
+          {verDescripcion && (
+            <textarea placeholder="Descripción (alcance del día, metrados previstos…)" value={form.descripcion ?? ''}
+              onChange={e => setForm({ ...form, descripcion: e.target.value })} rows={3} className={inputCls} />
+          )}
           {error && <p className="text-k-red text-xs">{error}</p>}
+          {faltaEmpresa && (
+            <p className="text-[11px] text-k-red">
+              Escribe la empresa: es el único dato de esta fila que sirve para analizar
+              (color de su barra, filtro y «cuántos días nos corrió»).
+            </p>
+          )}
           <button onClick={() => guardar.mutate()}
-            disabled={guardar.isPending || !form.titulo.trim() || faltaPartida}
-            title={faltaPartida ? 'Elige la partida o borra el metrado' : undefined}
+            disabled={guardar.isPending || !form.titulo.trim() || faltaPartida || faltaEmpresa}
+            title={faltaPartida ? 'Elige la partida o borra el metrado'
+              : faltaEmpresa ? 'Falta la empresa' : undefined}
             className="w-full bg-k-amber text-black font-bold text-sm py-2.5 rounded-lg disabled:opacity-40">
             {guardar.isPending ? 'Guardando…' : editar ? 'Guardar cambios' : 'Programar'}
           </button>
