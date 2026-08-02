@@ -496,16 +496,16 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
   const metradoNum = form.metrado_prog.trim() === '' ? null : Number(form.metrado_prog)
   const faltaPartida = !!metradoNum && !form.partida_id
 
-  // Texto libre fuera de la producción: «Responsable / cuadrilla» y la
-  // descripción se llenaban con prosa que no se puede filtrar, ordenar ni
-  // sumar — en el LookAhead ocupaban sitio sin responder ninguna pregunta. En
-  // una fila de terceros el dato que sí sirve es la EMPRESA, que agrupa; en una
-  // libre, las fechas. Se piden solo donde hay producción detrás (con partida).
-  // Si una actividad ya tenía escrito algo, el campo sigue a la vista para poder
-  // borrarlo: ocultar texto que existe es esconderlo, no simplificar.
-  const sinProduccion = form.externa || !form.partida_id
-  const verResponsable = !sinProduccion || !!act?.responsable
-  const verDescripcion = !sinProduccion || !!act?.descripcion
+  // Texto libre retirado del alta (Jean 2026-08-01): «Responsable / cuadrilla»
+  // y la descripción se llenaban con prosa que no se puede filtrar, ordenar ni
+  // sumar, y ocupaban sitio sin responder ninguna pregunta. Quien ejecuta ya lo
+  // dice el SUPERVISOR (que además manda la actividad a su app de campo) o la
+  // EMPRESA en una fila de terceros; el alcance lo dicen la partida y el metrado.
+  //
+  // Si una actividad YA tenía algo escrito, su campo sigue a la vista para poder
+  // vaciarlo: ocultar texto que existe es esconderlo, no simplificar.
+  const verResponsable = !!act?.responsable
+  const verDescripcion = !!act?.descripcion
   // La empresa deja de ser opcional en una fila de terceros: es lo único que
   // queda para analizar (color de la barra, filtro, «cuántos días nos corrió»).
   // Se exige al crear; una fila vieja sin empresa se puede seguir guardando.
@@ -800,7 +800,7 @@ function ModalActividad({ datos, repsPorId, onClose, onChange, onVerReporte }: {
           {/* Sin supervisor en las filas de terceros: nuestro supervisor no
               tarea trabajo ajeno, y asignárselo se la metería en su agenda de
               campo. */}
-          <div className={sinProduccion ? '' : 'grid grid-cols-2 gap-2'}>
+          <div className={verResponsable && !form.externa ? 'grid grid-cols-2 gap-2' : ''}>
             {!form.externa && (
               <select value={form.supervisor_id ?? ''} onChange={e => setForm({ ...form, supervisor_id: e.target.value })}
                 className={inputCls} title="Supervisor asignado: la actividad le aparecerá en su app de campo">
@@ -1144,38 +1144,21 @@ function HitosPartida({ partidaId, onCambio }: { partidaId: number; onCambio: ()
   )
 }
 
+// Solo LECTURA + borrar. El alta de vínculos se hace en el LookAhead, donde se
+// eligen con el ratón sobre la cuadrícula (modo 🔗 clic-clic, escribir «12FS+2»
+// en la columna DESPUÉS DE, o encadenar varias seleccionadas). Aquí había un
+// selector de dos pasos que obligaba a saber de memoria el proyecto y el número
+// de la antecesora, sin ver ninguna fecha: funcionaba, pero era el peor sitio
+// para hacerlo. Lo que sí hace falta desde el detalle es ver los vínculos que
+// tiene y poder soltar uno (encargo de Jean 2026-08-01).
 function Antecesoras({ act, onCambio }: { act: Actividad; onCambio: () => void }) {
   const qc = useQueryClient()
-  // Selección en 2 pasos (pedido Jean 2026-07-18): primero el proyecto (arranca en
-  // la de la actividad), luego una actividad de ESA OTM — se acabó la lista plana.
-  const [otmSel, setOtmSel] = useState(act.otm_id ?? '')
-  const [predId, setPredId] = useState(0)
-  const [lag, setLag] = useState('0')
   interface Dep { id: number; predecesora_id: number; lag_dias: number; pred_titulo: string; pred_fecha_fin: string; pred_estado: string }
   const deps = useQuery<Dep[]>({
     queryKey: ['dependencias', act.id],
     queryFn: () => api(`/ev/programacion/actividades/${act.id}/dependencias`),
   })
-  const otms = useQuery<{ otm_id: string; descripcion: string }[]>({
-    queryKey: ['otms-lista'],
-    queryFn: () => api('/ev/otms'),
-  })
-  const candidatas = useQuery<{ id: number; titulo: string; otm_id?: string | null; fecha: string; fecha_fin: string }[]>({
-    queryKey: ['actividades-lista', otmSel],
-    queryFn: () => api(`/ev/programacion/actividades?proyecto_id=${PROYECTO_ID}${otmSel ? `&otm=${encodeURIComponent(otmSel)}` : ''}`),
-  })
   const invalidar = () => { qc.invalidateQueries({ queryKey: ['dependencias', act.id] }); onCambio() }
-  const crear = useMutation({
-    mutationFn: () => api(`/ev/programacion/actividades/${act.id}/dependencias`, {
-      method: 'POST', body: JSON.stringify({ predecesora_id: predId, lag_dias: Number(lag) || 0 }),
-    }),
-    onSuccess: (j: unknown) => {
-      const m = (j as { movidas?: number[] })?.movidas
-      if (m?.length) alert(`Cascada: se recorrieron ${m.length} actividad(es) hacia adelante.`)
-      setPredId(0); setLag('0'); invalidar()
-    },
-    onError: (e: Error) => alert(e.message),
-  })
   const borrar = useMutation({
     mutationFn: (id: number) => api(`/ev/programacion/dependencias/${id}`, { method: 'DELETE' }),
     onSuccess: invalidar, onError: (e: Error) => alert(e.message),
@@ -1204,30 +1187,11 @@ function Antecesoras({ act, onCambio }: { act: Actividad; onCambio: () => void }
           )
         })}
         {(deps.data ?? []).length === 0 && !deps.isLoading && (
-          <p className="text-[11px] text-k-text3">Sin antecesoras: puede arrancar cuando se quiera.</p>
+          <p className="text-[11px] text-k-text3">
+            Sin antecesoras: puede arrancar cuando se quiera.{' '}
+            <span className="text-k-text3">Para vincularla, usa <b>🔗 Vincular</b> en el LookAhead.</span>
+          </p>
         )}
-      </div>
-      <div className="flex flex-wrap gap-1.5">
-        <select value={otmSel} onChange={e => { setOtmSel(e.target.value); setPredId(0) }}
-          title="Paso 1: elige el proyecto de la antecesora"
-          className={inputCls} style={{ width: 150 }}>
-          <option value="">Todos los proyectos</option>
-          {(otms.data ?? []).map(o => (
-            <option key={o.otm_id} value={o.otm_id}>{o.otm_id}</option>
-          ))}
-        </select>
-        <select value={predId || ''} onChange={e => setPredId(Number(e.target.value) || 0)}
-          title="Paso 2: elige la actividad de ese proyecto"
-          className={`${inputCls} flex-1 min-w-[180px]`} style={{ width: 'auto' }}>
-          <option value="">Elegir antecesora…</option>
-          {(candidatas.data ?? []).filter(c => c.id !== act.id).map(c => (
-            <option key={c.id} value={c.id}>#{c.id} {c.titulo.slice(0, 44)} ({c.fecha}→{c.fecha_fin})</option>
-          ))}
-        </select>
-        <input value={lag} onChange={e => setLag(e.target.value)} inputMode="numeric"
-          title="Lag: días de espera tras el fin de la antecesora" className={inputCls} style={{ width: 52 }} />
-        <button onClick={() => crear.mutate()} disabled={crear.isPending || !predId}
-          className="text-xs px-3 py-2 rounded-lg bg-k-amber text-black font-bold disabled:opacity-40">+ Vincular</button>
       </div>
     </div>
   )

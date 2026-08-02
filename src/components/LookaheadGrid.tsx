@@ -12,6 +12,8 @@ import { api } from '@/lib/api'
 import { CNC } from '@/lib/catalogos'
 import { mapaColores, COLOR_EMPRESA_OTRAS } from '@/lib/empresas'
 import type { EmpresaUsada } from '@/lib/empresas'
+import { useParamTexto, useParamBool, useParamNum } from '@/lib/filtrosUrl'
+import MenuMas from '@/components/MenuMas'
 import { lunesDe, iso } from '@/lib/semana'
 import { DIAS_1, fmtDia, fmtCorta, num, isoDow, clrRealTxt, parseDeps, fmtDeps, runsDeFila, tramosDeFila, numCorto, numerosDeGrid } from '@/lib/lookahead'
 import type { TipoDep, MapaNumeros } from '@/lib/lookahead'
@@ -133,8 +135,10 @@ export function LookaheadGrid({ onEditar, onProgramar }: {
   onProgramar?: () => void
 }) {
   const qc = useQueryClient()
-  const [nSemanas, setNSemanas] = useState(4)
-  const [desde, setDesde] = useState(() => iso(lunesDe(new Date())))
+  // La ventana también viaja en la URL: un enlace al LookAhead debe abrir la
+  // MISMA ventana de fechas, no la semana de quien lo abre.
+  const [nSemanas, setNSemanas] = useParamNum('sem', 4)
+  const [desde, setDesde] = useParamTexto('desde', iso(lunesDe(new Date())))
   // Cadena resaltada (clic en 🔗): antecesoras en azul, sucesoras en violeta.
   const [cadenaDe, setCadenaDe] = useState<number | null>(null)
   // Modo Vincular (clic-clic): 1er clic = la que va PRIMERO, 2º = la que sigue.
@@ -181,15 +185,20 @@ export function LookaheadGrid({ onEditar, onProgramar }: {
   // Encontrar entre muchas: con 100 partidas la cuadrícula deja de ser
   // navegable a ojo. Buscador + filtros + contraer, todo en cliente sobre lo
   // que ya trae el grid (que solo carga lo que cruza la ventana de fechas).
-  const [busca, setBusca] = useState('')
-  const [fSup, setFSup] = useState('')
-  const [fEstado, setFEstado] = useState('')
-  const [soloRest, setSoloRest] = useState(false)
-  const [soloRevisar, setSoloRevisar] = useState(false)
+  // Los filtros viven en la URL: se conservan al recargar y el enlace se puede
+  // mandar («mira lo que depende de OPEMIP» = un link, no una explicación).
+  const [busca, setBusca] = useParamTexto('q')
+  const [fSup, setFSup] = useParamTexto('resp')
+  const [fEstado, setFEstado] = useParamTexto('estado')
+  const [soloRest, setSoloRest] = useParamBool('rest')
+  const [soloRevisar, setSoloRevisar] = useParamBool('revisar')
   // Filtro por empresa (0042). Sin él el color de la barra sirve para ubicar
   // pero no para aislar: «enséñame TODO lo que depende de OPEMIP» es la
   // pregunta que se hace cuando un contratista se atrasa.
-  const [fEmpresa, setFEmpresa] = useState('')
+  const [fEmpresa, setFEmpresa] = useParamTexto('emp')
+  // Panel de filtros plegado. Cerrado la cabecera es una línea; lo que esté
+  // puesto se ve igual, en los chips de al lado.
+  const [verFiltros, setVerFiltros] = useState(false)
   // En qué bandas se ordenan las porciones dentro de su fila. Son ETIQUETAS,
   // no jerarquía: la misma porción se mira por área o por frente según lo que
   // toque presentar, sin crear una fila más ni obligar a elegir al programar.
@@ -537,7 +546,21 @@ export function LookaheadGrid({ onEditar, onProgramar }: {
   const limpiarFiltros = () => {
     setBusca(''); setFSup(''); setFEstado(''); setFEmpresa('')
     setSoloRest(false); setSoloRevisar(false)
+    setSelD1(null); setSelD2(null)
   }
+  // Lo que está puesto, en cristiano. Incluye los chips de área/frente aunque
+  // vivan en otra franja: para el planner es un filtro más, y era el más fácil
+  // de dejarse puesto sin darse cuenta.
+  const activos: { k: string; txt: string; quitar: () => void }[] = [
+    busca && { k: 'q', txt: `«${busca}»`, quitar: () => setBusca('') },
+    fSup && { k: 'resp', txt: (supervisores.find(([id]) => id === fSup)?.[1]) || fSup, quitar: () => setFSup('') },
+    fEstado && { k: 'estado', txt: fEstado === 'NO_CUMPLIDA' ? 'No cumplida' : fEstado[0] + fEstado.slice(1).toLowerCase(), quitar: () => setFEstado('') },
+    fEmpresa && { k: 'emp', txt: fEmpresa === '__ext' ? 'Solo terceros' : fEmpresa, quitar: () => setFEmpresa('') },
+    soloRest && { k: 'rest', txt: '⛔ Con restricción', quitar: () => setSoloRest(false) },
+    soloRevisar && { k: 'revisar', txt: '🔴 Por revisar', quitar: () => setSoloRevisar(false) },
+    selD1 && { k: 'd1', txt: `${etiquetas.d1}: ${selD1}`, quitar: () => setSelD1(null) },
+    selD2 && { k: 'd2', txt: `${etiquetas.d2}: ${selD2}`, quitar: () => setSelD2(null) },
+  ].filter(Boolean) as { k: string; txt: string; quitar: () => void }[]
   // Contraer todo = compactar toda partida con 2+ etapas Y contraer los proyectos.
   const contraerTodo = () => {
     const pids = new Set<number>()
@@ -591,22 +614,33 @@ export function LookaheadGrid({ onEditar, onProgramar }: {
           className={`btn font-bold ${vincular.on ? 'btn-on' : 'btn-secundario'}`}>
           🔗 Vincular
         </button>
-        <button onClick={() => setFijarCols(v => !v)}
-          title="Inmovilizar también RESP…DESPUÉS DE al desplazarse a la derecha (la fila de fechas queda fija siempre)"
-          className={`btn font-bold ${fijarCols ? 'btn-on' : 'btn-secundario'}`}>
-          ⇥ Fijar columnas
-        </button>
-        <button onClick={() => window.open(`/programacion/lookahead-imprimir?desde=${desde}&semanas=${nSemanas}`, '_blank')}
-          title="Vista imprimible en A3 apaisado"
-          className="btn btn-terciario">
-          <Printer size={14} /> Exportar PDF
-        </button>
-        <label className="flex items-center gap-1.5 text-xs text-k-text2 px-2.5 py-2 rounded-lg border border-k-border bg-k-raised cursor-pointer select-none"
-          title="Al pasar el mouse por una actividad vinculada se resalta su cadena: azul = antecesoras, verde = sucesoras">
-          <input type="checkbox" checked={mostrarRel} onChange={e => setMostrarRel(e.target.checked)}
-            className="accent-amber-500" />
-          Mostrar relaciones
-        </label>
+        {/* Vista = cómo miro la tabla; no cambia QUÉ contiene ni toca la obra.
+            Se ajusta una vez y se queda, así que no tiene por qué ocupar cuatro
+            botones permanentes al lado de la acción del módulo. */}
+        <MenuMas etiqueta="Vista" items={[
+          { texto: 'Compacto', ayuda: 'Filas de una línea: el código y la etapa pasan al tooltip. Cabe el doble.',
+            onClick: () => setCompacto(v => !v), activo: compacto },
+          { texto: 'Contraer todo', ayuda: 'Compactar las partidas por etapas y contraer los proyectos',
+            onClick: contraerTodo },
+          { texto: 'Expandir todo', ayuda: 'Volver a mostrar todas las etapas y proyectos',
+            onClick: expandirTodo },
+          { texto: 'Fijar columnas', ayuda: 'Inmovilizar RESP…DESPUÉS DE al desplazarse a la derecha',
+            onClick: () => setFijarCols(v => !v), activo: fijarCols },
+          { texto: 'Mostrar relaciones', ayuda: 'Al pasar el mouse se resalta la cadena: azul antecesoras, verde sucesoras',
+            onClick: () => setMostrarRel(v => !v), activo: mostrarRel },
+        ]} />
+        <MenuMas items={[
+          { icono: <Printer size={14} />, texto: 'Exportar PDF',
+            ayuda: 'Vista imprimible en A3 apaisado, con la ventana y los filtros de ahora',
+            onClick: () => window.open(`/programacion/lookahead-imprimir?desde=${desde}&semanas=${nSemanas}`, '_blank') },
+          { texto: 'Copiar enlace de esta vista',
+            ayuda: 'La ventana de fechas y los filtros van en la URL: se puede mandar tal cual',
+            onClick: () => {
+              navigator.clipboard.writeText(window.location.href)
+                .then(() => setToast({ msg: '🔗 Enlace copiado — abre esta misma vista, con sus filtros' }))
+                .catch(() => setToast({ msg: 'No se pudo copiar el enlace', error: true }))
+            } },
+        ]} />
         {/* La ayuda va en azul (= información en la paleta semántica) y no en
             gris: es la puerta de entrada del planner que abre esto por primera
             vez, y en gris se perdía entre los demás controles. */}
@@ -632,13 +666,47 @@ export function LookaheadGrid({ onEditar, onProgramar }: {
         </div>
       )}
 
-      {/* Encontrar entre muchas actividades */}
+      {/* ── Filtros ────────────────────────────────────────────────────────
+          Antes eran ocho controles siempre desplegados, mezclados con los
+          ajustes de vista, y no había forma de saber CUÁLES estaban puestos: si
+          te ibas con «Por revisar» marcado, al día siguiente veías 6 filas de 40
+          sin entender por qué. Ahora se pliegan en un botón que lleva la cuenta,
+          y lo que esté activo se lee en los chips de al lado (con su ✕ para
+          soltarlo de uno en uno). */}
       <div className="flex items-center gap-2 flex-wrap">
+        <button onClick={() => setVerFiltros(v => !v)}
+          title="Buscador, responsable, estado, empresa y las casillas"
+          className={`btn btn-sm font-bold ${verFiltros || hayFiltro ? 'btn-on' : 'btn-secundario'}`}>
+          ⚙ Filtros{activos.length > 0 ? ` (${activos.length})` : ''}
+        </button>
+        {/* Los chips son el resumen Y el mando: cada uno se quita desde aquí sin
+            tener que abrir el panel a buscar el control que lo puso. */}
+        {activos.map(ch => (
+          <button key={ch.k} onClick={ch.quitar} title={`Quitar: ${ch.txt}`}
+            className="flex items-center gap-1 text-[11px] px-2 py-1 rounded-full border border-amber-500/40 bg-amber-500/10 text-k-amber">
+            {ch.txt} <span className="text-k-amber/70">✕</span>
+          </button>
+        ))}
+        <span className="text-[11px] text-k-text3">
+          {hayFiltro
+            ? <><b className="text-k-amber">{nVisible}</b> de {nTotal} actividades</>
+            : <>{nTotal} actividades en el rango</>}
+        </span>
+        {activos.length > 1 && (
+          <button onClick={limpiarFiltros}
+            className="text-[11px] px-2 py-1 rounded-lg border border-k-border text-k-text3 hover:bg-k-raised">
+            Quitar todos
+          </button>
+        )}
+      </div>
+
+      {verFiltros && (
+      <div className="flex items-center gap-2 flex-wrap rounded-xl border border-k-border bg-k-raised/40 p-2.5">
         <div className="relative">
           <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-k-text3 pointer-events-none" />
           <input value={busca} onChange={e => setBusca(e.target.value)}
-            placeholder="Buscar actividad, partida, código, responsable…"
-            title="Filtra las filas por título, código o descripción de la partida, etapa, responsable o #"
+            placeholder="Buscar actividad, partida, código, empresa…"
+            title="Filtra las filas por título, código o descripción de la partida, etapa, responsable, empresa o #"
             className="w-[300px] bg-k-raised border border-k-border rounded-lg pl-8 pr-7 py-2 text-sm text-k-text outline-none focus:border-k-amber placeholder:text-k-text3" />
           {busca && (
             <button onClick={() => setBusca('')} title="Limpiar la búsqueda"
@@ -692,33 +760,8 @@ export function LookaheadGrid({ onEditar, onProgramar }: {
           <input type="checkbox" checked={soloRevisar} onChange={e => setSoloRevisar(e.target.checked)} className="accent-red-500" />
           🔴 Por revisar
         </label>
-        {/* Ajustes de vista: terciarios. No son acciones sobre la obra, son
-            cómo se mira la tabla — no deben competir con los filtros. */}
-        <button onClick={contraerTodo} title="Compactar todas las partidas por etapas y contraer los proyectos"
-          className="btn btn-sm btn-terciario">
-          ⊟ Contraer todo
-        </button>
-        <button onClick={expandirTodo} title="Volver a mostrar todas las etapas y proyectos"
-          className="btn btn-sm btn-terciario">
-          ⊞ Expandir todo
-        </button>
-        <button onClick={() => setCompacto(v => !v)}
-          title="Filas de una sola línea: el código de la partida y la etapa pasan al tooltip. Cabe el doble de actividades."
-          className={`btn btn-sm font-bold ${compacto ? 'btn-on' : 'btn-terciario'}`}>
-          ☰ Compacto
-        </button>
-        <span className="text-[11px] text-k-text3">
-          {hayFiltro
-            ? <><b className="text-k-amber">{nVisible}</b> de {nTotal} actividades</>
-            : <>{nTotal} actividades en el rango</>}
-        </span>
-        {hayFiltro && (
-          <button onClick={limpiarFiltros}
-            className="text-[11px] px-2 py-1 rounded-lg border border-amber-500/40 text-k-amber hover:bg-amber-500/10">
-            Quitar filtros
-          </button>
-        )}
       </div>
+      )}
 
       {/* Chips por etiqueta: aislar una porción de la obra es lo que se hace en
           la reunión («veamos solo el valle principal»). Las dos etiquetas tienen
