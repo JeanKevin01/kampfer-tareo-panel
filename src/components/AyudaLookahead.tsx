@@ -9,6 +9,7 @@ import { useState } from 'react'
 const TEMAS = [
   'Leer la cuadrícula',
   'Programar y avanzar',
+  'Trabajo de otra empresa',
   'Editar sin abrir nada',
   'Vincular actividades',
   'Dock de dependencias',
@@ -166,6 +167,44 @@ function Contenido({ tema }: { tema: Tema }) {
     </>
   )
 
+  if (tema === 'Trabajo de otra empresa') return (
+    <>
+      <P>
+        Un contratista te da su plazo —«el montaje nos toma 10 días»— y de eso dependen actividades
+        tuyas. Eso se anota como una <b>fila marcada como externa</b>, no como una restricción: una
+        restricción tiene fecha pero no duración, y no arrastra el cronograma.
+      </P>
+      <H>Cómo se da de alta</H>
+      <P>
+        <b>Programar actividad</b> → <b>Lo ejecuta otra empresa</b>. Pide poco a propósito: título
+        (ponle el nombre de la empresa dentro, se lee mejor), <b>empresa</b>, y el <b>plazo en
+        días</b> — la F.Fin se calcula sola saltando domingos y feriados. Sin metrado y sin partida:
+        ese trabajo no lo ejecutas tú, así que no hay avance tuyo que anotar.
+      </P>
+      <H>Qué hace y qué no hace</H>
+      <Tabla cab={['', '']} filas={[
+        [<b>Sí arrastra tus fechas</b>, <>Se vincula con los mismos FS/SS/FF, lag y cascada que
+          todo lo demás. Si el contratista se atrasa y mueves su fila, tus actividades vinculadas se
+          corren solas.</>],
+        [<b className="text-k-green">No entra al PPC</b>, <>Ni al cierre, ni al compromiso semanal,
+          ni a la agenda de campo del supervisor. Su atraso no es tu incumplimiento.</>],
+        [<b>No suma al valor ganado</b>, <>No tiene partida ni metrado, por diseño: su avance no es
+          producción tuya y no puede entrar a tu curva S.</>],
+      ]} />
+      <H>Cómo se reconoce</H>
+      <P>
+        La fila lleva <b>banda violeta</b>, la etiqueta <Cel clase="border-violet-500/40 bg-violet-500/15 text-violet-300">EXTERNA</Cel> y el
+        título en cursiva. En los días se pinta una <b>barra del color de la empresa</b>, del
+        F.Inicio al F.Fin, con el nombre escrito dentro — el color acelera la lectura, el nombre la
+        sostiene. Hay cuatro colores; a partir de la quinta empresa la barra sale gris y se sigue
+        leyendo por el nombre.
+      </P>
+      <P>
+        Para aislar todo lo de un contratista: <b>⚙ Filtros → Empresa</b>.
+      </P>
+    </>
+  )
+
   if (tema === 'Editar sin abrir nada') return (
     <>
       <P>
@@ -212,6 +251,11 @@ function Contenido({ tema }: { tema: Tema }) {
         [<b>🔗 Vincular</b>, <>Dos clics: primero la que va PRIMERO, después la que sigue. Los clics
           siguientes van encadenando. Esc sale.</>],
       ]} />
+      <P>
+        Las tres son <b>aquí</b>, sobre la cuadrícula, porque vincular es una decisión que se toma
+        mirando fechas. El detalle de una actividad ya no da de alta vínculos: solo <b>muestra</b>{' '}
+        los que tiene, con su ⚠ si la antecesora no termina a tiempo, y deja soltarlos.
+      </P>
       <H>La sintaxis (la misma de Project)</H>
       <Tabla cab={['Escribes', 'Significa']} filas={[
         [<Cod>12</Cod>, <>Empieza cuando <b>termina</b> la #12. Es lo normal (FS con 0 de espera).</>],
@@ -296,14 +340,23 @@ function Contenido({ tema }: { tema: Tema }) {
   if (tema === 'Encontrar entre muchas') return (
     <>
       <P>
-        Con 100 partidas la cuadrícula deja de ser navegable a ojo. Todo lo de abajo filtra en el
+        Con 100 partidas la cuadrícula deja de ser navegable a ojo. Los filtros viven detrás del
+        botón <b>⚙ Filtros</b>, que lleva la cuenta de los que están puestos; al lado aparece un
+        <b> chip por cada uno</b>, y cada chip se quita desde ahí mismo con su ✕. Todo filtra en el
         acto, sobre lo que ya está cargado.
       </P>
+      <P>
+        Los filtros y la ventana de fechas <b>viajan en la dirección web</b>. Recargar no te los
+        borra, y el enlace se puede mandar: quien lo abra ve exactamente esta pantalla, con estos
+        filtros, en estas fechas.
+      </P>
       <Tabla cab={['Herramienta', 'Qué filtra']} filas={[
-        [<b>Buscador</b>, <>Título, código o descripción de la partida, etapa, responsable o
-          <b> #</b>. Ignora tildes: «liberacion» encuentra «Liberación». Escribe <Cod>#48</Cod> para
-          saltar a una actividad concreta.</>],
+        [<b>Buscador</b>, <>Título, código o descripción de la partida, etapa, responsable,
+          empresa o <b>#</b>. Ignora tildes: «liberacion» encuentra «Liberación». Escribe
+          <Cod>#48</Cod> para saltar a una actividad concreta.</>],
         [<b>Responsable</b>, <>Solo las de un supervisor.</>],
+        [<b>Empresa</b>, <>Solo lo de un contratista, o <b>«Solo trabajo de terceros»</b> para ver
+          de un golpe todo lo que no depende de ti. Aparece solo si hay filas de terceros.</>],
         [<b>Estado</b>, <>Programado, ejecutado, no cumplida, cancelado.</>],
         [<b>⛔ Con restricción</b>, <>Las que todavía tienen restricciones sin liberar.</>],
         [<b>🔴 Por revisar</b>, <>Las que están mal formadas: con metrado pero sin partida, o con la

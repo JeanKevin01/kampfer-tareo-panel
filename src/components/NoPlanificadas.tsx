@@ -76,6 +76,7 @@ export default function NoPlanificadas({ proyectoId = 1, nSem, lunes }: {
 }) {
   const qc = useQueryClient()
   const [soloSemana, setSoloSemana] = useState(false)
+  const [plegado, setPlegado] = useState(false)
   const [abierta, setAbierta] = useState<number | null>(null)
   const [foto, setFoto] = useState<string | null>(null)
   const [err, setErr] = useState('')
@@ -129,21 +130,35 @@ export default function NoPlanificadas({ proyectoId = 1, nSem, lunes }: {
 
   return (
     <div className="bg-k-surface border border-k-border rounded-xl">
-      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-k-border flex-wrap">
-        <AlertTriangle size={14} className="text-k-alerta flex-shrink-0" />
-        <p className="text-xs font-bold text-k-text">Trabajo no planificado</p>
+      <div className={`flex items-center gap-2 px-4 py-2.5 flex-wrap ${plegado ? '' : 'border-b border-k-border'}`}>
+        {/* Plegable: con 15 fichas de clasificar, el resto del tab queda a media
+            pantalla de scroll. Se pliega para pasar de largo, no para esconderla
+            — el contador de «sin clasificar» sigue a la vista plegada, que es lo
+            que recuerda que hay trabajo pendiente aquí. */}
+        <button onClick={() => setPlegado(v => !v)}
+          title={plegado ? 'Desplegar la bandeja' : 'Plegar: deja solo esta línea'}
+          className="flex items-center gap-2 text-left hover:text-k-text">
+          <span className="text-k-text3 text-[11px] w-3">{plegado ? '▸' : '▾'}</span>
+          <AlertTriangle size={14} className="text-k-alerta flex-shrink-0" />
+          <p className="text-xs font-bold text-k-text">Trabajo no planificado</p>
+          {plegado && (
+            <span className="text-[10px] text-k-text3">
+              {actos.length} actividad{actos.length !== 1 ? 'es' : ''}
+            </span>
+          )}
+        </button>
         {/* Esta bandeja NO sigue la navegación de semana de arriba (esa es del
             cierre): es un acumulado de las últimas N semanas, para clasificar de
             una vez todo lo pendiente. Como está justo debajo del navegador de
             semana, parecía roto — «cambio de semana y no cambia». Ahora lo dice,
             y se puede acotar a la semana que se está mirando. */}
-        {!!d && (
+        {!!d && !plegado && (
           <span className="text-[10px] text-k-text3 font-mono">
             {soloSemana && lunes ? `solo la semana del ${fmtDia(lunes)}`
               : `${fmtDia(d.desde)} → ${fmtDia(d.hasta)} · acumulado`}
           </span>
         )}
-        {!!lunes && (
+        {!!lunes && !plegado && (
           <label className="flex items-center gap-1.5 text-[10px] text-k-text2 cursor-pointer select-none"
             title="La bandeja junta varias semanas a propósito: clasificar de una vez sale más barato que ir semana por semana. Marca esto para ver solo la que tienes arriba.">
             <input type="checkbox" checked={soloSemana} className="accent-amber-500"
@@ -160,6 +175,7 @@ export default function NoPlanificadas({ proyectoId = 1, nSem, lunes }: {
         )}
       </div>
 
+      {!plegado && (
       <div className="px-4 py-3 space-y-3">
         <p className="text-[11px] text-k-text2 leading-relaxed">
           Lo que entró sin estar comprometido. <b>No cuenta en el PPC</b> —nadie lo prometió—
@@ -302,6 +318,7 @@ export default function NoPlanificadas({ proyectoId = 1, nSem, lunes }: {
           )
         })}
       </div>
+      )}
 
       {foto && (
         <button onClick={() => setFoto(null)}

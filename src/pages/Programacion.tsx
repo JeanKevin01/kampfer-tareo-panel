@@ -16,6 +16,7 @@ import { ProgramarLote } from '@/components/ProgramarLote'
 import { CalendarioLaboral } from '@/components/CalendarioLaboral'
 import HistogramaMO from '@/components/HistogramaMO'
 import MenuMas from '@/components/MenuMas'
+import AyudaPPC from '@/components/AyudaPPC'
 import { useTab } from '@/lib/tabs'
 import type { TabDef } from '@/lib/tabs'
 
@@ -1560,6 +1561,7 @@ function PanelPPC() {
   }
   const [nSem, setNSem] = useState(8)
   const [verExport, setVerExport] = useState<'cliente' | 'oficina' | null>(null)
+  const [ayuda, setAyuda] = useState(false)
   // UNA semana para todo el tab: el cierre de arriba y la evaluación de abajo
   // miran lo mismo. Arranca en la PASADA, que es la que toca cerrar.
   const [lunes, setLunes] = useState(() => iso(lunesDe(new Date(Date.now() - 7 * 864e5))))
@@ -1595,7 +1597,14 @@ function PanelPPC() {
           title="Tendencia del PPC, Pareto de causas, restricciones y detalle por partidas. Para la gerencia y la oficina técnica.">
           <Printer size={14} /> Reporte para oficina
         </button>
+        {/* Es la pantalla con más vocabulario propio del módulo (comprometida,
+            no planificada, propuesto) y dos ventanas de tiempo a la vez: sin
+            ayuda, el 33% se lee como una nota y no como un diagnóstico. */}
+        <button onClick={() => setAyuda(true)} title="Cómo se lee el PPC"
+          className="flex items-center justify-center w-8 h-8 rounded-full border font-bold
+                     border-k-blue/50 text-k-blue hover:bg-k-blue/10">?</button>
       </div>
+      {ayuda && <AyudaPPC onCerrar={() => setAyuda(false)} />}
 
       {/* Cierre de la semana: congela el PPC (y es la reunión del Last Planner:
           revisar, poner causa a lo que no salió, cerrar). */}

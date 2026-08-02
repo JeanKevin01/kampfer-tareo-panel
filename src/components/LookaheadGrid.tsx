@@ -629,18 +629,13 @@ export function LookaheadGrid({ onEditar, onProgramar }: {
           { texto: 'Mostrar relaciones', ayuda: 'Al pasar el mouse se resalta la cadena: azul antecesoras, verde sucesoras',
             onClick: () => setMostrarRel(v => !v), activo: mostrarRel },
         ]} />
-        <MenuMas items={[
-          { icono: <Printer size={14} />, texto: 'Exportar PDF',
-            ayuda: 'Vista imprimible en A3 apaisado, con la ventana y los filtros de ahora',
-            onClick: () => window.open(`/programacion/lookahead-imprimir?desde=${desde}&semanas=${nSemanas}`, '_blank') },
-          { texto: 'Copiar enlace de esta vista',
-            ayuda: 'La ventana de fechas y los filtros van en la URL: se puede mandar tal cual',
-            onClick: () => {
-              navigator.clipboard.writeText(window.location.href)
-                .then(() => setToast({ msg: '🔗 Enlace copiado — abre esta misma vista, con sus filtros' }))
-                .catch(() => setToast({ msg: 'No se pudo copiar el enlace', error: true }))
-            } },
-        ]} />
+        {/* Exportar es un botón, no un menú: meter una acción de un clic detrás
+            de un desplegable la encarece sin ordenar nada. */}
+        <button onClick={() => window.open(`/programacion/lookahead-imprimir?desde=${desde}&semanas=${nSemanas}`, '_blank')}
+          title="Vista imprimible en A3 apaisado, con la ventana de fechas de ahora"
+          className="btn btn-terciario">
+          <Printer size={14} /> Exportar PDF
+        </button>
         {/* La ayuda va en azul (= información en la paleta semántica) y no en
             gris: es la puerta de entrada del planner que abre esto por primera
             vez, y en gris se perdía entre los demás controles. */}
