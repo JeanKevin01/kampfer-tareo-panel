@@ -21,6 +21,11 @@ import {
 } from 'lucide-react'
 
 import { api, descargarPlantilla } from '@/lib/api'
+import { FILA_EXCEL, hojaDeDatos, leerHoja } from '@/lib/excel'
+
+/** Nombres con los que se reconoce la fila de cabecera dentro de la hoja. */
+const COLUMNAS = ['CODIGO', 'FASE', 'DESCRIPCION', 'UNIDAD', 'METRADO_PRESUP',
+  'HH_PRESUP', 'NATURALEZA', 'HITO1_DESC']
 
 interface OTMItem { otm_id: string; descripcion?: string; partidas: number }
 
@@ -111,12 +116,14 @@ export default function ImportarPartidas() {
   const pErr = useMemo(() => partidas.filter(f =>  f._error), [partidas])
 
   function procesar(wb: XLSX.WorkBook) {
-    const hojaP = wb.Sheets['PARTIDAS'] ?? wb.Sheets[wb.SheetNames[0]]
+    const hojaP = hojaDeDatos(wb, 'PARTIDAS')
     if (!hojaP) { setResultado({ ok: false, msg: 'No se encontró la hoja PARTIDAS' }); setPaso('result'); return }
 
-    const rowsP = XLSX.utils.sheet_to_json<Record<string, unknown>>(hojaP)
+    // La cabecera se BUSCA: en la plantilla del panel cae en la fila 16, debajo
+    // del título y las instrucciones. Ver `lib/excel.ts`.
+    const { filas: rowsP } = leerHoja(hojaP, COLUMNAS)
     const codigos = new Set<string>()
-    const fp: FilaPartida[] = rowsP.map((row, i) => {
+    const fp: FilaPartida[] = rowsP.map(row => {
       const n = norm(row)
       const codigo = n['CODIGO'] || ''
       // El proyecto viene del selector (paso 1); una columna OTM/PROYECTO en
@@ -179,7 +186,8 @@ export default function ImportarPartidas() {
         naturaleza: normNaturaleza(n['NATURALEZA']),
         sistema: n['AREA'] || n['SISTEMA'] || null,
         hitos, nivel, parent_codigo,
-        _fila: i + 2, _error, _warn,
+        // Fila real de Excel, para que el error señale la que el usuario ve.
+        _fila: Number(row[FILA_EXCEL] ?? 0), _error, _warn,
       }
     })
 

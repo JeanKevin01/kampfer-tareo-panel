@@ -7,6 +7,11 @@ import {
 import * as XLSX from 'xlsx'
 
 import { api, descargarPlantilla, ApiError } from '@/lib/api'
+import { hojaDeDatos, leerHoja } from '@/lib/excel'
+
+/** Nombres con los que se reconoce la fila de cabecera dentro de la hoja. */
+const COLUMNAS = ['CODIGO', 'DESCRIPCION', 'UNIDAD', 'FASE', 'SUB_FASE', 'METRADO',
+  'PRECIO_UNITARIO', 'HH_META']
 import { RECURSOS_APU, nombreLargo } from '@/lib/catalogos'
 
 const PROYECTO_ID = 1   // TODO: vendrá del selector de proyecto (tenant) cuando se active el scoping
@@ -122,7 +127,10 @@ export default function Presupuesto() {
     reader.onload = (ev) => {
       try {
         const wb = XLSX.read(ev.target?.result, { type: 'array' })
-        const raw = XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets[wb.SheetNames[0]])
+        const ws = hojaDeDatos(wb, 'PRESUPUESTO')
+        if (!ws) { setImportError('El archivo no tiene ninguna hoja de datos.'); return }
+        // La cabecera se busca: en la plantilla del panel cae en la fila 15.
+        const { filas: raw } = leerHoja(ws, COLUMNAS)
         const num = (v: unknown) => Number(String(v ?? '').replace(/,/g, '')) || 0
         const filas: Linea[] = raw.map(r => ({
           codigo: String(r.CODIGO ?? r.codigo ?? '').trim(),

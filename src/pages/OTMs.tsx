@@ -12,6 +12,11 @@ import { Search, Plus, X, Loader2, ChevronDown, Upload, Download, FileSpreadshee
 import * as XLSX from 'xlsx'
 
 import { api, ApiError, descargarPlantilla } from '@/lib/api'
+import { hojaDeDatos, leerHoja } from '@/lib/excel'
+
+/** Nombres con los que se reconoce la fila de cabecera dentro de la hoja. */
+const COLUMNAS = ['NOMBRE', 'AREA', 'ESTADO', 'CENTRO_COSTO', 'MONEDA', 'PLAZO',
+  'FECHA DE INICIO', 'MONTO CONTRACTUAL']
 
 interface Proyecto {
   id: string; descripcion: string; estado: string; area?: string; centro_costo?: string
@@ -74,9 +79,11 @@ export default function OTMs() {
     const reader = new FileReader()
     reader.onload = e => {
       const data = new Uint8Array(e.target?.result as ArrayBuffer)
-      const wb   = XLSX.read(data, { type: 'array', cellDates: true })
-      const ws   = wb.Sheets[wb.SheetNames[0]]
-      const rows = XLSX.utils.sheet_to_json(ws, { defval: '' }) as Record<string, unknown>[]
+      const wb = XLSX.read(data, { type: 'array', cellDates: true })
+      const ws = hojaDeDatos(wb, 'PROYECTOS')
+      if (!ws) return
+      // La cabecera se busca: en la plantilla del panel cae en la fila 14.
+      const { filas: rows } = leerHoja(ws, COLUMNAS)
       const fmtFecha = (v: unknown): string => {
         if (v === null || v === undefined || v === '') return ''
         if (v instanceof Date && !isNaN(v.getTime())) return v.toISOString().slice(0, 10)

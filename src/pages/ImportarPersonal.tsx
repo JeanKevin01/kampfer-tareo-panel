@@ -4,6 +4,10 @@ import * as XLSX from 'xlsx'
 import { Upload, FileSpreadsheet, CheckCircle, XCircle, Loader2, Download, X, UserCog, HardHat } from 'lucide-react'
 
 import { api, descargarPlantilla } from '@/lib/api'
+import { FILA_EXCEL, hojaDeDatos, leerHoja } from '@/lib/excel'
+
+/** Nombres con los que se reconoce la fila de cabecera dentro de la hoja. */
+const COLUMNAS = ['NOMBRE', 'CARGO', 'DNI', 'TIPO', 'ES_SUPERVISOR']
 
 interface Fila {
   nombre: string; cargo: string; dni: string; tipo: string
@@ -90,6 +94,7 @@ export default function ImportarPersonal() {
   const nSupervisor = useMemo(() => validas.filter(f => f.destino === 'SUPERVISOR').length, [validas])
   const nTrabajador  = useMemo(() => validas.filter(f => f.destino === 'TRABAJADOR').length, [validas])
 
+  /** El CSV no pasa por `leerHoja`, así que ahí la fila se deduce del índice. */
   function procesarFilas(rows: Record<string, unknown>[]) {
     const procesadas: Fila[] = rows.map((row, i) => {
       const { nombre, cargo, dni, tipo, es_sup } = normalizar(row)
@@ -102,7 +107,8 @@ export default function ImportarPersonal() {
         es_sup === 'SI' ? 'SUPERVISOR'
         : es_sup === 'NO' ? 'TRABAJADOR'
         : (esSupervisor(cargo) ? 'SUPERVISOR' : 'TRABAJADOR')
-      return { nombre, cargo, dni, tipo, destino, _fila: i + 2, _error }
+      return { nombre, cargo, dni, tipo, destino,
+               _fila: Number(row[FILA_EXCEL] ?? i + 2), _error }
     })
     setFilas(procesadas)
     setPaso('preview')
@@ -126,10 +132,11 @@ export default function ImportarPersonal() {
     } else {
       reader.onload = e => {
         const data = new Uint8Array(e.target?.result as ArrayBuffer)
-        const wb   = XLSX.read(data, { type: 'array' })
-        const ws   = wb.Sheets[wb.SheetNames[0]]
-        const rows = XLSX.utils.sheet_to_json(ws, { defval: '' }) as Record<string, unknown>[]
-        procesarFilas(rows)
+        const wb = XLSX.read(data, { type: 'array' })
+        const ws = hojaDeDatos(wb, 'PERSONAL')
+        if (!ws) return
+        // La cabecera se busca: en la plantilla del panel cae en la fila 14.
+        procesarFilas(leerHoja(ws, COLUMNAS).filas)
       }
       reader.readAsArrayBuffer(file)
     }

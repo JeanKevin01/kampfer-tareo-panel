@@ -7,6 +7,10 @@ import { Loader2, Upload, Download, X, Plus, TrendingUp, DollarSign, Wallet, Per
 import * as XLSX from 'xlsx'
 
 import { api, descargarPlantilla } from '@/lib/api'
+import { hojaDeDatos, leerHoja } from '@/lib/excel'
+
+/** Nombres con los que se reconoce la fila de cabecera dentro de la hoja. */
+const COLUMNAS = ['FASE', 'TIPO_RECURSO', 'DIRECTO', 'PERIODO', 'MONTO', 'FUENTE', 'NOTA']
 const PROYECTO_ID = 1
 
 interface Fila {
@@ -118,7 +122,10 @@ export default function Rentabilidad() {
     reader.onload = (ev) => {
       try {
         const wb = XLSX.read(ev.target?.result, { type: 'array' })
-        const raw = XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets[wb.SheetNames[0]])
+        const ws = hojaDeDatos(wb, 'COSTOS')
+        if (!ws) { setImpError('El archivo no tiene ninguna hoja de datos.'); return }
+        // La cabecera se busca: en la plantilla del panel cae en la fila 14.
+        const { filas: raw } = leerHoja(ws, COLUMNAS)
         const num = (v: unknown) => Number(String(v ?? '').replace(/,/g, '')) || 0
         const bool = (v: unknown) => !['NO', 'FALSE', '0', ''].includes(String(v ?? '').trim().toUpperCase())
         const out: CostoImp[] = []
