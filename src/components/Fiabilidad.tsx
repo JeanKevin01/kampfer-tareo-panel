@@ -25,12 +25,16 @@ interface Celda {
   n_medidas: number; n_derivadas: number
   mediana_dias: number | null; p75_dias: number | null; peor_dias: number | null
   pct_a_tiempo: number | null; suficiente: boolean
+  /** 0045 · cuánto VIVIÓ la restricción, que no es lo mismo que llegar tarde. */
+  n_duracion: number; duracion_mediana: number | null; duracion_peor: number | null
+  antiguedad_peor: number | null
 }
 interface FilaTipo extends Celda { tipo: string }
 interface FilaResp extends Celda { responsable_id: number | null; responsable: string }
+interface FilaOtm extends Celda { otm_id: string }
 interface FilaCruce extends Celda { tipo: string; responsable: string }
 interface Libro {
-  total: Celda; por_tipo: FilaTipo[]; por_responsable: FilaResp[]
+  total: Celda; por_tipo: FilaTipo[]; por_responsable: FilaResp[]; por_otm: FilaOtm[]
   reincidencia: FilaCruce[]; n_minimo: number; hoy: string
 }
 interface Pendiente {
@@ -38,9 +42,14 @@ interface Pendiente {
   responsable_id: number | null; responsable: string
   fecha_requerida: string | null; dias: number | null
   actividad_id: number; actividad: string | null; actividad_fecha: string | null
-  estado: string; otm_id: string | null
+  estado: string; otm_id: string | null; otm_desc: string | null
+  /** 0045 · cuándo apareció el problema. `derivada` = nadie lo declaró y se
+   *  está usando el día en que se tecleó en el sistema. */
+  detectada_el: string | null; detectada_derivada: boolean; antiguedad: number | null
 }
 interface Bandeja { hoy: string; pendientes: Pendiente[] }
+/** `/ev/otms` devuelve la clave como `otm_id`, no como `id`. */
+interface OtmItem { otm_id: string; descripcion: string }
 
 const etiquetaTipo = (t: string) => TIPOS_RESTRICCION[t] ?? t
 const dias = (v: number | null) => v == null ? '—' : `${v > 0 ? '+' : ''}${v} d`
@@ -48,10 +57,14 @@ const dias = (v: number | null) => v == null ? '—' : `${v > 0 ? '+' : ''}${v} 
 export default function Fiabilidad() {
   const [desde, setDesde] = useState('')
   const [hasta, setHasta] = useState('')
+  const [otm, setOtm] = useState('')
 
   const q = useQuery<Libro>({
-    queryKey: ['fiabilidad', desde, hasta],
-    queryFn: () => api(`/ev/fiabilidad/restricciones?desde=${desde}&hasta=${hasta}`),
+    queryKey: ['fiabilidad', desde, hasta, otm],
+    queryFn: () => api(`/ev/fiabilidad/restricciones?desde=${desde}&hasta=${hasta}&otm=${otm}`),
+  })
+  const otms = useQuery<OtmItem[]>({
+    queryKey: ['otms-lista'], queryFn: () => api('/ev/otms'), staleTime: 5 * 60 * 1000,
   })
   const d = q.data
 
@@ -66,7 +79,15 @@ export default function Fiabilidad() {
             Cuánto tarda de verdad cada responsable en liberar, y qué se repite.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <select value={otm} onChange={e => setOtm(e.target.value)}
+            title="Filtra TODO el módulo, incluida la bandeja"
+            className="bg-k-raised border border-k-border rounded-lg px-2 py-1.5 text-xs text-k-text2 outline-none max-w-[220px]">
+            <option value="">Todos los proyectos</option>
+            {(otms.data ?? []).map(o => (
+              <option key={o.otm_id} value={o.otm_id}>{o.otm_id} · {o.descripcion}</option>
+            ))}
+          </select>
           <input type="date" value={desde} onChange={e => setDesde(e.target.value)}
             title="Restricciones creadas desde"
             className="bg-k-raised border border-k-border rounded-lg px-2 py-1.5 text-xs text-k-text2 outline-none" />
@@ -95,7 +116,7 @@ export default function Fiabilidad() {
       {/* La bandeja NO se filtra por el rango de fechas de arriba: ese rango
           acota el análisis del pasado, y una restricción abierta hay que verla
           aunque se haya creado fuera de la ventana que se está mirando. */}
-      <BandejaLiberacion />
+      <BandejaLiberacion otm={otm} />
 
       {d && d.total.n === 0 && (
         <p className="text-sm text-k-text3 border border-k-border rounded-xl px-4 py-6 text-center">
@@ -131,16 +152,24 @@ export default function Fiabilidad() {
             </section>
           )}
 
-          {/* Latencia por responsable y por tipo */}
-          <div className="grid md:grid-cols-2 gap-4">
+          {/* Latencia y duración por responsable, tipo y proyecto */}
+          <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
             <Tabla titulo="Por responsable" filas={d.por_responsable.map(r => ({
               clave: r.responsable, ...r }))} nMinimo={d.n_minimo} />
             <Tabla titulo="Por tipo de restricción" filas={d.por_tipo.map(t => ({
               clave: etiquetaTipo(t.tipo), ...t }))} nMinimo={d.n_minimo} />
+            {/* `?? []` no es defensivo por gusto: el panel se despliega solo al
+                pushear y el API se redespliega a mano, así que entre una cosa y
+                la otra esta pantalla recibe la respuesta ANTERIOR. Sin esto, un
+                `.map` sobre undefined tumbaba la pestaña entera. */}
+            <Tabla titulo="Por proyecto" filas={(d.por_otm ?? []).map(o => ({
+              clave: o.otm_id, ...o }))} nMinimo={d.n_minimo} />
           </div>
 
           <p className="text-[10px] text-k-text3 leading-relaxed">
-            La latencia es <b>la fecha real de liberación menos la que pidió el planner</b>: positiva = tarde.
+            La <b>latencia</b> es la fecha real de liberación menos la que pidió el planner: positiva = tarde.
+            La <b>duración</b> es otra cosa: cuántos días estuvo viva la restricción, desde que se detectó
+            hasta que se liberó — una puede haberse liberado a tiempo y aun así haber bloqueado un mes.
             El <b>n</b> va siempre al lado porque una mediana de dos observaciones no es una mediana —
             por debajo de {d.n_minimo} la fila se muestra atenuada. «Derivadas» son las que no tienen fecha real
             declarada y usan el día en que se marcaron en el sistema, que puede ser bastante posterior al hecho.
@@ -158,7 +187,7 @@ export default function Fiabilidad() {
 // martes, la latencia del responsable tiene que medir el martes y no el día en
 // que hubo tiempo de limpiar la lista. Por eso la fecha por defecto es hoy pero
 // cada fila la puede cambiar.
-function BandejaLiberacion() {
+function BandejaLiberacion({ otm }: { otm: string }) {
   const qc = useQueryClient()
   const [fecha, setFecha] = useState('')
   const [porFila, setPorFila] = useState<Record<number, string>>({})
@@ -167,8 +196,8 @@ function BandejaLiberacion() {
   const [msg, setMsg] = useState('')
 
   const q = useQuery<Bandeja>({
-    queryKey: ['fiab-pendientes'],
-    queryFn: () => api('/ev/fiabilidad/pendientes'),
+    queryKey: ['fiab-pendientes', otm],
+    queryFn: () => api(`/ev/fiabilidad/pendientes?otm=${otm}`),
   })
 
   const hoy = q.data?.hoy ?? ''
@@ -196,6 +225,23 @@ function BandejaLiberacion() {
       for (const k of ['fiab-pendientes', 'fiabilidad', 'programacion', 'lookahead',
         'lookahead-grid', 'restricciones', 'ppc'])
         qc.invalidateQueries({ queryKey: [k] })
+    },
+    onError: e => setMsg((e as Error).message),
+  })
+
+  // La fecha de detección se corrige aquí mismo: la mayoría de las abiertas
+  // vienen de antes de que la columna existiera y están usando el día en que se
+  // tecleó. Declararla es lo que convierte la antigüedad en un dato real.
+  const fecharDeteccion = useMutation({
+    mutationFn: (v: { id: number; fecha: string }) =>
+      api(`/ev/programacion/restricciones/${v.id}`, {
+        method: 'PUT', body: JSON.stringify({ detectada_el: v.fecha }),
+      }),
+    onSuccess: () => {
+      setMsg('')
+      qc.invalidateQueries({ queryKey: ['fiab-pendientes'] })
+      qc.invalidateQueries({ queryKey: ['fiabilidad'] })
+      qc.invalidateQueries({ queryKey: ['restricciones'] })
     },
     onError: e => setMsg((e as Error).message),
   })
@@ -266,7 +312,9 @@ function BandejaLiberacion() {
               </th>
               <th className="text-left px-1 py-1.5 w-16">Plazo</th>
               <th className="text-left px-2 py-1.5">Restricción</th>
-              <th className="text-left px-2 py-1.5">Actividad</th>
+              <th className="text-left px-2 py-1.5">Proyecto · actividad</th>
+              <th className="px-2 py-1.5 w-40"
+                title="Cuándo apareció el problema, no cuándo se tecleó aquí">Se detectó el</th>
               <th className="px-2 py-1.5 w-36">Se liberó el</th>
               <th className="w-10" />
             </tr>
@@ -285,8 +333,28 @@ function BandejaLiberacion() {
                   <div className="text-k-text3">{etiquetaTipo(p.tipo)} · {p.responsable}</div>
                 </td>
                 <td className="px-2 py-1.5 text-k-text3">
+                  {p.otm_id && (
+                    <span className="inline-block px-1.5 py-0.5 mb-0.5 rounded bg-k-wbs/15 text-k-wbs font-bold text-[10px]"
+                      title={p.otm_desc ?? undefined}>{p.otm_id}</span>
+                  )}
                   <div className="truncate max-w-[200px]">{p.actividad}</div>
                   {p.estado === 'CANCELADO' && <span className="text-k-red">actividad cancelada</span>}
+                </td>
+                <td className="px-2 py-1.5">
+                  <input type="date" value={p.detectada_el ?? ''} max={hoy}
+                    onChange={e => e.target.value
+                      && fecharDeteccion.mutate({ id: p.id, fecha: e.target.value })}
+                    title={p.detectada_derivada
+                      ? 'Nadie declaró cuándo apareció: se está usando el día en que se registró en el sistema. Corrígelo aquí.'
+                      : 'Fecha declarada en que apareció el problema'}
+                    className={`bg-k-surface border rounded-lg px-1.5 py-1 text-[11px] outline-none focus:border-k-amber w-full ${
+                      p.detectada_derivada
+                        ? 'border-dashed border-k-border text-k-text3' : 'border-k-border text-k-text'}`} />
+                  {p.antiguedad != null && (
+                    <div className={`text-[10px] mt-0.5 ${p.antiguedad >= 30 ? 'text-k-alerta' : 'text-k-text3'}`}>
+                      abierta hace {p.antiguedad} d{p.detectada_derivada ? ' (sin declarar)' : ''}
+                    </div>
+                  )}
                 </td>
                 <td className="px-2 py-1.5">
                   <input type="date" value={fechaDe(p)} max={hoy}
@@ -307,9 +375,11 @@ function BandejaLiberacion() {
       </div>
 
       <p className="px-3 py-2 text-[10px] text-k-text3 border-t border-k-border">
-        La fecha de cada fila es la <b>real</b> de liberación, no la de hoy: es la que mide la
-        latencia del responsable. No se aceptan fechas futuras. Marca varias y libéralas de una
-        sola vez, o usa el ✓ de la fila para una sola.
+        Las dos fechas son las <b>reales</b>, no la de hoy: «se detectó» es cuándo apareció el
+        problema y «se liberó» cuándo se resolvió de verdad. Con línea punteada = nadie la declaró
+        todavía y se está usando el día en que se registró en el sistema. No se aceptan fechas
+        futuras ni liberar antes de detectar. Marca varias y libéralas de una sola vez, o usa el ✓
+        de la fila para una sola.
       </p>
     </section>
   )
@@ -344,6 +414,10 @@ function Tabla({ titulo, filas, nMinimo }: {
               <th className="px-1.5 py-1.5">Mediana</th>
               <th className="px-1.5 py-1.5">p75</th>
               <th className="px-1.5 py-1.5">Peor</th>
+              <th className="px-1.5 py-1.5"
+                title="Días que vivió la restricción, de detectada a liberada. No es la latencia.">
+                Duración
+              </th>
               <th className="px-1.5 py-1.5">Pend.</th>
             </tr>
           </thead>
@@ -370,6 +444,19 @@ function Tabla({ titulo, filas, nMinimo }: {
                 </td>
                 <td className="px-1.5 py-1.5 text-center text-k-text2">{dias(f.p75_dias)}</td>
                 <td className="px-1.5 py-1.5 text-center text-k-text3">{dias(f.peor_dias)}</td>
+                <td className="px-1.5 py-1.5 text-center text-k-text2"
+                  title={f.duracion_mediana == null
+                    ? 'Aún no hay ninguna liberada con las dos fechas'
+                    : `Mediana sobre ${f.n_duracion} liberada(s) · peor ${f.duracion_peor} d`
+                      + (f.antiguedad_peor != null
+                        ? ` · la más vieja sin liberar lleva ${f.antiguedad_peor} d` : '')}>
+                  {f.duracion_mediana == null ? '—' : `${f.duracion_mediana} d`}
+                  {/* La más vieja abierta es lo que duele hoy; la mediana solo
+                      habla de lo que ya se cerró. */}
+                  {f.antiguedad_peor != null && (
+                    <span className="text-k-alerta"> · {f.antiguedad_peor}↑</span>
+                  )}
+                </td>
                 <td className={`px-1.5 py-1.5 text-center ${f.n_vencidas ? 'text-k-red font-bold' : 'text-k-text3'}`}>
                   {f.n_pendientes}{f.n_vencidas ? ` (${f.n_vencidas} vencidas)` : ''}
                 </td>

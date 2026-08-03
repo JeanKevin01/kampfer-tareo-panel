@@ -77,6 +77,9 @@ export interface Restriccion {
   responsable_id?: number | null; responsable_nombre?: string | null
   /** 0044: la fecha REAL de liberación, distinta del sello `liberada_en`. */
   liberada_el?: string | null
+  /** 0045: cuándo APARECIÓ el problema, distinto de `creado_en` (cuándo se
+   *  tecleó). Con las dos se sabe cuánto tiempo estuvo viva la restricción. */
+  detectada_el?: string | null
 }
 
 export interface AreaResp {
@@ -1235,7 +1238,14 @@ function Antecesoras({ act, onCambio }: { act: Actividad; onCambio: () => void }
 
 function Restricciones({ actId, onCambio }: { actId: number; onCambio: () => void }) {
   const qc = useQueryClient()
-  const [nueva, setNueva] = useState({ descripcion: '', tipo: 'MATERIALES', responsable_id: '', fecha_requerida: '' })
+  // `detectada_el` arranca en HOY porque el caso normal es anotar la restricción
+  // el día que aparece; si se detectó antes, el planner cambia la fecha.
+  // `iso()` y no `toISOString()`: este último devuelve UTC, y de 19:00 en
+  // adelante en Lima proponía la fecha de MAÑANA — que además el API rechaza
+  // con 422 por futura.
+  const hoyIso = iso(new Date())
+  const vacia = { descripcion: '', tipo: 'MATERIALES', responsable_id: '', fecha_requerida: '', detectada_el: hoyIso }
+  const [nueva, setNueva] = useState(vacia)
   const rests = useQuery<Restriccion[]>({
     queryKey: ['restricciones', actId],
     queryFn: () => api(`/ev/programacion/actividades/${actId}/restricciones`),
@@ -1255,9 +1265,10 @@ function Restricciones({ actId, onCambio }: { actId: number; onCambio: () => voi
         descripcion: nueva.descripcion, tipo: nueva.tipo,
         responsable_id: nueva.responsable_id ? Number(nueva.responsable_id) : null,
         fecha_requerida: nueva.fecha_requerida || null,
+        detectada_el: nueva.detectada_el || null,
       }),
     }),
-    onSuccess: () => { setNueva({ descripcion: '', tipo: 'MATERIALES', responsable_id: '', fecha_requerida: '' }); invalidar() },
+    onSuccess: () => { setNueva(vacia); invalidar() },
     onError: (e: Error) => alert(e.message),
   })
   const nuevaArea = useMutation({
@@ -1281,6 +1292,12 @@ function Restricciones({ actId, onCambio }: { actId: number; onCambio: () => voi
   const fecharLiberacion = useMutation({
     mutationFn: (v: { id: number; fecha: string }) => api(`/ev/programacion/restricciones/${v.id}`, {
       method: 'PUT', body: JSON.stringify({ liberada_el: v.fecha }),
+    }),
+    onSuccess: invalidar, onError: (e: Error) => alert(e.message),
+  })
+  const fecharDeteccion = useMutation({
+    mutationFn: (v: { id: number; fecha: string }) => api(`/ev/programacion/restricciones/${v.id}`, {
+      method: 'PUT', body: JSON.stringify({ detectada_el: v.fecha }),
     }),
     onSuccess: invalidar, onError: (e: Error) => alert(e.message),
   })
@@ -1308,6 +1325,21 @@ function Restricciones({ actId, onCambio }: { actId: number; onCambio: () => voi
                 {TIPOS_RESTRICCION[r.tipo] ?? r.tipo}
                 {(r.responsable_nombre || r.responsable) ? ` · ${r.responsable_nombre || r.responsable}` : ''}
                 {r.fecha_requerida ? ` · para ${r.fecha_requerida}` : ''}
+              </span>
+              {/* Detectada = cuándo apareció. Editable siempre (también en las
+                  liberadas): las de antes de la 0045 no la tienen y sin ella no
+                  hay duración que medir. */}
+              <span className="block text-[10px] text-k-text3 mt-0.5">
+                Detectada el{' '}
+                <input type="date" value={r.detectada_el ?? ''}
+                  onChange={e => e.target.value && fecharDeteccion.mutate({ id: r.id, fecha: e.target.value })}
+                  title="Cuándo APARECIÓ el problema, no cuándo se registró aquí. Vacío = se está usando la fecha de registro."
+                  className="bg-transparent border-b border-dashed border-k-border text-k-text2 outline-none focus:border-k-amber" />
+                {r.detectada_el && r.liberada_el && (
+                  <span className="text-k-text3">
+                    {' '}· vivió <b className="text-k-text2">{diasEntre(r.detectada_el, r.liberada_el)} d</b>
+                  </span>
+                )}
               </span>
               {r.liberada && (
                 <span className="block text-[10px] text-k-text3 mt-0.5">
@@ -1353,8 +1385,20 @@ function Restricciones({ actId, onCambio }: { actId: number; onCambio: () => voi
           {(areas.data ?? []).map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}
           <option value="__nueva">+ Nueva área…</option>
         </select>
-        <input type="date" value={nueva.fecha_requerida}
-          onChange={e => setNueva({ ...nueva, fecha_requerida: e.target.value })} className={inputCls} style={{ width: 'auto' }} />
+        <label className="flex items-center gap-1 text-[10px] text-k-text3">
+          detectada
+          <input type="date" value={nueva.detectada_el} max={hoyIso}
+            title="Cuándo APARECIÓ el problema. No es cuándo lo escribes aquí: con esta fecha se sabe cuánto tiempo estuvo viva la restricción."
+            onChange={e => setNueva({ ...nueva, detectada_el: e.target.value })}
+            className={inputCls} style={{ width: 'auto' }} />
+        </label>
+        <label className="flex items-center gap-1 text-[10px] text-k-text3">
+          para
+          <input type="date" value={nueva.fecha_requerida}
+            title="Fecha en que el planner necesita que esté liberada"
+            onChange={e => setNueva({ ...nueva, fecha_requerida: e.target.value })}
+            className={inputCls} style={{ width: 'auto' }} />
+        </label>
         <button onClick={() => crear.mutate()} disabled={crear.isPending || !nueva.descripcion.trim()}
           className="text-xs px-3 py-2 rounded-lg bg-k-amber text-black font-bold disabled:opacity-40">+ Agregar</button>
       </div>
