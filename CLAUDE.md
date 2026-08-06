@@ -29,7 +29,7 @@ Nunca pushear sin `npm run build` verde en local.
   Regla: **página tocada = migrada** (igual que se hizo con `api<T>()`).
 - Commits convencionales `tipo(scope): descripción` en español.
 
-## Estado conocido (plan vigente: PLAN_MAESTRO_CONSOLIDADO.md en `Analisis Claude/`)
+## Estado conocido (plan vigente: `Analisis Claude/VIGENTE/PLAN_MAESTRO_V9.md`)
 
 - `npm run lint` está en **0 errores y es BLOQUEANTE en CI** (+ typecheck `tsc -b`).
   No introducir errores nuevos: el push a main no despliega si el CI falla.
@@ -37,4 +37,10 @@ Nunca pushear sin `npm run build` verde en local.
   de proyecto (F3.3, store zustand `useProyecto` + header `X-Proyecto-Id`).
 - zustand está instalado y sin uso: reservado para F3.3. No agregar otros state managers.
 - Placeholders Inventario/Valorización: los reemplazan Costos (F2.2) y Valorización (F2.8).
-- `ValorGanado.tsx` (~1,400 líneas) es el hub EV; candidato a dividirse, no crecer.
+- Archivos grandes: **`Programacion.tsx` (~2,5k líneas)** es el mayor del panel, por delante de
+  `ValorGanado.tsx` (~1,5k). Los dos son candidatos a dividirse, no a crecer. **No durante el piloto.**
+- **No hay runner de tests** (D12 del plan): la lógica en TS —importadores de Excel, filtros del
+  LookAhead, `lib/`— solo se verifica a mano o desde el API. Es lo que dejó pasar que las 7
+  plantillas quedaran ilegibles para sus propios importadores.
+- Fechas: usar `iso()` de `lib/semana.ts`. **`new Date().toISOString().slice(0,10)` propone mañana**
+  en Lima; quedan 5 archivos con ese patrón (D10).
