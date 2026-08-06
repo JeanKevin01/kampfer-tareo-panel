@@ -25,13 +25,15 @@ const PROYECTO_ID = 1
 const DIAS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
 // La pestaña viaja en ?tab= (misma convención que el resto del panel), para que
 // un enlace al LookAhead abra el LookAhead y no el plan semanal.
-const TABS_PROG: TabDef[] = [
+// `as const`: los ids son la fuente del tipo de `vista` (ver useTab). Añadir una
+// pestaña aquí basta para poder compararla; no hay una segunda lista que mantener.
+const TABS_PROG = [
   { id: 'semana', label: 'Plan semanal' },
   { id: 'lookahead', label: 'Lookahead' },
   { id: 'histograma', label: 'Histograma · Ratios' },
   { id: 'ppc', label: 'PPC · Causas' },
   { id: 'fiabilidad', label: 'Fiabilidad' },
-]
+] as const satisfies readonly TabDef[]
 const MESES = ['', 'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
 /** Días entre dos ISO (b - a). Positivo = la segunda es posterior. */
 const diasEntre = (a: string, b: string) =>
@@ -137,8 +139,7 @@ export default function Programacion() {
   // La pestaña TAMBIÉN va en la URL. Sin esto los filtros del LookAhead viajaban
   // en el enlace pero eran inalcanzables: al abrirlo la página volvía al plan
   // semanal, así que parecía que no se había guardado nada (Jean, 2026-08-01).
-  const [vista, setVista] = useTab(TABS_PROG, 'semana') as
-    [ 'semana' | 'lookahead' | 'histograma' | 'ppc', (v: string) => void ]
+  const [vista, setVista] = useTab(TABS_PROG, 'semana')
   const [agruparSup, setAgruparSup] = useState(false)   // plan semanal separado por supervisor
   const [lunes, setLunes] = useState(() => iso(lunesDe(new Date())))
   // `tipo` lo fija el paso 0 de ProgramarLote: 'libre' = actividad nuestra sin
