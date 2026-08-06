@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Calendar, CheckCircle, XCircle, Clock, Hash, Mail, Grid3X3,
   Loader2, Users, Search, X, ChevronDown, ChevronUp, UserPlus,
-  Plus, Pencil, Trash2, Copy, AlertTriangle,
+  Plus, Pencil, Trash2, Copy, AlertTriangle, Star,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
@@ -26,6 +26,9 @@ interface Cuadrilla   {
   creada_por?: string | null; creada_por_nombre?: string | null
 }
 interface SinCuadrilla { id: string; nombre: string; cargo: string; tipo: string }
+/** Qué cuadrillas usa NORMALMENTE cada supervisor. No es propiedad: solo
+ *  decide qué le sale arriba y aparte en el teléfono. */
+interface HabSup      { supervisor_id: string; nombre: string; grupos: number[] }
 
 const hoy = () => {
   const d = new Date()
@@ -36,8 +39,8 @@ const hoy = () => {
 // No hay «asignar»: la cuadrilla es una lista que usa cualquier supervisor.
 // Duplicar sirve para las variantes («Encofrado» y «Encofrado sin los dos que
 // están de descanso») sin volver a armarla.
-function TarjetaCuadrilla({ cua, abierta, onAlternar, onCambio }: {
-  cua: Cuadrilla; abierta: boolean
+function TarjetaCuadrilla({ cua, habitualDe, abierta, onAlternar, onCambio }: {
+  cua: Cuadrilla; habitualDe: string[]; abierta: boolean
   onAlternar: () => void; onCambio: () => void
 }) {
   const [busq, setBusq] = useState('')
@@ -130,6 +133,13 @@ function TarjetaCuadrilla({ cua, abierta, onAlternar, onCambio }: {
             <span className="text-[11px] text-k-text3 ml-2">
               {cua.total} {cua.total === 1 ? 'persona' : 'personas'}
             </span>
+            {habitualDe.length > 0 && (
+              <span title={`Habitual de: ${habitualDe.join(', ')}`}
+                className="text-[10px] text-k-blue border border-blue-500/30 rounded
+                           px-1.5 py-0.5 ml-2 whitespace-nowrap">
+                ★ {habitualDe.length}
+              </span>
+            )}
           </button>
         )}
 
@@ -285,6 +295,136 @@ function TarjetaCuadrilla({ cua, abierta, onAlternar, onCambio }: {
 // cambia (0047): lo que rota en obra es el mando, no la gente. Aquí se ve el
 // conjunto, se reparte y se duplica, en vez de teclear la lista otra vez con
 // cada supervisor nuevo.
+// ── Cuáles usa normalmente cada supervisor ────────────────────
+// El teléfono le pone estas arriba y aparte; las demás siguen abajo, enteras.
+// Es un atajo de PANTALLA, no un permiso: nadie deja de ver ninguna cuadrilla
+// por no tenerla marcada. Se edita por supervisor —y no marcando supervisores
+// en cada cuadrilla— porque el momento en que esto se usa es cuando entra
+// alguien nuevo: «estas cinco son las tuyas» de una sentada.
+function HabitualesPorSupervisor({ cuadrillas }: { cuadrillas: Cuadrilla[] }) {
+  const qc = useQueryClient()
+  const [abierto, setAbierto]   = useState(false)
+  const [editando, setEditando] = useState<string | null>(null)
+  const [sel, setSel]           = useState<Set<number>>(new Set())
+
+  const { data: filas = [] } = useQuery<HabSup[]>({
+    queryKey: ['cuadrillas-habituales'],
+    queryFn: () => api<HabSup[]>('/api/cuadrillas-habituales'),
+  })
+
+  const guardar = useMutation({
+    mutationFn: (sup: string) =>
+      api(`/api/supervisor/${sup}/cuadrillas-habituales`,
+          { method: 'PUT', body: JSON.stringify({ grupos: [...sel] }) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['cuadrillas-habituales'] })
+      qc.invalidateQueries({ queryKey: ['cuadrillas'] })
+      setEditando(null)
+    },
+  })
+
+  const nombrePorId = useMemo(
+    () => new Map(cuadrillas.map(c => [c.id, c.nombre])), [cuadrillas])
+  const asignadas = filas.reduce((n, f) => n + f.grupos.length, 0)
+
+  const abrirEdicion = (f: HabSup) => {
+    setEditando(f.supervisor_id)
+    setSel(new Set(f.grupos))
+    guardar.reset()
+  }
+
+  return (
+    <div className="bg-k-surface border border-blue-500/20 rounded-xl overflow-hidden">
+      <button onClick={() => setAbierto(v => !v)}
+        className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-k-raised/50
+                   transition-colors">
+        <Star size={15} className="text-k-blue flex-shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-bold text-k-text">Cuadrillas habituales por supervisor</p>
+          <p className="text-[11px] text-k-text3">
+            {asignadas === 0
+              ? 'Nadie tiene habituales: todos ven el catálogo en orden alfabético.'
+              : `${asignadas} ${asignadas === 1 ? 'asignación' : 'asignaciones'} · le salen arriba y aparte al reportar`}
+          </p>
+        </div>
+        {abierto ? <ChevronUp size={15} className="text-k-text3" />
+                 : <ChevronDown size={15} className="text-k-text3" />}
+      </button>
+
+      {abierto && (
+        <div className="px-4 pb-4 space-y-2">
+          {filas.length === 0 && (
+            <p className="text-[11px] text-k-text3 py-2">No hay supervisores activos.</p>
+          )}
+          {filas.map(f => (
+            <div key={f.supervisor_id} className="bg-k-raised border border-k-border rounded-lg">
+              <div className="flex items-center gap-3 px-3 py-2 flex-wrap">
+                <span className="text-sm font-medium text-k-text">{f.nombre}</span>
+                <div className="flex-1 min-w-0 flex flex-wrap gap-1">
+                  {f.grupos.length === 0 ? (
+                    <span className="text-[11px] text-k-text3">sin habituales</span>
+                  ) : f.grupos.map(g => (
+                    <span key={g}
+                      className="text-[10px] text-k-blue bg-blue-500/10 border border-blue-500/20
+                                 rounded px-1.5 py-0.5">
+                      {nombrePorId.get(g) ?? `#${g}`}
+                    </span>
+                  ))}
+                </div>
+                {editando === f.supervisor_id ? (
+                  <button onClick={() => setEditando(null)}
+                    className="text-k-text3 hover:text-k-text"><X size={15} /></button>
+                ) : (
+                  <button onClick={() => abrirEdicion(f)} className="btn btn-terciario btn-sm">
+                    <Pencil size={12} /> Elegir
+                  </button>
+                )}
+              </div>
+
+              {editando === f.supervisor_id && (
+                <div className="px-3 pb-3 pt-1 border-t border-k-border space-y-2">
+                  {cuadrillas.length === 0 ? (
+                    <p className="text-[11px] text-k-text3">Todavía no hay cuadrillas que asignar.</p>
+                  ) : (
+                    <div className="grid gap-1 sm:grid-cols-2">
+                      {cuadrillas.map(c => (
+                        <label key={c.id}
+                          className="flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer
+                                     hover:bg-k-surface">
+                          <input type="checkbox" checked={sel.has(c.id)}
+                            onChange={e => setSel(prev => {
+                              const s = new Set(prev)
+                              if (e.target.checked) s.add(c.id); else s.delete(c.id)
+                              return s
+                            })}
+                            className="accent-k-amber" />
+                          <span className="text-sm text-k-text flex-1 min-w-0 truncate">{c.nombre}</span>
+                          <span className="text-[10px] text-k-text3">{c.total}</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => guardar.mutate(f.supervisor_id)}
+                      disabled={guardar.isPending} className="btn btn-secundario btn-sm">
+                      {guardar.isPending ? <Loader2 size={12} className="animate-spin" />
+                                         : <CheckCircle size={12} />}
+                      Guardar {sel.size > 0 && `(${sel.size})`}
+                    </button>
+                    {guardar.isError && (
+                      <span className="text-xs text-k-red">{(guardar.error as ApiError).message}</span>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function CatalogoCuadrillas() {
   const qc = useQueryClient()
   const [abierta, setAbierta] = useState<number | null>(null)
@@ -295,12 +435,25 @@ function CatalogoCuadrillas() {
     queryKey: ['cuadrillas-catalogo'],
     queryFn: () => api<Cuadrilla[]>('/api/cuadrillas'),
   })
+  // La misma consulta que usa el bloque de habituales (react-query la comparte);
+  // aquí se le da la vuelta para saber de quién es habitual cada cuadrilla.
+  const { data: habituales = [] } = useQuery<HabSup[]>({
+    queryKey: ['cuadrillas-habituales'],
+    queryFn: () => api<HabSup[]>('/api/cuadrillas-habituales'),
+  })
+  const habPorGrupo = useMemo(() => {
+    const m = new Map<number, string[]>()
+    for (const f of habituales)
+      for (const g of f.grupos) m.set(g, [...(m.get(g) ?? []), f.nombre])
+    return m
+  }, [habituales])
 
   // Toda vista de cuadrillas se invalida a la vez: la misma cuadrilla sale en
-  // el catálogo y en la ficha de su supervisor.
+  // el catálogo, en las habituales de quien la use y en el teléfono.
   const refrescar = () => {
     qc.invalidateQueries({ queryKey: ['cuadrillas-catalogo'] })
     qc.invalidateQueries({ queryKey: ['cuadrillas'] })
+    qc.invalidateQueries({ queryKey: ['cuadrillas-habituales'] })
   }
 
   const crear = useMutation({
@@ -363,6 +516,7 @@ function CatalogoCuadrillas() {
           {cuadrillas.map(c => (
             <TarjetaCuadrilla
               key={c.id} cua={c}
+              habitualDe={habPorGrupo.get(c.id) ?? []}
               abierta={abierta === c.id}
               onAlternar={() => setAbierta(abierta === c.id ? null : c.id)}
               onCambio={refrescar} />
@@ -370,14 +524,16 @@ function CatalogoCuadrillas() {
         </div>
       )}
 
+      <HabitualesPorSupervisor cuadrillas={cuadrillas} />
       <SinCuadrillaAviso />
 
       <div className="bg-k-raised border border-k-border rounded-xl p-4">
         <p className="text-[11px] text-k-text3 leading-relaxed">
           <span className="text-k-blue font-bold">ℹ️ Las cuadrillas no son de nadie. </span>
           Son listas preestablecidas para que el registro diario sea de un toque:
-          todos los supervisores las ven todas, y cada uno encuentra arriba las que
-          armó él. Quién reportó qué lo guarda el parte, no la lista.
+          todos los supervisores las ven todas. Marcar una como habitual solo la
+          sube al principio de su pantalla —no se la quita a nadie ni le da
+          permisos—. Quién reportó qué lo guarda el parte, no la lista.
         </p>
       </div>
     </div>
