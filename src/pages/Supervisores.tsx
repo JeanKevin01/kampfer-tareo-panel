@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Calendar, CheckCircle, XCircle, Clock, Hash, Mail, Grid3X3,
   Loader2, Users, Search, X, ChevronDown, ChevronUp, UserPlus,
-  Plus, Pencil, Trash2, Smartphone,
+  Plus, Pencil, Trash2, Smartphone, Copy, AlertTriangle,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
@@ -17,8 +17,15 @@ interface Supervisor  { id: string; nombre: string; email?: string }
 interface AltaSup { nombre: string; usuario?: string | null; password?: string | null }
 interface Registro    { id: number; supervisor_id: string; otm_id: string; trab_id: string; hh: number | null }
 interface Trabajador  { id: string; nombre: string; cargo: string; activo: boolean }
-interface CuaItem     { trab_id: string; nombre: string; cargo: string; orden: number }
-interface Cuadrilla   { id: number; nombre: string; total: number; miembros: CuaItem[] }
+/** `en_otras` = en cuántas cuadrillas MÁS está esa persona. Dos supervisores
+ *  que la tienen en su lista la tarean los dos el mismo día. */
+interface CuaItem     { trab_id: string; nombre: string; cargo: string; orden: number; en_otras?: number }
+interface Cuadrilla   {
+  id: number; nombre: string; total: number; miembros: CuaItem[]
+  supervisor_id?: string | null; supervisor_nombre?: string | null
+  asignado_en?: string | null
+}
+const SIN_ASIGNAR = '__pool__'
 
 const hoy = () => {
   const d = new Date()
@@ -40,7 +47,12 @@ function CuadrillaPanel({ supId, supNombre }: { supId: string; supNombre: string
     queryFn: () => api<Cuadrilla[]>(`/api/cuadrillas/${supId}`),
   })
 
-  const refrescar = () => qc.invalidateQueries({ queryKey: ['cuadrillas', supId] })
+  // También el catálogo: duplicar desde aquí puede crear la copia en OTRO
+  // supervisor, y esa no se vería nunca en esta lista.
+  const refrescar = () => {
+    qc.invalidateQueries({ queryKey: ['cuadrillas', supId] })
+    qc.invalidateQueries({ queryKey: ['cuadrillas-catalogo'] })
+  }
 
   const crear = useMutation({
     mutationFn: (nombre: string) =>
@@ -129,19 +141,32 @@ function CuadrillaPanel({ supId, supNombre }: { supId: string; supNombre: string
   )
 }
 
-// ── Una cuadrilla: renombrar, borrar y editar sus miembros ────
-function TarjetaCuadrilla({ cua, abierta, onAlternar, onCambio }: {
+// ── Una cuadrilla: renombrar, duplicar, reasignar, borrar y su gente ────
+// `puedeReasignar` solo en el catálogo: en la ficha de un supervisor ya sabes
+// de quién es y el selector sobra. Duplicar SÍ está en los dos sitios — copiar
+// la cuadrilla de alguien a un supervisor nuevo es justo el caso frecuente.
+function TarjetaCuadrilla({ cua, abierta, onAlternar, onCambio, puedeReasignar }: {
   cua: Cuadrilla; abierta: boolean
   onAlternar: () => void; onCambio: () => void
+  puedeReasignar?: boolean
 }) {
   const [busq, setBusq] = useState('')
   const [renombrando, setRenombrando] = useState(false)
   const [nombre, setNombre] = useState(cua.nombre)
   const [confirmaBorrar, setConfirmaBorrar] = useState(false)
+  const [duplicando, setDuplicando] = useState(false)
+  const [nombreCopia, setNombreCopia] = useState('')
+  const [destino, setDestino] = useState(SIN_ASIGNAR)
 
   const { data: trabajadores = [] } = useQuery<Trabajador[]>({
     queryKey: ['trabajadores'],
     queryFn: () => api<Trabajador[]>('/admin/trabajadores'),
+    staleTime: 5 * 60 * 1000,
+  })
+  // Misma queryKey que la lista de arriba: sale de caché, no es una llamada más.
+  const { data: supervisores = [] } = useQuery<Supervisor[]>({
+    queryKey: ['supervisores'],
+    queryFn: () => api<Supervisor[]>('/api/supervisores'),
     staleTime: 5 * 60 * 1000,
   })
 
@@ -178,6 +203,31 @@ function TarjetaCuadrilla({ cua, abierta, onAlternar, onCambio }: {
     mutationFn: () => api(`/api/cuadrilla-grupo/${cua.id}`, { method: 'DELETE' }),
     onSuccess: onCambio,
   })
+  const duplicar = useMutation({
+    mutationFn: () => api(`/api/cuadrilla-grupo/${cua.id}/duplicar`, {
+      method: 'POST',
+      body: JSON.stringify({
+        nombre: nombreCopia.trim(),
+        supervisor_id: destino === SIN_ASIGNAR ? null : destino,
+      }),
+    }),
+    onSuccess: () => { onCambio(); setDuplicando(false) },
+  })
+  /** Reasignar NO manda `nombre`: el API solo toca lo que viene en el cuerpo. */
+  const reasignar = useMutation({
+    mutationFn: (sup: string) => api(`/api/cuadrilla-grupo/${cua.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ supervisor_id: sup === SIN_ASIGNAR ? null : sup }),
+    }),
+    onSuccess: onCambio,
+  })
+
+  const abrirDuplicar = () => {
+    setNombreCopia(`${cua.nombre} (copia)`)
+    setDestino(cua.supervisor_id ?? SIN_ASIGNAR)
+    setDuplicando(true)
+    duplicar.reset()
+  }
 
   return (
     <div className={`bg-k-raised border rounded-lg overflow-hidden transition-colors ${
@@ -216,6 +266,22 @@ function TarjetaCuadrilla({ cua, abierta, onAlternar, onCambio }: {
 
         {!renombrando && (
           <div className="flex items-center gap-1">
+            {puedeReasignar && (
+              <select value={cua.supervisor_id ?? SIN_ASIGNAR}
+                onChange={e => reasignar.mutate(e.target.value)}
+                disabled={reasignar.isPending}
+                title="Quién dirige esta cuadrilla"
+                className="bg-k-void border border-k-border rounded-lg px-2 py-1 text-[11px]
+                           text-k-text2 outline-none focus:border-k-amber mr-1
+                           disabled:opacity-40 max-w-[190px]">
+                <option value={SIN_ASIGNAR}>— Sin asignar —</option>
+                {supervisores.map(s => (
+                  <option key={s.id} value={s.id}>{s.nombre}</option>
+                ))}
+              </select>
+            )}
+            <button onClick={abrirDuplicar} title="Duplicar esta cuadrilla"
+              className="text-k-text3 hover:text-k-blue p-1"><Copy size={12} /></button>
             <button onClick={() => { setNombre(cua.nombre); setRenombrando(true) }}
               title="Renombrar"
               className="text-k-text3 hover:text-k-amber p-1"><Pencil size={12} /></button>
@@ -228,8 +294,46 @@ function TarjetaCuadrilla({ cua, abierta, onAlternar, onCambio }: {
         )}
       </div>
 
-      {renombrar.isError && (
-        <p className="text-xs text-k-red px-3 pb-2">{(renombrar.error as ApiError).message}</p>
+      {(renombrar.isError || reasignar.isError) && (
+        <p className="text-xs text-k-red px-3 pb-2">
+          {((renombrar.error ?? reasignar.error) as ApiError).message}
+        </p>
+      )}
+
+      {duplicando && (
+        <div className="mx-3 mb-2.5 bg-blue-500/5 border border-blue-500/20 rounded-lg
+                        px-3 py-2.5 space-y-2">
+          <p className="text-[11px] text-k-text3">
+            Copia las <b className="text-k-text2">{cua.total}</b> personas de «{cua.nombre}»
+            a una cuadrilla nueva. Desde ahí las dos van por su cuenta.
+          </p>
+          <div className="flex items-center gap-2 flex-wrap">
+            <input value={nombreCopia} onChange={e => setNombreCopia(e.target.value)} autoFocus
+              placeholder="Nombre de la copia"
+              className="flex-1 min-w-[160px] bg-k-void border border-k-border rounded-lg
+                         px-3 py-1.5 text-sm text-k-text outline-none focus:border-k-amber" />
+            <select value={destino} onChange={e => setDestino(e.target.value)}
+              className="bg-k-void border border-k-border rounded-lg px-2 py-1.5 text-xs
+                         text-k-text2 outline-none focus:border-k-amber">
+              <option value={SIN_ASIGNAR}>— Sin asignar —</option>
+              {supervisores.map(s => (
+                <option key={s.id} value={s.id}>Para {s.nombre}</option>
+              ))}
+            </select>
+            <button onClick={() => duplicar.mutate()}
+              disabled={!nombreCopia.trim() || duplicar.isPending}
+              className="btn btn-secundario btn-sm">
+              {duplicar.isPending ? <Loader2 size={12} className="animate-spin" /> : <Copy size={12} />}
+              Duplicar
+            </button>
+            <button onClick={() => setDuplicando(false)} className="text-k-text3 hover:text-k-text">
+              <X size={15} />
+            </button>
+          </div>
+          {duplicar.isError && (
+            <p className="text-xs text-k-red">{(duplicar.error as ApiError).message}</p>
+          )}
+        </div>
       )}
 
       {confirmaBorrar && (
@@ -303,6 +407,14 @@ function TarjetaCuadrilla({ cua, abierta, onAlternar, onCambio }: {
                     <span className="font-mono text-[10px] text-k-amber mr-2">{m.trab_id}</span>
                     <span className="text-sm font-medium text-k-text">{m.nombre}</span>
                     <span className="text-[10px] text-k-text3 ml-2">{m.cargo}</span>
+                    {(m.en_otras ?? 0) > 0 && (
+                      <span title="Está en más cuadrillas: si dos supervisores la tarean el mismo día, sus horas se duplican"
+                        className="inline-flex items-center gap-1 text-[10px] font-bold text-k-alerta
+                                   bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5
+                                   rounded ml-2 align-middle">
+                        <AlertTriangle size={9} /> en {m.en_otras! + 1} cuadrillas
+                      </span>
+                    )}
                   </div>
                   <button onClick={() => quitar.mutate(m.trab_id)} disabled={quitar.isPending}
                     className="opacity-0 group-hover:opacity-100 flex items-center gap-1
@@ -321,9 +433,146 @@ function TarjetaCuadrilla({ cua, abierta, onAlternar, onCambio }: {
   )
 }
 
+// ── Catálogo: todas las cuadrillas de la empresa ──────────────
+// La cuadrilla existe por sí misma y el supervisor es una asignación que
+// cambia (0047): lo que rota en obra es el mando, no la gente. Aquí se ve el
+// conjunto, se reparte y se duplica, en vez de teclear la lista otra vez con
+// cada supervisor nuevo.
+function CatalogoCuadrillas() {
+  const qc = useQueryClient()
+  const [abierta, setAbierta] = useState<number | null>(null)
+  const [creando, setCreando] = useState(false)
+  const [nombreNuevo, setNombreNuevo] = useState('')
+
+  const { data: cuadrillas = [], isLoading } = useQuery<Cuadrilla[]>({
+    queryKey: ['cuadrillas-catalogo'],
+    queryFn: () => api<Cuadrilla[]>('/api/cuadrillas'),
+  })
+
+  // Toda vista de cuadrillas se invalida a la vez: la misma cuadrilla sale en
+  // el catálogo y en la ficha de su supervisor.
+  const refrescar = () => {
+    qc.invalidateQueries({ queryKey: ['cuadrillas-catalogo'] })
+    qc.invalidateQueries({ queryKey: ['cuadrillas'] })
+  }
+
+  const crear = useMutation({
+    mutationFn: (nombre: string) =>
+      api('/api/cuadrillas', { method: 'POST', body: JSON.stringify({ nombre, trab_ids: [] }) }),
+    onSuccess: (r) => {
+      refrescar(); setNombreNuevo(''); setCreando(false)
+      const id = (r as { id?: number })?.id
+      if (id) setAbierta(id)
+    },
+  })
+
+  // Agrupadas por quien las lleva; las libres primero porque son las que
+  // esperan una decisión.
+  const grupos = useMemo(() => {
+    const por = new Map<string, { titulo: string; sinAsignar: boolean; items: Cuadrilla[] }>()
+    for (const c of cuadrillas) {
+      const clave = c.supervisor_id ?? SIN_ASIGNAR
+      if (!por.has(clave)) por.set(clave, {
+        titulo: c.supervisor_nombre ?? 'Sin asignar',
+        sinAsignar: !c.supervisor_id, items: [],
+      })
+      por.get(clave)!.items.push(c)
+    }
+    return [...por.values()].sort((a, b) =>
+      Number(b.sinAsignar) - Number(a.sinAsignar) || a.titulo.localeCompare(b.titulo))
+  }, [cuadrillas])
+
+  const libres = cuadrillas.filter(c => !c.supervisor_id).length
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <p className="text-k-text2 text-sm">
+          Todas las cuadrillas · <b className="text-k-text">{cuadrillas.length}</b>
+          {libres > 0 && <> · <span className="text-k-alerta">{libres} sin asignar</span></>}
+        </p>
+        {!creando && (
+          <button onClick={() => setCreando(true)} className="btn btn-primario btn-sm">
+            <Plus size={13} /> Nueva cuadrilla
+          </button>
+        )}
+      </div>
+
+      {creando && (
+        <div className="bg-k-surface border border-amber-500/20 rounded-xl p-4 space-y-2">
+          <p className="text-[11px] text-k-text3">
+            Se crea sin supervisor: arma la gente ahora y asígnasela a quien la
+            dirija cuando lo sepas.
+          </p>
+          <div className="flex items-center gap-2">
+            <input value={nombreNuevo} onChange={e => setNombreNuevo(e.target.value)} autoFocus
+              onKeyDown={e => { if (e.key === 'Enter' && nombreNuevo.trim()) crear.mutate(nombreNuevo.trim()) }}
+              placeholder="Nombre: Excavación, Encofrado, Cuadrilla A…"
+              className="flex-1 bg-k-raised border border-k-border rounded-lg px-3 py-2 text-sm
+                         text-k-text placeholder:text-k-text3 outline-none focus:border-k-amber" />
+            <button onClick={() => crear.mutate(nombreNuevo.trim())}
+              disabled={!nombreNuevo.trim() || crear.isPending}
+              className="btn btn-primario btn-sm">
+              {crear.isPending ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle size={13} />}
+              Crear
+            </button>
+            <button onClick={() => { setCreando(false); setNombreNuevo(''); crear.reset() }}
+              className="text-k-text3 hover:text-k-text"><X size={15} /></button>
+          </div>
+          {crear.isError && <p className="text-xs text-k-red">{(crear.error as ApiError).message}</p>}
+        </div>
+      )}
+
+      {isLoading ? (
+        <div className="flex items-center justify-center py-16 text-k-text3">
+          <Loader2 size={18} className="animate-spin mr-2" /> Cargando cuadrillas…
+        </div>
+      ) : cuadrillas.length === 0 ? (
+        <div className="text-center py-12 bg-k-surface border border-dashed border-k-border
+                        rounded-xl text-k-text3 text-sm">
+          Todavía no hay cuadrillas. Crea la primera, o créalas desde la ficha de
+          cada supervisor en «Estado del día».
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {grupos.map(g => (
+            <div key={g.titulo} className="space-y-2">
+              <div className="flex items-center gap-2">
+                <p className={`text-[11px] font-bold uppercase tracking-widest ${
+                  g.sinAsignar ? 'text-k-alerta' : 'text-k-text3'}`}>
+                  {g.sinAsignar ? '⚑ Sin asignar' : g.titulo}
+                </p>
+                <div className="flex-1 h-px bg-k-border" />
+                <span className="text-[10px] text-k-text3">{g.items.length}</span>
+              </div>
+              {g.items.map(c => (
+                <TarjetaCuadrilla
+                  key={c.id} cua={c} puedeReasignar
+                  abierta={abierta === c.id}
+                  onAlternar={() => setAbierta(abierta === c.id ? null : c.id)}
+                  onCambio={refrescar} />
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="bg-k-raised border border-k-border rounded-xl p-4">
+        <p className="text-[11px] text-k-text3 leading-relaxed">
+          <span className="text-k-blue font-bold">ℹ️ Cambiar de supervisor no reescribe el pasado. </span>
+          Los partes ya enviados guardan quién los reportó, así que reasignar una
+          cuadrilla no mueve horas de sitio: solo cambia a quién le aparece de
+          aquí en adelante en el teléfono.
+        </p>
+      </div>
+    </div>
+  )
+}
+
 // ── Componente principal ──────────────────────────────────────
 const TABS: TabDef[] = [
   { id: 'estado', label: 'Estado del día', icon: Calendar },
+  { id: 'cuadrillas', label: 'Cuadrillas', icon: Users },
   { id: 'matriz', label: 'Reportes por semana', icon: Grid3X3 },
 ]
 
@@ -333,6 +582,7 @@ export default function Supervisores() {
     <div className="space-y-5">
       <TabsPagina tabs={TABS} activo={tab} onCambiar={setTab} />
       {tab === 'estado' && <PanelEstadoDia />}
+      {tab === 'cuadrillas' && <CatalogoCuadrillas />}
       {tab === 'matriz' && <MatrizSupervisores />}
     </div>
   )
