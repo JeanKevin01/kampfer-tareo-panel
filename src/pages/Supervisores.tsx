@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Calendar, CheckCircle, XCircle, Clock, Hash, Mail, Grid3X3,
   Loader2, Users, Search, X, ChevronDown, ChevronUp, UserPlus,
+  Plus, Pencil, Trash2, Smartphone,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
@@ -16,22 +17,127 @@ interface Supervisor  { id: string; nombre: string; email?: string }
 interface AltaSup { nombre: string; usuario?: string | null; password?: string | null }
 interface Registro    { id: number; supervisor_id: string; otm_id: string; trab_id: string; hh: number | null }
 interface Trabajador  { id: string; nombre: string; cargo: string; activo: boolean }
-interface CuaItem     { trab_id: string; nombre: string; cargo: string }
+interface CuaItem     { trab_id: string; nombre: string; cargo: string; orden: number }
+interface Cuadrilla   { id: number; nombre: string; total: number; miembros: CuaItem[] }
 
 const hoy = () => {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 }
 
-// ── Sub-componente: gestión de cuadrilla de un supervisor ──
+// ── Cuadrillas de un supervisor ───────────────────────────────
+// Un supervisor tiene VARIAS cuadrillas nombradas («Excavación», «Encofrado»…)
+// y las usa en cualquier proyecto. Esto escribe en la misma tabla que lee la
+// app de campo: lo que se guarda aquí le aparece al supervisor en el teléfono.
 function CuadrillaPanel({ supId, supNombre }: { supId: string; supNombre: string }) {
   const qc = useQueryClient()
-  const [busq, setBusq] = useState('')
+  const [creando, setCreando] = useState(false)
+  const [nombreNuevo, setNombreNuevo] = useState('')
+  const [abierta, setAbierta] = useState<number | null>(null)
 
-  const { data: miembros = [], isLoading: loadCua } = useQuery<CuaItem[]>({
-    queryKey: ['cuadrilla', supId],
-    queryFn: () => api<CuaItem[]>(`/api/cuadrilla/${supId}`),
+  const { data: cuadrillas = [], isLoading } = useQuery<Cuadrilla[]>({
+    queryKey: ['cuadrillas', supId],
+    queryFn: () => api<Cuadrilla[]>(`/api/cuadrillas/${supId}`),
   })
+
+  const refrescar = () => qc.invalidateQueries({ queryKey: ['cuadrillas', supId] })
+
+  const crear = useMutation({
+    mutationFn: (nombre: string) =>
+      api(`/api/cuadrillas/${supId}`, {
+        method: 'POST', body: JSON.stringify({ nombre, trab_ids: [] }),
+      }),
+    onSuccess: (r) => {
+      refrescar(); setNombreNuevo(''); setCreando(false)
+      // Se abre sola: recién creada está vacía y lo siguiente es llenarla.
+      const id = (r as { id?: number })?.id
+      if (id) setAbierta(id)
+    },
+  })
+
+  return (
+    <div className="border-t border-k-border mt-3 pt-4 space-y-3">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <p className="text-[11px] font-bold text-k-text3 uppercase tracking-widest">
+          Cuadrillas de {supNombre.split(' ')[0]}
+        </p>
+        <div className="flex items-center gap-2">
+          <span className="font-mono text-[11px] font-bold text-k-amber bg-amber-500/10
+                           border border-amber-500/20 px-2 py-0.5 rounded">
+            {cuadrillas.length} cuadrilla{cuadrillas.length !== 1 ? 's' : ''}
+          </span>
+          {!creando && (
+            <button onClick={() => setCreando(true)} className="btn btn-secundario btn-sm">
+              <Plus size={12} /> Nueva cuadrilla
+            </button>
+          )}
+        </div>
+      </div>
+
+      {creando && (
+        <div className="bg-k-raised border border-amber-500/20 rounded-lg p-3 space-y-2">
+          <div className="flex items-center gap-2">
+            <input
+              value={nombreNuevo} onChange={e => setNombreNuevo(e.target.value)} autoFocus
+              onKeyDown={e => { if (e.key === 'Enter' && nombreNuevo.trim()) crear.mutate(nombreNuevo.trim()) }}
+              placeholder="Nombre: Excavación, Encofrado, Cuadrilla A…"
+              className="flex-1 bg-k-void border border-k-border rounded-lg px-3 py-2 text-sm
+                         text-k-text placeholder:text-k-text3 outline-none focus:border-k-amber
+                         transition-colors" />
+            <button onClick={() => crear.mutate(nombreNuevo.trim())}
+              disabled={!nombreNuevo.trim() || crear.isPending}
+              className="btn btn-primario btn-sm">
+              {crear.isPending ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle size={13} />}
+              Crear
+            </button>
+            <button onClick={() => { setCreando(false); setNombreNuevo(''); crear.reset() }}
+              className="text-k-text3 hover:text-k-text"><X size={15} /></button>
+          </div>
+          {crear.isError && (
+            <p className="text-xs text-k-red">{(crear.error as ApiError).message}</p>
+          )}
+        </div>
+      )}
+
+      {isLoading ? (
+        <div className="flex items-center gap-2 py-3 text-k-text3 text-sm">
+          <Loader2 size={13} className="animate-spin" /> Cargando cuadrillas…
+        </div>
+      ) : cuadrillas.length === 0 ? (
+        <div className="text-center py-5 bg-k-raised border border-dashed border-k-border
+                        rounded-lg text-k-text3 text-sm">
+          Sin cuadrillas — crea la primera y agrégale a su gente
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {cuadrillas.map(c => (
+            <TarjetaCuadrilla
+              key={c.id} cua={c}
+              abierta={abierta === c.id}
+              onAlternar={() => setAbierta(abierta === c.id ? null : c.id)}
+              onCambio={refrescar} />
+          ))}
+        </div>
+      )}
+
+      <p className="text-[11px] text-k-text3 leading-relaxed">
+        <Smartphone size={11} className="inline mb-0.5 mr-1 text-k-blue" />
+        Estas son las cuadrillas que el supervisor ve en su teléfono al reportar,
+        en cualquier proyecto. Puede crear más desde la app y aparecen aquí.
+      </p>
+    </div>
+  )
+}
+
+// ── Una cuadrilla: renombrar, borrar y editar sus miembros ────
+function TarjetaCuadrilla({ cua, abierta, onAlternar, onCambio }: {
+  cua: Cuadrilla; abierta: boolean
+  onAlternar: () => void; onCambio: () => void
+}) {
+  const [busq, setBusq] = useState('')
+  const [renombrando, setRenombrando] = useState(false)
+  const [nombre, setNombre] = useState(cua.nombre)
+  const [confirmaBorrar, setConfirmaBorrar] = useState(false)
 
   const { data: trabajadores = [] } = useQuery<Trabajador[]>({
     queryKey: ['trabajadores'],
@@ -39,120 +145,176 @@ function CuadrillaPanel({ supId, supNombre }: { supId: string; supNombre: string
     staleTime: 5 * 60 * 1000,
   })
 
-  const miembrosSet = useMemo(() => new Set(miembros.map(m => m.trab_id)), [miembros])
+  const miembrosSet = useMemo(() => new Set(cua.miembros.map(m => m.trab_id)), [cua.miembros])
 
   const resultados = useMemo(() => {
-    if (busq.length < 1) return []
-    const q = busq.toLowerCase()
+    const q = busq.trim().toLowerCase()
+    if (!q) return []
     return trabajadores
       .filter(t => t.activo && !miembrosSet.has(t.id) && (
         t.nombre.toLowerCase().includes(q) ||
         t.cargo.toLowerCase().includes(q) ||
-        t.id === busq.padStart(3, '0')
+        t.id.toLowerCase() === q
       ))
       .slice(0, 6)
   }, [busq, trabajadores, miembrosSet])
 
   const agregar = useMutation({
     mutationFn: (trabId: string) =>
-      api(`/api/cuadrilla/${supId}/${trabId}`, { method: 'POST' }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['cuadrilla', supId] })
-      setBusq('')
-    },
+      api(`/api/cuadrilla-grupo/${cua.id}/miembro/${trabId}`, { method: 'POST' }),
+    onSuccess: () => { onCambio(); setBusq('') },
   })
-
   const quitar = useMutation({
     mutationFn: (trabId: string) =>
-      api(`/api/cuadrilla/${supId}/${trabId}`, { method: 'DELETE' }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['cuadrilla', supId] }),
+      api(`/api/cuadrilla-grupo/${cua.id}/miembro/${trabId}`, { method: 'DELETE' }),
+    onSuccess: onCambio,
+  })
+  const renombrar = useMutation({
+    mutationFn: (n: string) =>
+      api(`/api/cuadrilla-grupo/${cua.id}`, { method: 'PATCH', body: JSON.stringify({ nombre: n }) }),
+    onSuccess: () => { onCambio(); setRenombrando(false) },
+  })
+  const borrar = useMutation({
+    mutationFn: () => api(`/api/cuadrilla-grupo/${cua.id}`, { method: 'DELETE' }),
+    onSuccess: onCambio,
   })
 
   return (
-    <div className="border-t border-k-border mt-3 pt-4 space-y-3">
-      <div className="flex items-center justify-between">
-        <p className="text-[11px] font-bold text-k-text3 uppercase tracking-widest">
-          Cuadrilla habitual de {supNombre.split(' ')[0]}
-        </p>
-        <span className="font-mono text-[11px] font-bold text-k-amber bg-amber-500/10
-                         border border-amber-500/20 px-2 py-0.5 rounded">
-          {miembros.length} miembro{miembros.length !== 1 ? 's' : ''}
-        </span>
+    <div className={`bg-k-raised border rounded-lg overflow-hidden transition-colors ${
+      abierta ? 'border-amber-500/30' : 'border-k-border'}`}>
+
+      <div className="flex items-center gap-3 px-3 py-2.5">
+        <div className="w-7 h-7 rounded-md bg-amber-500/10 border border-amber-500/20
+                        flex items-center justify-center flex-shrink-0">
+          <Users size={13} className="text-k-amber" />
+        </div>
+
+        {renombrando ? (
+          <div className="flex-1 flex items-center gap-2">
+            <input
+              value={nombre} onChange={e => setNombre(e.target.value)} autoFocus
+              onKeyDown={e => {
+                if (e.key === 'Enter' && nombre.trim()) renombrar.mutate(nombre.trim())
+                if (e.key === 'Escape') { setNombre(cua.nombre); setRenombrando(false); renombrar.reset() }
+              }}
+              className="flex-1 bg-k-void border border-k-border rounded px-2 py-1 text-sm
+                         text-k-text outline-none focus:border-k-amber" />
+            <button onClick={() => renombrar.mutate(nombre.trim())}
+              disabled={!nombre.trim() || renombrar.isPending}
+              className="text-k-green hover:opacity-70 disabled:opacity-40"><CheckCircle size={15} /></button>
+            <button onClick={() => { setNombre(cua.nombre); setRenombrando(false); renombrar.reset() }}
+              className="text-k-text3 hover:text-k-text"><X size={15} /></button>
+          </div>
+        ) : (
+          <button onClick={onAlternar} className="flex-1 min-w-0 text-left">
+            <span className="text-sm font-bold text-k-text">{cua.nombre}</span>
+            <span className="text-[11px] text-k-text3 ml-2">
+              {cua.total} {cua.total === 1 ? 'persona' : 'personas'}
+            </span>
+          </button>
+        )}
+
+        {!renombrando && (
+          <div className="flex items-center gap-1">
+            <button onClick={() => { setNombre(cua.nombre); setRenombrando(true) }}
+              title="Renombrar"
+              className="text-k-text3 hover:text-k-amber p-1"><Pencil size={12} /></button>
+            <button onClick={() => setConfirmaBorrar(true)} title="Eliminar cuadrilla"
+              className="text-k-text3 hover:text-k-red p-1"><Trash2 size={12} /></button>
+            <button onClick={onAlternar} className="text-k-text3 hover:text-k-text p-1">
+              {abierta ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* Buscador para agregar */}
-      <div className="relative">
-        <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-k-text3 pointer-events-none" />
-        <input
-          type="text" value={busq} onChange={e => setBusq(e.target.value)}
-          placeholder="Buscar trabajador para agregar..."
-          className="w-full bg-k-raised border border-k-border2 rounded-lg pl-9 pr-4 py-2
-                     text-sm text-k-text placeholder:text-k-text3 outline-none focus:border-k-amber
-                     transition-colors"
-        />
-      </div>
+      {renombrar.isError && (
+        <p className="text-xs text-k-red px-3 pb-2">{(renombrar.error as ApiError).message}</p>
+      )}
 
-      {/* Resultados de búsqueda */}
-      {resultados.length > 0 && (
-        <div className="bg-k-raised border border-k-border rounded-lg overflow-hidden">
-          {resultados.map(t => (
-            <div key={t.id}
-              className="flex items-center gap-3 px-3 py-2.5 border-b border-k-border last:border-0
-                         hover:bg-k-border/30 transition-colors">
-              <div className="flex-1 min-w-0">
-                <span className="font-mono text-[10px] text-k-amber mr-2">{t.id}</span>
-                <span className="text-sm font-medium text-k-text">{t.nombre}</span>
-                <span className="text-[10px] text-k-text3 ml-2">{t.cargo}</span>
-              </div>
-              <button
-                onClick={() => agregar.mutate(t.id)}
-                disabled={agregar.isPending}
-                className="flex items-center gap-1 text-[11px] font-bold text-k-green
-                           bg-green-500/10 border border-green-500/20 hover:bg-green-500/20
-                           disabled:opacity-40 px-2.5 py-1 rounded-lg transition-colors">
-                + Agregar
-              </button>
-            </div>
-          ))}
+      {confirmaBorrar && (
+        <div className="mx-3 mb-2.5 bg-red-500/5 border border-red-500/20 rounded-lg px-3 py-2.5
+                        flex items-center gap-3 flex-wrap">
+          <p className="text-xs text-k-text2 flex-1">
+            ¿Eliminar «{cua.nombre}»? Deja de aparecer en el teléfono del supervisor.
+            Los partes ya enviados no se tocan.
+          </p>
+          <button onClick={() => borrar.mutate()} disabled={borrar.isPending}
+            className="btn btn-peligro btn-sm">
+            {borrar.isPending ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+            Eliminar
+          </button>
+          <button onClick={() => setConfirmaBorrar(false)} className="btn btn-terciario btn-sm">
+            Cancelar
+          </button>
         </div>
       )}
 
-      {/* Lista de miembros actuales */}
-      {loadCua ? (
-        <div className="flex items-center gap-2 py-3 text-k-text3 text-sm">
-          <Loader2 size={13} className="animate-spin" /> Cargando cuadrilla...
-        </div>
-      ) : miembros.length === 0 ? (
-        <div className="text-center py-5 bg-k-raised border border-dashed border-k-border
-                        rounded-lg text-k-text3 text-sm">
-          Sin miembros — usa el buscador para agregar trabajadores a la cuadrilla
-        </div>
-      ) : (
-        <div className="space-y-1.5">
-          {miembros.map(m => (
-            <div key={m.trab_id}
-              className="flex items-center gap-3 bg-k-raised border border-k-border
-                         rounded-lg px-3 py-2.5 group">
-              <div className="w-7 h-7 rounded-md bg-green-500/10 border border-green-500/20
-                              flex items-center justify-center text-xs flex-shrink-0">
-                👷
-              </div>
-              <div className="flex-1 min-w-0">
-                <span className="font-mono text-[10px] text-k-amber mr-2">{m.trab_id}</span>
-                <span className="text-sm font-medium text-k-text">{m.nombre}</span>
-                <span className="text-[10px] text-k-text3 ml-2">{m.cargo}</span>
-              </div>
-              <button
-                onClick={() => quitar.mutate(m.trab_id)}
-                disabled={quitar.isPending}
-                className="opacity-0 group-hover:opacity-100 flex items-center gap-1 text-[11px]
-                           font-bold text-k-red bg-red-500/10 border border-red-500/20
-                           hover:bg-red-500/20 disabled:opacity-40 px-2 py-1 rounded
-                           transition-all duration-150">
-                <X size={10} /> Quitar
-              </button>
+      {abierta && (
+        <div className="px-3 pb-3 space-y-2 border-t border-k-border pt-3">
+          <div className="relative">
+            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-k-text3 pointer-events-none" />
+            <input
+              type="text" value={busq} onChange={e => setBusq(e.target.value)}
+              placeholder="Buscar trabajador para agregar…"
+              className="w-full bg-k-void border border-k-border2 rounded-lg pl-9 pr-4 py-2
+                         text-sm text-k-text placeholder:text-k-text3 outline-none
+                         focus:border-k-amber transition-colors" />
+          </div>
+
+          {resultados.length > 0 && (
+            <div className="bg-k-surface border border-k-border rounded-lg overflow-hidden">
+              {resultados.map(t => (
+                <div key={t.id}
+                  className="flex items-center gap-3 px-3 py-2.5 border-b border-k-border
+                             last:border-0 hover:bg-k-border/30 transition-colors">
+                  <div className="flex-1 min-w-0">
+                    <span className="font-mono text-[10px] text-k-amber mr-2">{t.id}</span>
+                    <span className="text-sm font-medium text-k-text">{t.nombre}</span>
+                    <span className="text-[10px] text-k-text3 ml-2">{t.cargo}</span>
+                  </div>
+                  <button onClick={() => agregar.mutate(t.id)} disabled={agregar.isPending}
+                    className="flex items-center gap-1 text-[11px] font-bold text-k-green
+                               bg-green-500/10 border border-green-500/20 hover:bg-green-500/20
+                               disabled:opacity-40 px-2.5 py-1 rounded-lg transition-colors">
+                    + Agregar
+                  </button>
+                </div>
+              ))}
             </div>
-          ))}
+          )}
+
+          {cua.miembros.length === 0 ? (
+            <div className="text-center py-4 bg-k-surface border border-dashed border-k-border
+                            rounded-lg text-k-text3 text-sm">
+              Cuadrilla vacía — búscalos arriba y agrégalos
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              {cua.miembros.map(m => (
+                <div key={m.trab_id}
+                  className="flex items-center gap-3 bg-k-surface border border-k-border
+                             rounded-lg px-3 py-2 group">
+                  <div className="w-6 h-6 rounded bg-green-500/10 border border-green-500/20
+                                  flex items-center justify-center text-[10px] flex-shrink-0">
+                    👷
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <span className="font-mono text-[10px] text-k-amber mr-2">{m.trab_id}</span>
+                    <span className="text-sm font-medium text-k-text">{m.nombre}</span>
+                    <span className="text-[10px] text-k-text3 ml-2">{m.cargo}</span>
+                  </div>
+                  <button onClick={() => quitar.mutate(m.trab_id)} disabled={quitar.isPending}
+                    className="opacity-0 group-hover:opacity-100 flex items-center gap-1
+                               text-[11px] font-bold text-k-red bg-red-500/10
+                               border border-red-500/20 hover:bg-red-500/20 disabled:opacity-40
+                               px-2 py-1 rounded transition-all duration-150">
+                    <X size={10} /> Quitar
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
