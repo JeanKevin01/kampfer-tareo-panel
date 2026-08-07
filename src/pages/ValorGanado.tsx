@@ -27,6 +27,8 @@ import {
 import CurvaS from '@/components/CurvaS'
 import { buildWbsTree, flattenVisible, nivelStyle, NIVEL_LABELS, faseColor } from '@/lib/wbs'
 import ImportarPartidas from '@/pages/ImportarPartidas'
+import { EstadoQuery } from '@/components/ui/EstadoQuery'
+import { nivelPF, CLASE_PF, avisoPF } from '@/lib/pf'
 
 import { api } from '@/lib/api'
 
@@ -147,14 +149,15 @@ function NivelLeyenda() {
 
 function PFChip({ value }: { value: number }) {
   if (!value) return <span className="text-k-text3 text-xs">—</span>
-  const cls = value >= 1
-    ? 'text-k-green bg-green-500/10 border-green-500/20'
-    : value >= 0.85
-      ? 'text-k-amber bg-amber-500/10 border-amber-500/20'
-      : 'text-k-red bg-red-500/10 border-red-500/20'
+  // Un PF por encima de la banda de plausibilidad NO se pinta de verde: casi
+  // siempre es avance registrado sin su tareo, no obra eficiente (ver lib/pf.ts).
+  const n = nivelPF(value)
+  const c = CLASE_PF[n]
   return (
-    <span className={`font-mono text-[11px] font-bold px-2 py-0.5 rounded border ${cls}`}>
-      {value.toFixed(2)}
+    <span title={avisoPF(value) ?? undefined}
+      className={`font-mono text-[11px] font-bold px-2 py-0.5 rounded border
+                  ${c.texto} ${c.fondo} ${c.borde}`}>
+      {value.toFixed(2)}{n === 'implausible' && ' ⚠'}
     </span>
   )
 }
@@ -360,7 +363,7 @@ export default function ValorGanado() {
 // TAB 1: Resumen
 // ============================================================
 function TabResumen({ semana, otm }: { semana: number; otm?: string }) {
-  const { data: rep, isLoading } = useQuery<Reporte>({
+  const q = useQuery<Reporte>({
     queryKey: ['ev-reporte', semana, otm],
     queryFn: () => req(`/ev/reporte?semana=${semana}${otm ? `&otm=${otm}` : ''}`),
   })
@@ -369,9 +372,13 @@ function TabResumen({ semana, otm }: { semana: number; otm?: string }) {
     queryFn: () => req(`/ev/curva?hasta=${semana}${otm ? `&otm=${otm}` : ''}`),
   })
 
-  if (isLoading || !rep) {
-    return <p className="text-k-text3 text-sm flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Calculando…</p>
+  // `isLoading || !rep` metía el ERROR dentro de la rama de carga: al fallar,
+  // isLoading pasa a false pero rep sigue undefined, así que la pantalla se
+  // quedaba en «Calculando…» para siempre (auditoría 2026-08-06, clase 1).
+  if (q.isPending || q.isError) {
+    return <EstadoQuery q={q} cargando="Calculando…">{() => null}</EstadoQuery>
   }
+  const rep = q.data
   const t = rep.totales
 
   const kpis = [
@@ -380,14 +387,18 @@ function TabResumen({ semana, otm }: { semana: number; otm?: string }) {
     { label: `% Avance proyecto · vs proy ${pct(t.pct_avance_proyec ?? t.pct_avance)}`, value: pct(t.pct_avance), icon: Gauge,
       color: 'text-k-amber', bg: 'bg-amber-500/10', border: 'border-amber-500/20' },
     // #5: el PF Total incluye HH improductivas. Se muestra el PF productivo como referencia.
+    // El color sale de `nivelPF` (lib/pf.ts): un PF por encima de la banda no es
+    // un éxito, es probable avance sin tareo — y no se pinta de verde.
     { label: `PF Total (CPI) · prod ${(t.pf_acum_productivo ?? t.pf_acum).toFixed(2)}`, value: t.pf_acum.toFixed(2), icon: Target,
-      color: t.pf_acum >= 1 ? 'text-k-green' : 'text-k-red',
-      bg: t.pf_acum >= 1 ? 'bg-green-500/10' : 'bg-red-500/10',
-      border: t.pf_acum >= 1 ? 'border-green-500/20' : 'border-red-500/20' },
+      color: CLASE_PF[nivelPF(t.pf_acum)].texto,
+      bg:    CLASE_PF[nivelPF(t.pf_acum)].fondo,
+      border: CLASE_PF[nivelPF(t.pf_acum)].borde,
+      aviso: avisoPF(t.pf_acum) },
     { label: 'PF Directo (solo MO directa)', value: (t.pf_dir_acum || 0).toFixed(2), icon: Target,
-      color: (t.pf_dir_acum || 0) >= 1 ? 'text-k-green' : 'text-k-red',
-      bg: (t.pf_dir_acum || 0) >= 1 ? 'bg-green-500/10' : 'bg-red-500/10',
-      border: (t.pf_dir_acum || 0) >= 1 ? 'border-green-500/20' : 'border-red-500/20' },
+      color: CLASE_PF[nivelPF(t.pf_dir_acum)].texto,
+      bg:    CLASE_PF[nivelPF(t.pf_dir_acum)].fondo,
+      border: CLASE_PF[nivelPF(t.pf_dir_acum)].borde,
+      aviso: avisoPF(t.pf_dir_acum) },
     { label: `HH Ganadas (sem ${fmt(t.hh_ganadas_sem, 0)})`, value: fmt(t.hh_ganadas_acum, 0), icon: TrendingUp,
       color: 'text-k-green', bg: 'bg-green-500/10', border: 'border-green-500/20' },
     // #5: HH gastadas (D/I) + improductivas y su índice (HH improd / HH consumidas)
@@ -408,6 +419,11 @@ function TabResumen({ semana, otm }: { semana: number; otm?: string }) {
             </div>
             <div className={`font-mono text-3xl font-medium ${k.color} mb-1`}>{k.value}</div>
             <div className="text-[11px] text-k-text3 uppercase tracking-wide">{k.label}</div>
+            {'aviso' in k && k.aviso && (
+              <p className="mt-2 text-[10px] leading-snug text-k-alerta flex items-start gap-1">
+                <AlertTriangle size={11} className="flex-shrink-0 mt-px" /> {k.aviso}
+              </p>
+            )}
           </div>
         ))}
       </div>
@@ -526,13 +542,14 @@ const areaTinte = (c: string, pct: number) => `color-mix(in srgb, ${c} ${pct}%, 
 
 function TabEjecutivo({ semana, otm }: { semana: number; otm?: string }) {
   // Reusa el mismo endpoint/cache que el Resumen (queryKey idéntico).
-  const { data: rep, isLoading } = useQuery<Reporte>({
+  const q = useQuery<Reporte>({
     queryKey: ['ev-reporte', semana, otm],
     queryFn: () => req(`/ev/reporte?semana=${semana}${otm ? `&otm=${otm}` : ''}`),
   })
-  if (isLoading || !rep) {
-    return <p className="text-k-text3 text-sm flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Calculando…</p>
+  if (q.isPending || q.isError) {
+    return <EstadoQuery q={q} cargando="Calculando…">{() => null}</EstadoQuery>
   }
+  const rep = q.data
   const m = rep.matriz_area_disciplina
   const t = rep.totales
   if (!m || m.areas.length === 0) {
@@ -642,22 +659,31 @@ const FASE_COLORS: Record<string, string> = {
 const COLOR_LIST = ['#3b82f6','#10b981','#f59e0b','#a78bfa','#22d3ee','#94a3b8','#ef4444','#ec4899']
 
 function CurvasFase({ semana }: { semana: number }) {
-  const { data, isLoading } = useQuery<{ fases: string[]; serie: PuntoCurvaFase[] }>({
+  // Este bloque mandaba «registra avances semanales primero» cuando el endpoint
+  // devolvía 500 — con los avances ya registrados y visibles en la tabla de
+  // arriba. Un error nunca puede salir disfrazado de instrucción al usuario:
+  // le hace repetir trabajo hecho y deja el fallo real invisible durante
+  // semanas (fue el caso: /ev/curva-fase llevaba caído en producción).
+  const q = useQuery<{ fases: string[]; serie: PuntoCurvaFase[] }>({
     queryKey: ['ev-curva-fase', semana],
     queryFn: () => req(`/ev/curva-fase?hasta=${semana}`),
     enabled: semana > 0,
   })
 
-  if (isLoading) return (
-    <p className="text-k-text3 text-sm flex items-center gap-2">
-      <Loader2 size={14} className="animate-spin" /> Cargando curvas...
-    </p>
+  return (
+    <EstadoQuery q={q} cargando="Cargando curvas…"
+      esVacio={d => !d?.serie?.length}
+      vacio={
+        <div className="bg-k-raised border border-k-border rounded-xl p-8 text-center text-k-text3 text-sm">
+          Sin datos de avance por fase aún — registra avances semanales primero
+        </div>
+      }>
+      {data => <CurvasFaseGrafico data={data} />}
+    </EstadoQuery>
   )
-  if (!data?.serie?.length) return (
-    <div className="bg-k-raised border border-k-border rounded-xl p-8 text-center text-k-text3 text-sm">
-      Sin datos de avance por fase aún — registra avances semanales primero
-    </div>
-  )
+}
+
+function CurvasFaseGrafico({ data }: { data: { fases: string[]; serie: PuntoCurvaFase[] } }) {
 
   const { fases, serie } = data
   return (
@@ -702,9 +728,10 @@ function CurvasFase({ semana }: { semana: number }) {
               <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: color }} />
               <span className="text-[11px] font-bold text-k-text">{f}</span>
               {pf != null && (
-                <span className={`font-mono text-[11px] font-bold ml-1 ${
-                  pf >= 1 ? 'text-k-green' : pf >= 0.85 ? 'text-k-amber' : 'text-k-red'
-                }`}>PF {pf.toFixed(2)}</span>
+                <span title={avisoPF(pf) ?? undefined}
+                  className={`font-mono text-[11px] font-bold ml-1 ${CLASE_PF[nivelPF(pf)].texto}`}>
+                  PF {pf.toFixed(2)}{nivelPF(pf) === 'implausible' && ' ⚠'}
+                </span>
               )}
             </div>
           )
