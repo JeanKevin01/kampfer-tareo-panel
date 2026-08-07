@@ -3,7 +3,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Activity, AlertTriangle, CalendarDays, Clock, RefreshCw, CheckCircle, ArrowDown, ArrowUp, ShieldCheck, Users, GitMerge, Copy } from 'lucide-react'
 
 import { api } from '@/lib/api'
+import { esOficina } from '@/lib/auth'
 import { iso } from '@/lib/semana'
+import { nivelPF, CLASE_PF } from '@/lib/pf'
 import { EstadoQuery } from '@/components/ui/EstadoQuery'
 const req = <T = unknown>(p: string) => api<T>(p)
 const fmt = (v: number) => v.toLocaleString('es-PE', { maximumFractionDigits: 1 })
@@ -39,6 +41,11 @@ const EST = {
 
 export default function MonitorTareo() {
   const [tab, setTab] = useState<'hh' | 'anom' | 'integridad'>('hh')
+  // «HH diario» sale de /api/monitor/hh-diario, que NO tiene guarda de rol y le
+  // sirve a un supervisor. Las otras dos cuelgan de /ev/monitor/*, cerrado a
+  // oficina: se las ocultamos en vez de dejar que entre y reciba 403
+  // (auditoría 2026-08-06, 2ª ronda).
+  const of = esOficina()
 
   return (
     <div className="space-y-4">
@@ -55,17 +62,21 @@ export default function MonitorTareo() {
           className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold border transition-colors ${tab === 'hh' ? 'bg-k-amber text-k-void border-k-amber' : 'bg-k-surface text-k-text2 border-k-border hover:border-k-amber/40'}`}>
           <Clock size={15} /> HH diario por proyecto
         </button>
-        <button onClick={() => setTab('anom')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold border transition-colors ${tab === 'anom' ? 'bg-k-amber text-k-void border-k-amber' : 'bg-k-surface text-k-text2 border-k-border hover:border-k-amber/40'}`}>
-          <AlertTriangle size={15} /> Anomalías / PF
-        </button>
-        <button onClick={() => setTab('integridad')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold border transition-colors ${tab === 'integridad' ? 'bg-k-amber text-k-void border-k-amber' : 'bg-k-surface text-k-text2 border-k-border hover:border-k-amber/40'}`}>
-          <ShieldCheck size={15} /> Integridad
-        </button>
+        {of && (
+          <button onClick={() => setTab('anom')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold border transition-colors ${tab === 'anom' ? 'bg-k-amber text-k-void border-k-amber' : 'bg-k-surface text-k-text2 border-k-border hover:border-k-amber/40'}`}>
+            <AlertTriangle size={15} /> Anomalías / PF
+          </button>
+        )}
+        {of && (
+          <button onClick={() => setTab('integridad')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold border transition-colors ${tab === 'integridad' ? 'bg-k-amber text-k-void border-k-amber' : 'bg-k-surface text-k-text2 border-k-border hover:border-k-amber/40'}`}>
+            <ShieldCheck size={15} /> Integridad
+          </button>
+        )}
       </div>
 
-      {tab === 'hh' ? <TabHHDiario /> : tab === 'anom' ? <TabAnomalias /> : <TabIntegridad />}
+      {tab === 'hh' || !of ? <TabHHDiario /> : tab === 'anom' ? <TabAnomalias /> : <TabIntegridad />}
     </div>
   )
 }
@@ -73,10 +84,11 @@ export default function MonitorTareo() {
 // ════════════════════════ HH diario por proyecto ════════════════════════
 function TabHHDiario() {
   const [fecha, setFecha] = useState(iso(new Date()))
-  const { data, isLoading, refetch, isFetching } = useQuery<RespHH>({
+  const q = useQuery<RespHH>({
     queryKey: ['monitor-hh', fecha], queryFn: () => req(`/api/monitor/hh-diario?fecha=${fecha}`),
   })
-  const r = data?.resumen
+  const { refetch, isFetching } = q
+  const r = q.data?.resumen
 
   return (
     <div className="space-y-4">
@@ -99,9 +111,14 @@ function TabHHDiario() {
         )}
       </div>
 
-      {isLoading ? <Cargando /> : (data?.filas.length ?? 0) === 0 ? (
-        <Vacio icon={<CalendarDays size={28} />} texto="Sin registros de tareo para esta fecha." />
-      ) : (
+      {/* «Sin registros de tareo para esta fecha» es una afirmación sobre un día
+          concreto, y se pintaba también cuando la consulta fallaba — en la
+          página cuyo trabajo entero es decir si te puedes fiar de los datos
+          (auditoría 2026-08-06, 2ª ronda). */}
+      <EstadoQuery q={q} cargando="Cargando el tareo del día…"
+        esVacio={d => d.filas.length === 0}
+        vacio={<Vacio icon={<CalendarDays size={28} />} texto="Sin registros de tareo para esta fecha." />}>
+        {data => (
         <div className="rounded-xl border border-k-border overflow-hidden bg-k-surface">
           <table className="w-full" style={{ fontSize: 13 }}>
             <thead>
@@ -115,7 +132,7 @@ function TabHHDiario() {
               </tr>
             </thead>
             <tbody>
-              {data!.filas.map(f => {
+              {data.filas.map(f => {
                 const e = EST[f.estado]
                 return (
                   <tr key={f.trab_id} className="border-b border-k-border/60 hover:bg-k-raised/40">
@@ -148,7 +165,8 @@ function TabHHDiario() {
             </tbody>
           </table>
         </div>
-      )}
+        )}
+      </EstadoQuery>
     </div>
   )
 }
@@ -162,10 +180,11 @@ function TabAnomalias() {
   const [sem, setSem] = useState<number | null>(null)
   const semana = sem ?? semActiva
 
-  const { data, isLoading, refetch, isFetching } = useQuery<RespAnom>({
+  const q = useQuery<RespAnom>({
     queryKey: ['monitor-anom', otm, semana],
     queryFn: () => req(`/ev/monitor/anomalias?semana=${semana}${otm ? `&otm=${encodeURIComponent(otm)}` : ''}`),
   })
+  const { data, refetch, isFetching } = q
 
   return (
     <div className="space-y-4">
@@ -195,11 +214,15 @@ function TabAnomalias() {
         )}
       </div>
 
-      {isLoading ? <Cargando /> : (data?.anomalias.length ?? 0) === 0 ? (
-        <Vacio icon={<CheckCircle size={28} className="text-k-green" />} texto="No se detectaron anomalías en el tareo de esta semana." />
-      ) : (
+      {/* «No se detectaron anomalías» es la afirmación más peligrosa del panel:
+          es exactamente lo que un detector de anomalías caído también dice.
+          Solo puede vivir en la rama `vacio` (auditoría 2026-08-06, 2ª ronda). */}
+      <EstadoQuery q={q} cargando="Buscando anomalías…"
+        esVacio={d => d.anomalias.length === 0}
+        vacio={<Vacio icon={<CheckCircle size={28} className="text-k-green" />} texto="No se detectaron anomalías en el tareo de esta semana." />}>
+        {data => (
         <div className="space-y-2">
-          {data!.anomalias.map(a => (
+          {data.anomalias.map(a => (
             <div key={a.partida_id} className="rounded-lg border border-k-border bg-k-surface p-3">
               <div className="flex items-center gap-2 flex-wrap mb-2">
                 <span className="font-mono text-[11px] text-k-amber">{a.codigo}</span>
@@ -217,13 +240,17 @@ function TabAnomalias() {
                 <span>HH gast: <b className="text-k-text2">{fmt(a.hh_gastadas)}</b></span>
                 <span>HH gan: <b className="text-k-text2">{fmt(a.hh_ganadas)}</b></span>
                 <span>Met. real: <b className="text-k-text2">{fmt(a.metrado_ejec)} {a.unidad}</b></span>
-                <span>PF: <b className={a.pf_acum > 0 && a.pf_acum < 0.85 ? 'text-k-red' : a.pf_acum > 1.2 ? 'text-amber-300' : 'text-k-green'}>{a.pf_acum.toFixed(2)}</b></span>
+                {/* Umbrales sueltos (0.85 / 1.2) reemplazados por la banda de
+                    lib/pf.ts: los números viven en UN sitio y se calibran ahí
+                    con las primeras semanas reales (T7 del plan). */}
+                <span>PF: <b className={CLASE_PF[nivelPF(a.pf_acum, { hhGastadas: a.hh_gastadas })].texto}>{a.pf_acum.toFixed(2)}</b></span>
                 <span>Avance: <b className="text-k-text2">{(a.pct_avance * 100).toFixed(0)}%</b></span>
               </div>
             </div>
           ))}
         </div>
-      )}
+        )}
+      </EstadoQuery>
     </div>
   )
 }
@@ -384,9 +411,10 @@ function TabIntegridad() {
 }
 
 // ── Auxiliares ──
-function Cargando() {
-  return <div className="flex items-center justify-center py-16 text-k-text3 text-sm gap-2"><RefreshCw size={16} className="animate-spin" /> Cargando…</div>
-}
+// `Cargando` desapareció: las tres pestañas pasan por <EstadoQuery>, que ya
+// pinta la carga. Se borra en vez de dejarlo por si acaso — un helper de
+// «cargando» suelto es justo lo que invita a volver al `isLoading ? … : …` de
+// dos ramas que confundía el error con el vacío.
 function Vacio({ icon, texto }: { icon: React.ReactNode; texto: string }) {
   return (
     <div className="flex flex-col items-center justify-center py-16 text-k-text3 gap-3">
