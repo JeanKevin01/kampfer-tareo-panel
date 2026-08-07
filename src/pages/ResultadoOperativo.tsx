@@ -153,7 +153,30 @@ export default function ResultadoOperativo() {
         ))}
       </div>
 
+      {/* CUARTO estado: sin periodos la consulta del RO está deshabilitada
+          (`enabled: !!sel`), así que no hay carga, ni error, ni datos — y la
+          página salía COMPLETAMENTE en blanco. El API sí devuelve un mensaje
+          accionable («crea el primero en la página Costos/Periodos»), pero
+          nunca llegaba a pedirse. Auditoría 2026-08-06 §5.ter.3. */}
       {tab === 'otm' ? <Rentabilidad /> :
+        periodos.isPending ? <Loader2 className="animate-spin text-k-text3" /> :
+        periodos.isError ? (
+          <p className="text-k-red text-sm">
+            No se pudieron cargar los periodos: {(periodos.error as Error).message}
+          </p>
+        ) :
+        !sel ? (
+          <div className="bg-k-surface border border-k-border rounded-xl p-8 text-center">
+            <p className="text-sm text-k-text2 font-bold mb-1">Todavía no hay ningún periodo abierto</p>
+            <p className="text-xs text-k-text3 mb-4">
+              El Resultado Operativo se calcula mes a mes: hace falta crear el primer periodo
+              contable antes de que haya nada que mostrar.
+            </p>
+            <Link to="/inventario" className="btn btn-secundario btn-sm inline-flex">
+              Ir a Costos y crear el mes actual
+            </Link>
+          </div>
+        ) :
         ro.isLoading ? <Loader2 className="animate-spin text-k-text3" /> :
         ro.isError ? <p className="text-k-red text-sm">{(ro.error as Error).message}</p> :
         ro.data && (

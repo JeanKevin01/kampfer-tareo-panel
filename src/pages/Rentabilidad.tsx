@@ -7,6 +7,7 @@ import { Loader2, Upload, Download, X, Plus, TrendingUp, DollarSign, Wallet, Per
 import * as XLSX from 'xlsx'
 
 import { api, descargarPlantilla } from '@/lib/api'
+import { EstadoQuery } from '@/components/ui/EstadoQuery'
 import { hojaDeDatos, leerHoja } from '@/lib/excel'
 
 /** Nombres con los que se reconoce la fila de cabecera dentro de la hoja. */
@@ -35,16 +36,23 @@ const TIPOS = ['MAT', 'EQP', 'EQT', 'SUB', 'DIR', 'GG']
 function TarifasCard() {
   const qc = useQueryClient()
   const [draft, setDraft] = useState<Record<string, string>>({})
-  const { data, isLoading } = useQuery<{ cargos: Cargo[]; default: number | null }>({
+  const q = useQuery<{ cargos: Cargo[]; default: number | null }>({
     queryKey: ['ev-tarifas'],
     queryFn: () => api<{ cargos: Cargo[]; default: number | null }>('/ev/tarifas'),
   })
+  const data = q.data
   const guardar = useMutation({
     mutationFn: (p: { cargo: string; costo_hh: number }) =>
       api('/ev/tarifas', { method: 'POST', body: JSON.stringify(p) }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['ev-tarifas'] }); qc.invalidateQueries({ queryKey: ['ro'] }) },
   })
-  if (isLoading || !data) return <div className="bg-k-surface border border-k-border rounded-xl p-5"><Loader2 size={14} className="animate-spin text-k-text3" /></div>
+  // `isLoading || !data` dejaba el spinner girando para siempre al fallar la
+  // consulta: con error, isLoading es false pero data sigue undefined.
+  if (q.isPending || q.isError || !data) return (
+    <div className="bg-k-surface border border-k-border rounded-xl p-5">
+      <EstadoQuery q={q} cargando="Cargando tarifas…">{() => null}</EstadoQuery>
+    </div>
+  )
   const save = (cargo: string, actual: number | null) => {
     const raw = draft[cargo]
     if (raw === undefined || raw === '') return
