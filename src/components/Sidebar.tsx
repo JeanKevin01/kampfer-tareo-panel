@@ -9,7 +9,12 @@ import {
 import { currentUser, logout } from '@/lib/auth'
 import ThemeToggle from '@/components/ThemeToggle'
 
-interface NavItem  { path: string; label: string; icon: LucideIcon; adminOnly?: boolean }
+// `oficinaOnly` = la página lee de `/ev`, que el API cierra al rol oficina
+// (regla F0.6). Sin este filtro, una cuenta de supervisor veía los 11 módulos
+// de oficina, entraba, y recibía 403 en cada llamada: el panel parecía
+// funcionar y no funcionaba (auditoría 2026-08-06, hallazgo B).
+// Se determinó grepeando `/ev/` en cada página: si no la consume, no se filtra.
+interface NavItem  { path: string; label: string; icon: LucideIcon; adminOnly?: boolean; oficinaOnly?: boolean }
 interface NavGroup { label: string; items: NavItem[] }
 
 const NAV: NavGroup[] = [
@@ -17,7 +22,7 @@ const NAV: NavGroup[] = [
     label: 'Operaciones',
     items: [
       { path: '/dashboard',    label: 'Dashboard',      icon: LayoutDashboard },
-      { path: '/programacion', label: 'Programación',   icon: CalendarDays },
+      { path: '/programacion', label: 'Programación',   icon: CalendarDays, oficinaOnly: true },
     ],
   },
   // Importar/QRs/Impresión y Analytics dejaron de ser entradas propias: son
@@ -37,26 +42,30 @@ const NAV: NavGroup[] = [
     label: 'Tareo',
     items: [
       { path: '/registros',    label: 'Registros y HH', icon: Table2 },
-      { path: '/matriz',       label: 'Matriz histórica', icon: Grid3X3 },
+      { path: '/matriz',       label: 'Matriz histórica', icon: Grid3X3, oficinaOnly: true },
     ],
   },
+  // «Generar RDC» salió del menú el 2026-08-06: su backend
+  // (POST /api/rdc/generar) no existe todavía y la propia página lo admite. La
+  // ruta y el componente siguen vivos —se llega por URL— pero un módulo vacío
+  // en el menú de un sistema que se va a enseñar a un planner resta más de lo
+  // que recuerda. Vuelve al menú el día que el endpoint exista.
   {
     label: 'Control',
     items: [
-      { path: '/otms',         label: 'Proyectos',           icon: ClipboardList },
-      { path: '/rdc',          label: 'Generar RDC',    icon: FileText },
-      { path: '/valor-ganado', label: 'Valor Ganado',   icon: Target },
-      { path: '/presupuesto',  label: 'Presupuesto',    icon: FileSpreadsheet },
-      { path: '/guia-fases',   label: 'Guía de Fases',  icon: FileText },
-      { path: '/inventario',   label: 'Costos',         icon: Package },
-      { path: '/valorizacion', label: 'Valorización',   icon: Receipt },
-      { path: '/rentabilidad', label: 'Resultado Op.',  icon: TrendingUp },
+      { path: '/otms',         label: 'Proyectos',      icon: ClipboardList },
+      { path: '/valor-ganado', label: 'Valor Ganado',   icon: Target,           oficinaOnly: true },
+      { path: '/presupuesto',  label: 'Presupuesto',    icon: FileSpreadsheet,  oficinaOnly: true },
+      { path: '/guia-fases',   label: 'Guía de Fases',  icon: FileText,         oficinaOnly: true },
+      { path: '/inventario',   label: 'Costos',         icon: Package,          oficinaOnly: true },
+      { path: '/valorizacion', label: 'Valorización',   icon: Receipt,          oficinaOnly: true },
+      { path: '/rentabilidad', label: 'Resultado Op.',  icon: TrendingUp,       oficinaOnly: true },
     ],
   },
   {
     label: 'Gestión',
     items: [
-      { path: '/edicion',      label: 'Datos maestros', icon: PenLine },
+      { path: '/edicion',      label: 'Datos maestros', icon: PenLine,          oficinaOnly: true },
       { path: '/monitor',      label: 'Monitor', icon: Activity },
       { path: '/bitacora',     label: 'Bitácora',       icon: History },
       { path: '/usuarios',     label: 'Usuarios',       icon: ShieldCheck, adminOnly: true },
@@ -65,7 +74,14 @@ const NAV: NavGroup[] = [
 ]
 
 export default function Sidebar({ collapsed = false, onToggle }: { collapsed?: boolean; onToggle?: () => void }) {
-  const esAdmin = currentUser()?.rol === 'admin'
+  const rol = currentUser()?.rol
+  const esAdmin = rol === 'admin'
+  // Oficina y admin ven todo; el supervisor solo lo que el API le deja abrir.
+  // Ante un rol desconocido se ENSEÑA el módulo: ocultar de más deja a alguien
+  // sin su herramienta, y el 403 del API sigue protegiendo el dato igual.
+  const esOficina = rol !== 'supervisor'
+  const visible = (item: NavItem) =>
+    (!item.adminOnly || esAdmin) && (!item.oficinaOnly || esOficina)
   return (
     <aside className={`${collapsed ? 'w-16' : 'w-60'} bg-k-void border-r border-k-border flex flex-col flex-shrink-0 transition-[width] duration-200`}>
 
@@ -92,7 +108,7 @@ export default function Sidebar({ collapsed = false, onToggle }: { collapsed?: b
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto py-3 px-2 scrollbar-thin">
-        {NAV.map((group, gi) => (
+        {NAV.filter(g => g.items.some(visible)).map((group, gi) => (
           <div key={group.label} className="mb-4">
             {collapsed
               ? gi > 0 && <div className="h-px bg-k-border mx-2 mb-3" />
@@ -101,7 +117,7 @@ export default function Sidebar({ collapsed = false, onToggle }: { collapsed?: b
                   {group.label}
                 </p>
               )}
-            {group.items.filter((item) => !item.adminOnly || esAdmin).map((item) => (
+            {group.items.filter(visible).map((item) => (
               <NavLink
                 key={item.path}
                 to={item.path}
