@@ -147,17 +147,22 @@ function NivelLeyenda() {
   )
 }
 
-function PFChip({ value }: { value: number }) {
-  if (!value) return <span className="text-k-text3 text-xs">—</span>
+function PFChip({ value, hhGastadas }: { value: number; hhGastadas?: number }) {
   // Un PF por encima de la banda de plausibilidad NO se pinta de verde: casi
   // siempre es avance registrado sin su tareo, no obra eficiente (ver lib/pf.ts).
-  const n = nivelPF(value)
+  //
+  // `hhGastadas` NO es decorativo: el API manda pf=0 tanto cuando no hay tareo
+  // («no se sabe», guion) como cuando hay HH quemadas y cero ganadas (el peor
+  // caso real, rojo). Sin ese dato los dos salían con un guion —y el malo se
+  // escondía— porque este chip empezaba con `if (!value) return —`.
+  const n = nivelPF(value, { hhGastadas })
+  if (n === 'sin-dato') return <span className="text-k-text3 text-xs">—</span>
   const c = CLASE_PF[n]
   return (
-    <span title={avisoPF(value) ?? undefined}
+    <span title={avisoPF(value, { hhGastadas }) ?? undefined}
       className={`font-mono text-[11px] font-bold px-2 py-0.5 rounded border
                   ${c.texto} ${c.fondo} ${c.borde}`}>
-      {value.toFixed(2)}{n === 'implausible' && ' ⚠'}
+      {value.toFixed(2)}{(n === 'implausible' || (n === 'malo' && value === 0)) && ' ⚠'}
     </span>
   )
 }
@@ -389,16 +394,18 @@ function TabResumen({ semana, otm }: { semana: number; otm?: string }) {
     // #5: el PF Total incluye HH improductivas. Se muestra el PF productivo como referencia.
     // El color sale de `nivelPF` (lib/pf.ts): un PF por encima de la banda no es
     // un éxito, es probable avance sin tareo — y no se pinta de verde.
+    // Se pasan las HH gastadas: un PF de 0 con HH consumidas es un desvío grave,
+    // no un «sin dato» gris (ver la nota de nivelPF en lib/pf.ts).
     { label: `PF Total (CPI) · prod ${(t.pf_acum_productivo ?? t.pf_acum).toFixed(2)}`, value: t.pf_acum.toFixed(2), icon: Target,
-      color: CLASE_PF[nivelPF(t.pf_acum)].texto,
-      bg:    CLASE_PF[nivelPF(t.pf_acum)].fondo,
-      border: CLASE_PF[nivelPF(t.pf_acum)].borde,
-      aviso: avisoPF(t.pf_acum) },
+      color: CLASE_PF[nivelPF(t.pf_acum, { hhGastadas: t.hh_gastadas_acum })].texto,
+      bg:    CLASE_PF[nivelPF(t.pf_acum, { hhGastadas: t.hh_gastadas_acum })].fondo,
+      border: CLASE_PF[nivelPF(t.pf_acum, { hhGastadas: t.hh_gastadas_acum })].borde,
+      aviso: avisoPF(t.pf_acum, { hhGastadas: t.hh_gastadas_acum }) },
     { label: 'PF Directo (solo MO directa)', value: (t.pf_dir_acum || 0).toFixed(2), icon: Target,
-      color: CLASE_PF[nivelPF(t.pf_dir_acum)].texto,
-      bg:    CLASE_PF[nivelPF(t.pf_dir_acum)].fondo,
-      border: CLASE_PF[nivelPF(t.pf_dir_acum)].borde,
-      aviso: avisoPF(t.pf_dir_acum) },
+      color: CLASE_PF[nivelPF(t.pf_dir_acum, { hhGastadas: t.hh_gastadas_dir_acum })].texto,
+      bg:    CLASE_PF[nivelPF(t.pf_dir_acum, { hhGastadas: t.hh_gastadas_dir_acum })].fondo,
+      border: CLASE_PF[nivelPF(t.pf_dir_acum, { hhGastadas: t.hh_gastadas_dir_acum })].borde,
+      aviso: avisoPF(t.pf_dir_acum, { hhGastadas: t.hh_gastadas_dir_acum }) },
     { label: `HH Ganadas (sem ${fmt(t.hh_ganadas_sem, 0)})`, value: fmt(t.hh_ganadas_acum, 0), icon: TrendingUp,
       color: 'text-k-green', bg: 'bg-green-500/10', border: 'border-green-500/20' },
     // #5: HH gastadas (D/I) + improductivas y su índice (HH improd / HH consumidas)
@@ -479,7 +486,7 @@ function TabResumen({ semana, otm }: { semana: number; otm?: string }) {
         <TablaGrupos titulo="Avance por naturaleza (contractual / adicional)" grupos={rep.por_naturaleza ?? []} />
       </div>
 
-      <CurvasFase semana={semana} />
+      <CurvasFase semana={semana} otm={otm} />
     </div>
   )
 }
@@ -508,7 +515,7 @@ function TablaGrupos({ titulo, grupos }: { titulo: string; grupos: ReporteGrupo[
                 <td className={`${TD} text-right font-mono text-k-green`}>{fmt(g.hh_ganadas, 0)}</td>
                 <td className={`${TD} text-right font-mono text-k-red`}>{fmt(g.hh_gastadas, 0)}</td>
                 <td className={`${TD} text-right font-mono`}>{pct(g.pct_avance)}</td>
-                <td className={`${TD} text-right`}><PFChip value={g.pf} /></td>
+                <td className={`${TD} text-right`}><PFChip value={g.pf} hhGastadas={g.hh_gastadas} /></td>
               </tr>
             ))}
             {grupos.length === 0 && (
@@ -606,7 +613,7 @@ function TabEjecutivo({ semana, otm }: { semana: number; otm?: string }) {
                     <td className={`${numTD} text-k-green`}>{fmt(a.subtotal.hh_ganadas, 0)}</td>
                     <td className={`${numTD} text-k-red`}>{fmt(a.subtotal.hh_gastadas, 0)}</td>
                     <td className={`${numTD} text-k-text`}>{pct(a.subtotal.pct_avance)}</td>
-                    <td className={`${TD} text-right`}><PFChip value={a.subtotal.pf} /></td>
+                    <td className={`${TD} text-right`}><PFChip value={a.subtotal.pf} hhGastadas={a.subtotal.hh_gastadas} /></td>
                     <td className={`${numTD} text-k-text3`}>{pct(a.subtotal.inc_proyec)}</td>
                   </tr>
                   {a.disciplinas.map(d => (
@@ -618,7 +625,7 @@ function TabEjecutivo({ semana, otm }: { semana: number; otm?: string }) {
                       <td className={`${numTD} text-k-green`}>{fmt(d.hh_ganadas, 0)}</td>
                       <td className={`${numTD} text-k-red`}>{fmt(d.hh_gastadas, 0)}</td>
                       <td className={numTD}>{pct(d.pct_avance)}</td>
-                      <td className={`${TD} text-right`}><PFChip value={d.pf} /></td>
+                      <td className={`${TD} text-right`}><PFChip value={d.pf} hhGastadas={d.hh_gastadas} /></td>
                       <td className={`${numTD} text-k-text3`}>{pct(d.inc_proyec)}</td>
                     </tr>
                   ))}
@@ -632,7 +639,7 @@ function TabEjecutivo({ semana, otm }: { semana: number; otm?: string }) {
                 <td className={`${numTD} font-bold text-k-green`}>{fmt(m.total.hh_ganadas, 0)}</td>
                 <td className={`${numTD} font-bold text-k-red`}>{fmt(m.total.hh_gastadas, 0)}</td>
                 <td className={`${numTD} font-bold text-k-text`}>{pct(m.total.pct_avance)}</td>
-                <td className={`${TD} text-right`}><PFChip value={m.total.pf} /></td>
+                <td className={`${TD} text-right`}><PFChip value={m.total.pf} hhGastadas={m.total.hh_gastadas} /></td>
                 <td className={`${numTD} text-k-text3`}>{pct(m.total.inc_proyec)}</td>
               </tr>
             </tbody>
@@ -658,20 +665,28 @@ const FASE_COLORS: Record<string, string> = {
 }
 const COLOR_LIST = ['#3b82f6','#10b981','#f59e0b','#a78bfa','#22d3ee','#94a3b8','#ef4444','#ec4899']
 
-function CurvasFase({ semana }: { semana: number }) {
+function CurvasFase({ semana, otm }: { semana: number; otm?: string }) {
   // Este bloque mandaba «registra avances semanales primero» cuando el endpoint
   // devolvía 500 — con los avances ya registrados y visibles en la tabla de
   // arriba. Un error nunca puede salir disfrazado de instrucción al usuario:
   // le hace repetir trabajo hecho y deja el fallo real invisible durante
   // semanas (fue el caso: /ev/curva-fase llevaba caído en producción).
+  //
+  // `otm` se pasa desde la 2ª ronda de la auditoría: la consulta lo ignoraba, así
+  // que el gráfico mostraba TODOS los proyectos mientras el resto de la pestaña
+  // mostraba el elegido en el selector de arriba. Dos verdades en una pantalla.
   const q = useQuery<{ fases: string[]; serie: PuntoCurvaFase[] }>({
-    queryKey: ['ev-curva-fase', semana],
-    queryFn: () => req(`/ev/curva-fase?hasta=${semana}`),
+    queryKey: ['ev-curva-fase', semana, otm],
+    queryFn: () => req(`/ev/curva-fase?hasta=${semana}${otm ? `&otm=${encodeURIComponent(otm)}` : ''}`),
     enabled: semana > 0,
   })
 
   return (
     <EstadoQuery q={q} cargando="Cargando curvas…"
+      // Cuarto estado: con `enabled:false` la consulta no corre y TanStack deja
+      // isPending en true — sin esta rama, «Cargando curvas…» giraría para
+      // siempre. Es la clase 1 que este componente vino a eliminar.
+      precondicion={semana > 0 ? undefined : 'Elige una semana para ver las curvas por fase.'}
       esVacio={d => !d?.serie?.length}
       vacio={
         <div className="bg-k-raised border border-k-border rounded-xl p-8 text-center text-k-text3 text-sm">
@@ -727,10 +742,15 @@ function CurvasFaseGrafico({ data }: { data: { fases: string[]; serie: PuntoCurv
             <div key={f} className="flex items-center gap-2 bg-k-raised border border-k-border rounded-lg px-3 py-2">
               <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: color }} />
               <span className="text-[11px] font-bold text-k-text">{f}</span>
+              {/* `hhGastadas: 1` no es un dato, es el contrato del endpoint:
+                  curva-fase solo emite un número cuando hubo HH gastadas
+                  (`round(g/c,3) if c > 0 else None`). Así que aquí un PF de 0
+                  significa siempre «se quemaron HH y no se ganó ninguna», y
+                  tiene que salir en rojo, no en gris de «sin dato». */}
               {pf != null && (
-                <span title={avisoPF(pf) ?? undefined}
-                  className={`font-mono text-[11px] font-bold ml-1 ${CLASE_PF[nivelPF(pf)].texto}`}>
-                  PF {pf.toFixed(2)}{nivelPF(pf) === 'implausible' && ' ⚠'}
+                <span title={avisoPF(pf, { hhGastadas: 1 }) ?? undefined}
+                  className={`font-mono text-[11px] font-bold ml-1 ${CLASE_PF[nivelPF(pf, { hhGastadas: 1 })].texto}`}>
+                  PF {pf.toFixed(2)}{avisoPF(pf, { hhGastadas: 1 }) && ' ⚠'}
                 </span>
               )}
             </div>

@@ -32,8 +32,32 @@ export const PF_MALO = 0.85
 
 export type NivelPF = 'sano' | 'alto' | 'bajo' | 'malo' | 'implausible' | 'sin-dato'
 
-export function nivelPF(pf: number | null | undefined): NivelPF {
-  if (pf === null || pf === undefined || !isFinite(pf) || pf === 0) return 'sin-dato'
+/** Contexto opcional para desambiguar el `pf = 0` que emite el API. */
+export interface CtxPF {
+  /** HH gastadas del mismo grupo/partida. Ver la nota de `nivelPF`. */
+  hhGastadas?: number | null
+}
+
+/**
+ * El API emite `pf = 0` en DOS situaciones que no son la misma cosa
+ * (`_engine.py`: `round(ganadas/gastadas, 3) if gastadas > 0 else 0`):
+ *
+ *   a) `gastadas == 0` → no se sabe. No hay tareo contra qué medir. → sin-dato
+ *   b) `gastadas > 0` y `ganadas == 0` → se quemaron HH y no se ganó ninguna.
+ *      Es el PEOR caso real que existe, y la 1ª versión de este archivo lo
+ *      pintaba gris «sin dato» junto con el (a) — justo el caso que la tesis
+ *      necesita ver (auditoría 2026-08-06, 2ª ronda).
+ *
+ * Desde el PF solo no se distinguen, así que el llamante pasa `hhGastadas`
+ * cuando lo tiene. Sin ese dato se sigue asumiendo (a): callar antes que
+ * acusar en falso, que es la misma prudencia de la banda ancha.
+ *
+ * Nota: el API redondea a 3 decimales, así que un PF de 0,0004 también llega
+ * como `0.0` — y con HH gastadas encima, `malo` es la lectura correcta.
+ */
+export function nivelPF(pf: number | null | undefined, ctx?: CtxPF): NivelPF {
+  if (pf === null || pf === undefined || !isFinite(pf)) return 'sin-dato'
+  if (pf === 0) return (ctx?.hhGastadas ?? 0) > 0 ? 'malo' : 'sin-dato'
   if (pf >= PF_IMPLAUSIBLE) return 'implausible'
   if (pf > PF_MAX_SANO)     return 'alto'
   if (pf >= PF_MIN_SANO)    return 'sano'
@@ -41,20 +65,33 @@ export function nivelPF(pf: number | null | undefined): NivelPF {
   return 'malo'
 }
 
-/** Clases de color por nivel. Nota deliberada: `implausible` NO es verde.
- *  Un número que no puede ser cierto no se premia; se manda a revisar. */
+/** Clases de color por nivel. Dos notas deliberadas:
+ *  - `implausible` NO es verde: un número que no puede ser cierto no se premia.
+ *  - `alto` NO es verde tampoco. Compartía color con `sano` y eso dejaba la
+ *    banda 1,25–1,50 indistinguible de un PF conforme: en la práctica solo
+ *    movía el techo del verde de 1,00 a 1,50, sin avisar de nada. `k-alerta`
+ *    significa «mirar esto», y un PF por encima de lo típico hay que mirarlo
+ *    igual que uno por debajo — el signo lo dice el propio número. */
 export const CLASE_PF: Record<NivelPF, { texto: string; fondo: string; borde: string }> = {
   sano:        { texto: 'text-k-green', fondo: 'bg-green-500/10', borde: 'border-green-500/20' },
-  alto:        { texto: 'text-k-green', fondo: 'bg-green-500/10', borde: 'border-green-500/20' },
+  alto:        { texto: 'text-k-alerta', fondo: 'bg-amber-500/10', borde: 'border-amber-500/25' },
   bajo:        { texto: 'text-k-alerta', fondo: 'bg-amber-500/10', borde: 'border-amber-500/25' },
   malo:        { texto: 'text-k-red',   fondo: 'bg-red-500/10',   borde: 'border-red-500/20' },
   implausible: { texto: 'text-k-text3', fondo: 'bg-k-raised',     borde: 'border-k-alerta/40' },
   'sin-dato':  { texto: 'text-k-text3', fondo: 'bg-k-raised',     borde: 'border-k-border' },
 }
 
-/** Aviso para el usuario, o null si el número es creíble. */
-export function avisoPF(pf: number | null | undefined): string | null {
-  if (nivelPF(pf) !== 'implausible') return null
-  return 'Revisar: un PF así suele significar avance registrado sin su tareo, '
-       + 'no productividad real. Comprobar las HH del periodo antes de publicarlo.'
+/** Aviso para el usuario, o null si el número no necesita explicación. */
+export function avisoPF(pf: number | null | undefined, ctx?: CtxPF): string | null {
+  const n = nivelPF(pf, ctx)
+  if (n === 'implausible')
+    return 'Revisar: un PF así suele significar avance registrado sin su tareo, '
+         + 'no productividad real. Comprobar las HH del periodo antes de publicarlo.'
+  if (n === 'alto')
+    return `Por encima de lo típico (>${PF_MAX_SANO}). Puede ser real, pero conviene `
+         + 'comprobar que el tareo de esas partidas esté completo antes de publicarlo.'
+  if (n === 'malo' && pf === 0)
+    return 'Se consumieron HH y no se ganó ninguna: hay tareo sin avance registrado, '
+         + 'o el avance está cargado en otra partida.'
+  return null
 }
