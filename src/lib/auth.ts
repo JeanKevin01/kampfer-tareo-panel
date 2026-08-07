@@ -31,4 +31,23 @@ export function currentUser(): AuthUser | null {
   return u
 }
 
+/** ¿La sesión puede leer los endpoints cerrados con `require_role("oficina")`?
+ *
+ *  El API tiene DOS clases de endpoint cerrados a oficina, no una:
+ *    · todo `/ev/*` (el motor de valor ganado), y
+ *    · un puñado FUERA de `/ev` que se leen desde módulos que el supervisor sí
+ *      ve — `/api/histograma-personal`, `/admin/supervisores/matriz`,
+ *      `/api/cuadrillas-habituales`.
+ *
+ *  La 1ª ronda de la auditoría filtró el menú grepeando `/ev/` y por eso dejó
+ *  fuera la segunda clase. Esta función existe para que la regla se escriba
+ *  UNA vez y valga tanto para el menú como para las pestañas de dentro.
+ *
+ *  Ante un rol desconocido devuelve `true`: ocultar de más deja a alguien sin su
+ *  herramienta, y el 403 del API sigue protegiendo el dato igual. Esto es
+ *  cosmética honesta, NO una medida de seguridad. */
+export function esOficina(): boolean {
+  return currentUser()?.rol !== 'supervisor'
+}
+
 export function logout() { clearToken(); location.reload() }

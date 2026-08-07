@@ -5,7 +5,22 @@
 import type { LucideIcon } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 
-export interface TabDef { id: string; label: string; icon?: LucideIcon }
+import { esOficina } from '@/lib/auth'
+
+/** `oficinaOnly`: la pestaña entera se alimenta de un endpoint cerrado con
+ *  `require_role("oficina")`. A un supervisor no le sirve de nada — solo le
+ *  devuelve 403 — así que no se le enseña. */
+export interface TabDef { id: string; label: string; icon?: LucideIcon; oficinaOnly?: boolean }
+
+/** Filtra las pestañas que el rol actual no puede leer.
+ *
+ *  Se llama DENTRO del componente, nunca a nivel de módulo: el rol sale del
+ *  token y a nivel de módulo se evaluaría una sola vez al importar, antes de
+ *  que exista sesión — y quedaría congelado tras el login. */
+export function tabsVisibles<T extends TabDef>(tabs: readonly T[]): T[] {
+  const of = esOficina()
+  return tabs.filter(t => !t.oficinaOnly || of)
+}
 
 /** Que la pestaña viaje en la URL permite que los enlaces viejos del menú
  *  redirijan a su pestaña (/importar → /trabajadores?tab=importar) y que se

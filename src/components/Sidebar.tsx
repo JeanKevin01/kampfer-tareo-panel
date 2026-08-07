@@ -6,14 +6,24 @@ import {
   FileText, LogOut, ShieldCheck, PanelLeftClose, PanelLeft,
   type LucideIcon,
 } from 'lucide-react'
-import { currentUser, logout } from '@/lib/auth'
+import { currentUser, logout, esOficina } from '@/lib/auth'
 import ThemeToggle from '@/components/ThemeToggle'
 
-// `oficinaOnly` = la página lee de `/ev`, que el API cierra al rol oficina
-// (regla F0.6). Sin este filtro, una cuenta de supervisor veía los 11 módulos
-// de oficina, entraba, y recibía 403 en cada llamada: el panel parecía
+// `oficinaOnly` = TODO lo que la página lee está cerrado con
+// `require_role("oficina")`. Sin este filtro, una cuenta de supervisor veía los
+// módulos de oficina, entraba, y recibía 403 en cada llamada: el panel parecía
 // funcionar y no funcionaba (auditoría 2026-08-06, hallazgo B).
-// Se determinó grepeando `/ev/` en cada página: si no la consume, no se filtra.
+//
+// ⚠ La 1ª ronda determinó esta lista grepeando `/ev/`, y esa NO es la regla.
+// El API cierra a oficina 32 endpoints, y tres de ellos se leen desde módulos
+// que el supervisor sí debe ver: `/api/histograma-personal`,
+// `/admin/supervisores/matriz` y `/api/cuadrillas-habituales`. Esos NO se
+// arreglan aquí —el módulo entero sí le sirve— sino ocultando su pestaña con
+// `oficinaOnly` en el TabDef (ver `lib/tabs.ts`). Las nueve entradas de abajo
+// se reverificaron una a una contra `require_role` del API, no contra el path.
+//
+// Esto es cosmética: quien escriba la URL a mano llega igual, y el 403 del API
+// es lo que protege el dato. No hay guarda de ruta en App.tsx y no la finge.
 interface NavItem  { path: string; label: string; icon: LucideIcon; adminOnly?: boolean; oficinaOnly?: boolean }
 interface NavGroup { label: string; items: NavItem[] }
 
@@ -77,11 +87,10 @@ export default function Sidebar({ collapsed = false, onToggle }: { collapsed?: b
   const rol = currentUser()?.rol
   const esAdmin = rol === 'admin'
   // Oficina y admin ven todo; el supervisor solo lo que el API le deja abrir.
-  // Ante un rol desconocido se ENSEÑA el módulo: ocultar de más deja a alguien
-  // sin su herramienta, y el 403 del API sigue protegiendo el dato igual.
-  const esOficina = rol !== 'supervisor'
+  // El criterio vive en `lib/auth.ts` para que menú y pestañas usen el mismo.
+  const of = esOficina()
   const visible = (item: NavItem) =>
-    (!item.adminOnly || esAdmin) && (!item.oficinaOnly || esOficina)
+    (!item.adminOnly || esAdmin) && (!item.oficinaOnly || of)
   return (
     <aside className={`${collapsed ? 'w-16' : 'w-60'} bg-k-void border-r border-k-border flex flex-col flex-shrink-0 transition-[width] duration-200`}>
 

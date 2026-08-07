@@ -10,7 +10,7 @@ import { Calendar, Download, Loader2, Table2, BarChart3, Users, CalendarRange } 
 
 import { api } from '@/lib/api'
 import { TabsPagina } from '@/components/TabsPagina'
-import { useTab, type TabDef } from '@/lib/tabs'
+import { useTab, tabsVisibles, type TabDef } from '@/lib/tabs'
 import HistogramaPersonal from '@/components/HistogramaPersonal'
 import HojaSemanal from '@/components/HojaSemanal'
 import Reportes from '@/pages/Reportes'
@@ -31,14 +31,19 @@ const TABS: TabDef[] = [
   // sería adivinar a qué partida quitarle las horas.
   { id: 'semana',      label: 'Hoja semanal · editar HH', icon: CalendarRange },
   { id: 'analytics',   label: 'Analytics',         icon: BarChart3 },
-  { id: 'histograma',  label: 'Histograma de personal', icon: Users },
+  // /api/histograma-personal exige rol oficina (padron.py). Era la única
+  // pestaña del panel que a un supervisor le mentía SIEMPRE: el 403 salía
+  // como «Todavía no hay tareo registrado en ese rango»
+  // (auditoría 2026-08-06, 2ª ronda).
+  { id: 'histograma',  label: 'Histograma de personal', icon: Users, oficinaOnly: true },
 ]
 
 export default function RegistrosHH() {
-  const [tab, setTab] = useTab(TABS)
+  const tabs = tabsVisibles(TABS)
+  const [tab, setTab] = useTab(tabs)
   return (
     <div className="space-y-5">
-      <TabsPagina tabs={TABS} activo={tab} onCambiar={setTab} />
+      <TabsPagina tabs={tabs} activo={tab} onCambiar={setTab} />
       {tab === 'registros'  && <PanelRegistros />}
       {tab === 'semana'     && <HojaSemanal />}
       {tab === 'analytics'  && <Reportes />}

@@ -11,7 +11,7 @@ import { api, ApiError } from '@/lib/api'
 import { EstadoQuery } from '@/components/ui/EstadoQuery'
 import { mensajeError } from '@/lib/errores'
 import { TabsPagina } from '@/components/TabsPagina'
-import { useTab, type TabDef } from '@/lib/tabs'
+import { useTab, tabsVisibles, type TabDef } from '@/lib/tabs'
 import MatrizSupervisores from '@/pages/MatrizSupervisores'
 
 interface Supervisor  { id: string; nombre: string; email?: string }
@@ -606,17 +606,21 @@ function SinCuadrillaAviso() {
 }
 
 // ── Componente principal ──────────────────────────────────────
+// `cuadrillas` vive de /api/cuadrillas-habituales y `matriz` de
+// /admin/supervisores/matriz: los dos exigen rol oficina, así que a un
+// supervisor solo le devuelven 403 (auditoría 2026-08-06, 2ª ronda).
 const TABS: TabDef[] = [
   { id: 'estado', label: 'Estado del día', icon: Calendar },
-  { id: 'cuadrillas', label: 'Cuadrillas', icon: Users },
-  { id: 'matriz', label: 'Reportes por semana', icon: Grid3X3 },
+  { id: 'cuadrillas', label: 'Cuadrillas', icon: Users, oficinaOnly: true },
+  { id: 'matriz', label: 'Reportes por semana', icon: Grid3X3, oficinaOnly: true },
 ]
 
 export default function Supervisores() {
-  const [tab, setTab] = useTab(TABS)
+  const tabs = tabsVisibles(TABS)
+  const [tab, setTab] = useTab(tabs)
   return (
     <div className="space-y-5">
-      <TabsPagina tabs={TABS} activo={tab} onCambiar={setTab} />
+      <TabsPagina tabs={tabs} activo={tab} onCambiar={setTab} />
       {tab === 'estado' && <PanelEstadoDia />}
       {tab === 'cuadrillas' && <CatalogoCuadrillas />}
       {tab === 'matriz' && <MatrizSupervisores />}
