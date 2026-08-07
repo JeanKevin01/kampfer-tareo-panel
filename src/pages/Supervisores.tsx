@@ -8,6 +8,8 @@ import {
 import { Link } from 'react-router-dom'
 
 import { api, ApiError } from '@/lib/api'
+import { EstadoQuery } from '@/components/ui/EstadoQuery'
+import { mensajeError } from '@/lib/errores'
 import { TabsPagina } from '@/components/TabsPagina'
 import { useTab, type TabDef } from '@/lib/tabs'
 import MatrizSupervisores from '@/pages/MatrizSupervisores'
@@ -307,10 +309,14 @@ function HabitualesPorSupervisor({ cuadrillas }: { cuadrillas: Cuadrilla[] }) {
   const [editando, setEditando] = useState<string | null>(null)
   const [sel, setSel]           = useState<Set<number>>(new Set())
 
-  const { data: filas = [] } = useQuery<HabSup[]>({
+  // Sin default en `data`: un fallo del API dejaba `filas` en [] y la cabecera
+  // afirmaba «Nadie tiene habituales» cuando sí los había —el teléfono los
+  // mostraba bien en la misma sesión— (auditoría 2026-08-06, hallazgo A).
+  const q = useQuery<HabSup[]>({
     queryKey: ['cuadrillas-habituales'],
     queryFn: () => api<HabSup[]>('/api/cuadrillas-habituales'),
   })
+  const filas = q.data
 
   const guardar = useMutation({
     mutationFn: (sup: string) =>
@@ -325,7 +331,14 @@ function HabitualesPorSupervisor({ cuadrillas }: { cuadrillas: Cuadrilla[] }) {
 
   const nombrePorId = useMemo(
     () => new Map(cuadrillas.map(c => [c.id, c.nombre])), [cuadrillas])
-  const asignadas = filas.reduce((n, f) => n + f.grupos.length, 0)
+  const asignadas = (filas ?? []).reduce((n, f) => n + f.grupos.length, 0)
+  // El subtítulo NO puede afirmar nada mientras no se sepa: son tres estados.
+  const subtitulo =
+    q.isPending ? 'Consultando…'
+    : q.isError  ? `No se pudo consultar: ${mensajeError(q.error)}`
+    : asignadas === 0
+      ? 'Nadie tiene habituales: todos ven el catálogo en orden alfabético.'
+      : `${asignadas} ${asignadas === 1 ? 'asignación' : 'asignaciones'} · le salen arriba y aparte al reportar`
 
   const abrirEdicion = (f: HabSup) => {
     setEditando(f.supervisor_id)
@@ -341,11 +354,7 @@ function HabitualesPorSupervisor({ cuadrillas }: { cuadrillas: Cuadrilla[] }) {
         <Star size={15} className="text-k-blue flex-shrink-0" />
         <div className="flex-1 min-w-0">
           <p className="text-sm font-bold text-k-text">Cuadrillas habituales por supervisor</p>
-          <p className="text-[11px] text-k-text3">
-            {asignadas === 0
-              ? 'Nadie tiene habituales: todos ven el catálogo en orden alfabético.'
-              : `${asignadas} ${asignadas === 1 ? 'asignación' : 'asignaciones'} · le salen arriba y aparte al reportar`}
-          </p>
+          <p className={`text-[11px] ${q.isError ? 'text-k-red' : 'text-k-text3'}`}>{subtitulo}</p>
         </div>
         {abierto ? <ChevronUp size={15} className="text-k-text3" />
                  : <ChevronDown size={15} className="text-k-text3" />}
@@ -353,9 +362,9 @@ function HabitualesPorSupervisor({ cuadrillas }: { cuadrillas: Cuadrilla[] }) {
 
       {abierto && (
         <div className="px-4 pb-4 space-y-2">
-          {filas.length === 0 && (
-            <p className="text-[11px] text-k-text3 py-2">No hay supervisores activos.</p>
-          )}
+          <EstadoQuery q={q} cargando="Consultando supervisores…"
+            vacio={<p className="text-[11px] text-k-text3 py-2">No hay supervisores activos.</p>}>
+          {filas => <>
           {filas.map(f => (
             <div key={f.supervisor_id} className="bg-k-raised border border-k-border rounded-lg">
               <div className="flex items-center gap-3 px-3 py-2 flex-wrap">
@@ -419,6 +428,8 @@ function HabitualesPorSupervisor({ cuadrillas }: { cuadrillas: Cuadrilla[] }) {
               )}
             </div>
           ))}
+          </>}
+          </EstadoQuery>
         </div>
       )}
     </div>

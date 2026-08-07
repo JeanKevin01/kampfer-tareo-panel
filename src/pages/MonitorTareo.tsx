@@ -3,9 +3,12 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Activity, AlertTriangle, CalendarDays, Clock, RefreshCw, CheckCircle, ArrowDown, ArrowUp, ShieldCheck, Users, GitMerge, Copy } from 'lucide-react'
 
 import { api } from '@/lib/api'
+import { iso } from '@/lib/semana'
+import { EstadoQuery } from '@/components/ui/EstadoQuery'
 const req = <T = unknown>(p: string) => api<T>(p)
 const fmt = (v: number) => v.toLocaleString('es-PE', { maximumFractionDigits: 1 })
-const hoyISO = () => new Date().toISOString().slice(0, 10)
+// `iso()` de lib/semana, no `new Date().toISOString()`: ese último se evalúa en
+// UTC y en Lima (−5) propone MAÑANA a partir de las 19:00 (D10 del plan).
 
 // ── Tipos ──
 interface OtmHH { otm_id: string; hh: number; n_partidas: number }
@@ -69,7 +72,7 @@ export default function MonitorTareo() {
 
 // ════════════════════════ HH diario por proyecto ════════════════════════
 function TabHHDiario() {
-  const [fecha, setFecha] = useState(hoyISO())
+  const [fecha, setFecha] = useState(iso(new Date()))
   const { data, isLoading, refetch, isFetching } = useQuery<RespHH>({
     queryKey: ['monitor-hh', fecha], queryFn: () => req(`/api/monitor/hh-diario?fecha=${fecha}`),
   })
@@ -239,12 +242,17 @@ interface DobleResp { fecha: string; total: number; filas: DobleHH[] }
 const post = (p: string, body: unknown) =>
   api(p, { method: 'POST', body: JSON.stringify(body) })
 
+// Esta pestaña existe para responder «¿me puedo fiar de los datos?». Es, por
+// tanto, la que menos puede permitirse un ✓ que no haya comprobado nada: hasta
+// la auditoría de 2026-08-06, sus tres bloques decían «todo bien» tanto si no
+// había hallazgos como si el endpoint respondía 403 o 500. Los tres van ahora
+// por <EstadoQuery>, que solo deja pintar la afirmación en la rama `vacio`.
 function TabIntegridad() {
   const qc = useQueryClient()
-  const [fecha, setFecha] = useState(hoyISO())
-  const { data: conflictos } = useQuery<Conflicto[]>({ queryKey: ['conflictos'], queryFn: () => req('/ev/conflictos') })
-  const { data: dups } = useQuery<DupResp>({ queryKey: ['dups-trab'], queryFn: () => req('/api/trabajadores/duplicados') })
-  const { data: doble } = useQuery<DobleResp>({ queryKey: ['doble-hh', fecha], queryFn: () => req(`/api/monitor/duplicados-hh?fecha=${fecha}`) })
+  const [fecha, setFecha] = useState(iso(new Date()))
+  const qConflictos = useQuery<Conflicto[]>({ queryKey: ['conflictos'], queryFn: () => req('/ev/conflictos') })
+  const qDups = useQuery<DupResp>({ queryKey: ['dups-trab'], queryFn: () => req('/api/trabajadores/duplicados') })
+  const qDoble = useQuery<DobleResp>({ queryKey: ['doble-hh', fecha], queryFn: () => req(`/api/monitor/duplicados-hh?fecha=${fecha}`) })
   const [keep, setKeep] = useState<Record<string, string>>({})  // nombreGrupo -> id a conservar
   const [msg, setMsg] = useState('')
 
@@ -257,8 +265,6 @@ function TabIntegridad() {
     onSuccess: (_d, v) => { setMsg(`✓ ${v.from_id} fusionado en ${v.to_id}`); qc.invalidateQueries({ queryKey: ['dups-trab'] }) },
     onError: (e: Error) => setMsg(`✗ ${e.message}`),
   })
-
-  const pendientes = (conflictos ?? []).filter(c => c.estado !== 'RESUELTO')
 
   const mejorId = (g: DupGrupo) => g.miembros.slice().sort((a, b) => (b.n_tareo + b.n_reg) - (a.n_tareo + a.n_reg))[0]?.id
   const fusionarGrupo = (g: DupGrupo) => {
@@ -276,11 +282,12 @@ function TabIntegridad() {
       {/* Trabajadores duplicados */}
       <section>
         <h2 className="flex items-center gap-2 text-sm font-bold text-k-text mb-2"><Users size={15} className="text-k-amber" /> Trabajadores duplicados</h2>
-        {(dups?.grupos.length ?? 0) === 0 ? (
-          <p className="text-xs text-k-text3">No se detectaron nombres repetidos con distinto ID. ✓</p>
-        ) : (
+        <EstadoQuery q={qDups} linea cargando="Comprobando duplicados…"
+          esVacio={d => d.grupos.length === 0}
+          vacio="No se detectaron nombres repetidos con distinto ID. ✓">
+          {dups => (
           <div className="space-y-2">
-            {dups!.grupos.map(g => {
+            {dups.grupos.map(g => {
               const to = keep[g.nombre] || mejorId(g)
               return (
                 <div key={g.nombre} className="rounded-lg border border-k-border bg-k-surface p-3">
@@ -308,15 +315,19 @@ function TabIntegridad() {
               )
             })}
           </div>
-        )}
+          )}
+        </EstadoQuery>
       </section>
 
       {/* Conflictos de HH */}
       <section>
         <h2 className="flex items-center gap-2 text-sm font-bold text-k-text mb-2"><AlertTriangle size={15} className="text-k-amber" /> Conflictos de HH (multi-supervisor)</h2>
-        {pendientes.length === 0 ? (
-          <p className="text-xs text-k-text3">Sin conflictos pendientes. ✓</p>
-        ) : (
+        <EstadoQuery q={qConflictos} linea cargando="Comprobando conflictos…"
+          esVacio={cs => cs.filter(c => c.estado !== 'RESUELTO').length === 0}
+          vacio="Sin conflictos pendientes. ✓">
+          {conflictos => {
+          const pendientes = conflictos.filter(c => c.estado !== 'RESUELTO')
+          return (
           <div className="rounded-xl border border-k-border overflow-hidden bg-k-surface">
             <table className="w-full" style={{ fontSize: 12 }}>
               <thead>
@@ -340,7 +351,8 @@ function TabIntegridad() {
               </tbody>
             </table>
           </div>
-        )}
+          )}}
+        </EstadoQuery>
       </section>
 
       {/* Doble registro de HH */}
@@ -350,11 +362,12 @@ function TabIntegridad() {
           <input type="date" value={fecha} onChange={e => setFecha(e.target.value)}
             className="bg-k-void border border-k-border focus:border-k-amber rounded-lg px-2 py-1 text-xs text-k-text font-mono outline-none" />
         </div>
-        {(doble?.filas.length ?? 0) === 0 ? (
-          <p className="text-xs text-k-text3">Nadie con HH en más de una sesión ese día. ✓</p>
-        ) : (
+        <EstadoQuery q={qDoble} linea cargando="Comprobando el día…"
+          esVacio={d => d.filas.length === 0}
+          vacio="Nadie con HH en más de una sesión ese día. ✓">
+          {doble => (
           <div className="space-y-1">
-            {doble!.filas.map(d => (
+            {doble.filas.map(d => (
               <div key={d.trab_id} className="flex items-center gap-3 text-[11px] bg-k-surface border border-red-500/20 rounded px-3 py-2">
                 <span className="font-mono text-k-amber">{d.trab_id}</span>
                 <span className="text-k-text flex-1">{d.nombre}</span>
@@ -363,7 +376,8 @@ function TabIntegridad() {
               </div>
             ))}
           </div>
-        )}
+          )}
+        </EstadoQuery>
       </section>
     </div>
   )
