@@ -2,9 +2,10 @@
 // Colores por nivel (igual que Excel del ingeniero de costos) + variables del panel Kampfer
 import { useState, useMemo, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { ChevronRight, ChevronDown, Loader2 } from 'lucide-react'
+import { ChevronRight, ChevronDown, Loader2, AlertTriangle } from 'lucide-react'
 
 import { api } from '@/lib/api'
+import { mensajeError } from '@/lib/errores'
 
 // ── Colores por nivel — tono pastel, distinguibles entre sí ───
 // Theme-aware: el texto/borde salen de variables (var(--nivel-N)) que se
@@ -181,7 +182,7 @@ function WBSRow({ node, collapsed, onToggle }: { node: Nodo; collapsed: Set<stri
 export default function WBSArbol({ otm, semana }: { otm: string; semana: number }) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
 
-  const { data, isLoading, isError } = useQuery<{ filas: Fila[] }>({
+  const { data, isLoading, isError, error, refetch } = useQuery<{ filas: Fila[] }>({
     queryKey: ['ev-arbol', otm, semana],
     queryFn: () => api<{ filas: Fila[] }>(`/ev/arbol?semana=${semana}${otm ? `&otm=${otm}` : ''}`),
     enabled: semana > 0,
@@ -200,7 +201,24 @@ export default function WBSArbol({ otm, semana }: { otm: string; semana: number 
   }
 
   if (isLoading) return <div style={{display:'flex',alignItems:'center',gap:8,padding:'40px 0',color:'rgb(var(--k-text2))',fontSize:14}}><Loader2 size={16} className="animate-spin"/>Cargando árbol WBS...</div>
-  if (isError || !data?.filas?.length) return (
+  // `isError || !length` juntaba en una sola rama «no hay partidas» con «no pude
+  // leerlas»: un 500 decía «verifica que esté importada» y mandaba a reimportar
+  // un WBS que ya estaba. Son dos cosas distintas y se dicen distinto
+  // (auditoría 2026-08-06, 2ª ronda).
+  if (isError) return (
+    <div style={{display:'flex',alignItems:'flex-start',gap:10,padding:'32px 0',justifyContent:'center'}}>
+      <AlertTriangle size={16} style={{color:'rgb(var(--k-red))',flexShrink:0,marginTop:2}}/>
+      <div>
+        <p style={{fontSize:14,fontWeight:700,color:'rgb(var(--k-red))'}}>No se pudo cargar el árbol WBS</p>
+        <p style={{fontSize:12,color:'rgb(var(--k-text3))',marginTop:2}}>{mensajeError(error)}</p>
+        <button onClick={() => void refetch()}
+          style={{marginTop:8,fontSize:12,textDecoration:'underline',color:'rgb(var(--k-text2))'}}>
+          Reintentar
+        </button>
+      </div>
+    </div>
+  )
+  if (!data?.filas?.length) return (
     <div style={{textAlign:'center',padding:'48px 0',color:'rgb(var(--k-text2))',fontSize:14}}>
       {otm ? `Sin partidas para ${otm} — verifica que esté importada` : 'Selecciona un proyecto en el selector de arriba o importa partidas desde la pestaña Importar'}
     </div>

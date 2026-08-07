@@ -13,9 +13,10 @@ import {
   ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend,
 } from 'recharts'
-import { Loader2, Download } from 'lucide-react'
+import { Loader2, Download, AlertTriangle } from 'lucide-react'
 
 import { api } from '@/lib/api'
+import { mensajeError } from '@/lib/errores'
 
 type Agrupar = 'dia' | 'semana' | 'mes'
 
@@ -106,12 +107,25 @@ export default function HistogramaPersonal({ otm }: { otm?: string }) {
         </button>
       </div>
 
+      {/* `!isLoading && !datos.length` afirmaba «no hay tareo» ante cualquier
+          fallo. Y este endpoint exige rol oficina (padron.py), así que a un
+          supervisor le mentía SIEMPRE. Ahora el error se dice
+          (auditoría 2026-08-06, 2ª ronda). */}
       {q.isLoading && (
         <p className="text-k-text3 text-sm flex items-center gap-2 py-10 justify-center">
           <Loader2 size={14} className="animate-spin" /> Cargando…
         </p>
       )}
-      {!q.isLoading && !datos.length && (
+      {q.isError && (
+        <p className="text-k-red text-sm flex items-center gap-2 py-10 justify-center">
+          <AlertTriangle size={14} className="flex-shrink-0" />
+          No se pudo cargar el histograma: {mensajeError(q.error)}
+          <button onClick={() => void q.refetch()} className="underline underline-offset-2 hover:text-k-text2">
+            reintentar
+          </button>
+        </p>
+      )}
+      {!q.isLoading && !q.isError && !datos.length && (
         <p className="text-k-text3 text-sm text-center py-10">
           Todavía no hay tareo registrado en ese rango.
         </p>
