@@ -1,7 +1,7 @@
 // Rentabilidad.tsx — Fase 2: Resultado Operativo (RO) "a la fecha"
 // Venta − Costo = Margen por fase. Costo = MO (tareo×tarifa) + MAT/EQP/EQT/SUB (tabla costos).
 // Venta = valorizado×PU + ajustes. Indirectos: DIR/GG. Incluye el editor de Tarifas de MO.
-import { useState, useMemo } from 'react'
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Loader2, Upload, Download, X, Plus, TrendingUp, DollarSign, Wallet, Percent } from 'lucide-react'
 import * as XLSX from 'xlsx'
@@ -28,6 +28,7 @@ interface CostoImp { fase: string | null; tipo_recurso: string; directo: boolean
 interface Cargo { cargo: string; costo_hh: number | null; hh: number }
 
 const sol = (n: number) => 'S/ ' + (n || 0).toLocaleString('es-PE', { maximumFractionDigits: 0 })
+const margenColor = (n: number) => (n >= 0 ? 'text-k-green' : 'text-k-red')
 const fmt0 = (n: number) => isFinite(n) ? n.toLocaleString('es-PE', { maximumFractionDigits: 0 }) : '—'
 const pct = (n: number) => ((n || 0) * 100).toFixed(1) + '%'
 const TIPOS = ['MAT', 'EQP', 'EQT', 'SUB', 'DIR', 'GG']
@@ -109,6 +110,18 @@ function TarifasCard() {
   )
 }
 
+/** Las 4 tarjetas de arriba. Recibe los totales YA leídos: si la consulta falló
+ *  no se pintan, porque `S/ 0` con el endpoint caído es una cifra inventada
+ *  puesta en la pantalla que mira gerencia (auditoría 2026-08-06, 2ª ronda). */
+function kpisDe(t: RO['totales']) {
+  return [
+    { label: 'Venta', val: sol(t.venta), icon: DollarSign, color: 'text-k-green' },
+    { label: 'Costo total', val: sol(t.costo_total), icon: Wallet, color: 'text-k-text' },
+    { label: 'Margen', val: sol(t.margen), icon: TrendingUp, color: margenColor(t.margen) },
+    { label: '% Margen', val: pct(t.pct_margen), icon: Percent, color: margenColor(t.margen) },
+  ]
+}
+
 export default function Rentabilidad() {
   const qc = useQueryClient()
   const ro = useQuery<RO>({
@@ -121,8 +134,6 @@ export default function Rentabilidad() {
   const [impError, setImpError] = useState('')
   const [showAj, setShowAj] = useState(false)
   const [aj, setAj] = useState({ tipo: 'ADICIONAL', fase: '', monto: '' })
-
-  const t = ro.data?.totales
 
   function parseArchivo(file: File) {
     setImpError('')
@@ -172,15 +183,6 @@ export default function Rentabilidad() {
     onSuccess: () => { setShowAj(false); setAj({ tipo: 'ADICIONAL', fase: '', monto: '' }); qc.invalidateQueries({ queryKey: ['ro'] }) },
   })
 
-  const kpis = useMemo(() => ([
-    { label: 'Venta', val: sol(t?.venta ?? 0), icon: DollarSign, color: 'text-k-green' },
-    { label: 'Costo total', val: sol(t?.costo_total ?? 0), icon: Wallet, color: 'text-k-text' },
-    { label: 'Margen', val: sol(t?.margen ?? 0), icon: TrendingUp, color: (t?.margen ?? 0) >= 0 ? 'text-k-green' : 'text-k-red' },
-    { label: '% Margen', val: pct(t?.pct_margen ?? 0), icon: Percent, color: (t?.margen ?? 0) >= 0 ? 'text-k-green' : 'text-k-red' },
-  ]), [t])
-
-  const margenColor = (n: number) => (n >= 0 ? 'text-k-green' : 'text-k-red')
-
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
@@ -200,69 +202,77 @@ export default function Rentabilidad() {
         </div>
       </div>
 
-      <div className="grid grid-cols-4 gap-4">
-        {kpis.map(k => (
-          <div key={k.label} className="bg-k-surface border border-k-border rounded-xl p-4">
-            <div className="flex items-center gap-2 text-[11px] text-k-text3 uppercase tracking-wide"><k.icon size={13} /> {k.label}</div>
-            <div className={`text-2xl font-bold mt-1 ${k.color}`}>{k.val}</div>
-          </div>
-        ))}
-      </div>
+      {/* Venta/Costo/Margen y la tabla por fase van DENTRO de EstadoQuery: si
+          /ev/ro cae (403 o 500), esta pantalla pintaba «S/ 0» en las cuatro
+          tarjetas y «Sin datos aún. Configura tarifas…» en la tabla — un error
+          disfrazado de instrucción, mandando a configurar lo que ya estaba
+          configurado. Es la pantalla que mira gerencia: aquí un cero falso
+          cuesta más que en ninguna otra. */}
+      <EstadoQuery q={ro} cargando="Cargando el Resultado Operativo…">
+        {data => (
+          <div className="space-y-5">
+            <div className="grid grid-cols-4 gap-4">
+              {kpisDe(data.totales).map(k => (
+                <div key={k.label} className="bg-k-surface border border-k-border rounded-xl p-4">
+                  <div className="flex items-center gap-2 text-[11px] text-k-text3 uppercase tracking-wide"><k.icon size={13} /> {k.label}</div>
+                  <div className={`text-2xl font-bold mt-1 ${k.color}`}>{k.val}</div>
+                </div>
+              ))}
+            </div>
 
-      <div className="bg-k-surface border border-k-border rounded-xl overflow-hidden">
-        {ro.isLoading ? <div className="p-6"><Loader2 className="animate-spin text-k-text3" /></div> : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-[11px] uppercase tracking-wide text-k-text3 border-b border-k-border">
-                  <th className="text-left px-4 py-2">Fase</th>
-                  <th className="text-right px-2 py-2">Material</th><th className="text-right px-2 py-2">M. Obra</th>
-                  <th className="text-right px-2 py-2">Eq.Prop</th><th className="text-right px-2 py-2">Eq.Terc</th><th className="text-right px-2 py-2">Subc.</th>
-                  <th className="text-right px-3 py-2">Costo</th><th className="text-right px-3 py-2">Venta</th>
-                  <th className="text-right px-3 py-2">Margen</th><th className="text-right px-4 py-2">%</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(ro.data?.fases ?? []).map(f => (
-                  <tr key={f.fase} className="border-b border-k-border/50 hover:bg-k-raised/40">
-                    <td className="px-4 py-1.5 text-k-text2"><span className="font-mono">{f.fase}</span>{f.descripcion ? ` · ${f.descripcion}` : ''}</td>
-                    <td className="px-2 py-1.5 text-right text-k-text3">{sol(f.mat)}</td>
-                    <td className="px-2 py-1.5 text-right text-k-text3">{sol(f.mo)}</td>
-                    <td className="px-2 py-1.5 text-right text-k-text3">{sol(f.eqp)}</td>
-                    <td className="px-2 py-1.5 text-right text-k-text3">{sol(f.eqt)}</td>
-                    <td className="px-2 py-1.5 text-right text-k-text3">{sol(f.sub)}</td>
-                    <td className="px-3 py-1.5 text-right text-k-text">{sol(f.costo)}</td>
-                    <td className="px-3 py-1.5 text-right text-k-text">{sol(f.venta)}</td>
-                    <td className={`px-3 py-1.5 text-right font-medium ${margenColor(f.margen)}`}>{sol(f.margen)}</td>
-                    <td className={`px-4 py-1.5 text-right ${margenColor(f.margen)}`}>{pct(f.pct_margen)}</td>
-                  </tr>
-                ))}
-                {(ro.data?.fases ?? []).length === 0 && (
-                  <tr><td colSpan={10} className="px-4 py-6 text-center text-k-text3">Sin datos aún. Configura tarifas de MO, carga costos e ingresa valorizaciones.</td></tr>
-                )}
-                {ro.data && ro.data.indirectos.total > 0 && (
-                  <tr className="border-b border-k-border/50 bg-k-raised/30">
-                    <td className="px-4 py-1.5 text-k-text2 italic">Indirectos (Dirección {sol(ro.data.indirectos.DIR)} · GG {sol(ro.data.indirectos.GG)})</td>
-                    <td colSpan={5}></td>
-                    <td className="px-3 py-1.5 text-right text-k-text">{sol(ro.data.indirectos.total)}</td>
-                    <td></td><td className={`px-3 py-1.5 text-right ${margenColor(-ro.data.indirectos.total)}`}>{sol(-ro.data.indirectos.total)}</td><td></td>
-                  </tr>
-                )}
-                {t && (
-                  <tr className="border-t-2 border-k-amber/40 bg-amber-500/5 font-bold">
-                    <td className="px-4 py-2 text-k-text">TOTAL OBRA</td>
-                    <td colSpan={5}></td>
-                    <td className="px-3 py-2 text-right text-k-text">{sol(t.costo_total)}</td>
-                    <td className="px-3 py-2 text-right text-k-text">{sol(t.venta)}</td>
-                    <td className={`px-3 py-2 text-right ${margenColor(t.margen)}`}>{sol(t.margen)}</td>
-                    <td className={`px-4 py-2 text-right ${margenColor(t.margen)}`}>{pct(t.pct_margen)}</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+            <div className="bg-k-surface border border-k-border rounded-xl overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-[11px] uppercase tracking-wide text-k-text3 border-b border-k-border">
+                      <th className="text-left px-4 py-2">Fase</th>
+                      <th className="text-right px-2 py-2">Material</th><th className="text-right px-2 py-2">M. Obra</th>
+                      <th className="text-right px-2 py-2">Eq.Prop</th><th className="text-right px-2 py-2">Eq.Terc</th><th className="text-right px-2 py-2">Subc.</th>
+                      <th className="text-right px-3 py-2">Costo</th><th className="text-right px-3 py-2">Venta</th>
+                      <th className="text-right px-3 py-2">Margen</th><th className="text-right px-4 py-2">%</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.fases.map(f => (
+                      <tr key={f.fase} className="border-b border-k-border/50 hover:bg-k-raised/40">
+                        <td className="px-4 py-1.5 text-k-text2"><span className="font-mono">{f.fase}</span>{f.descripcion ? ` · ${f.descripcion}` : ''}</td>
+                        <td className="px-2 py-1.5 text-right text-k-text3">{sol(f.mat)}</td>
+                        <td className="px-2 py-1.5 text-right text-k-text3">{sol(f.mo)}</td>
+                        <td className="px-2 py-1.5 text-right text-k-text3">{sol(f.eqp)}</td>
+                        <td className="px-2 py-1.5 text-right text-k-text3">{sol(f.eqt)}</td>
+                        <td className="px-2 py-1.5 text-right text-k-text3">{sol(f.sub)}</td>
+                        <td className="px-3 py-1.5 text-right text-k-text">{sol(f.costo)}</td>
+                        <td className="px-3 py-1.5 text-right text-k-text">{sol(f.venta)}</td>
+                        <td className={`px-3 py-1.5 text-right font-medium ${margenColor(f.margen)}`}>{sol(f.margen)}</td>
+                        <td className={`px-4 py-1.5 text-right ${margenColor(f.margen)}`}>{pct(f.pct_margen)}</td>
+                      </tr>
+                    ))}
+                    {data.fases.length === 0 && (
+                      <tr><td colSpan={10} className="px-4 py-6 text-center text-k-text3">Sin datos aún. Configura tarifas de MO, carga costos e ingresa valorizaciones.</td></tr>
+                    )}
+                    {data.indirectos.total > 0 && (
+                      <tr className="border-b border-k-border/50 bg-k-raised/30">
+                        <td className="px-4 py-1.5 text-k-text2 italic">Indirectos (Dirección {sol(data.indirectos.DIR)} · GG {sol(data.indirectos.GG)})</td>
+                        <td colSpan={5}></td>
+                        <td className="px-3 py-1.5 text-right text-k-text">{sol(data.indirectos.total)}</td>
+                        <td></td><td className={`px-3 py-1.5 text-right ${margenColor(-data.indirectos.total)}`}>{sol(-data.indirectos.total)}</td><td></td>
+                      </tr>
+                    )}
+                    <tr className="border-t-2 border-k-amber/40 bg-amber-500/5 font-bold">
+                      <td className="px-4 py-2 text-k-text">TOTAL OBRA</td>
+                      <td colSpan={5}></td>
+                      <td className="px-3 py-2 text-right text-k-text">{sol(data.totales.costo_total)}</td>
+                      <td className="px-3 py-2 text-right text-k-text">{sol(data.totales.venta)}</td>
+                      <td className={`px-3 py-2 text-right ${margenColor(data.totales.margen)}`}>{sol(data.totales.margen)}</td>
+                      <td className={`px-4 py-2 text-right ${margenColor(data.totales.margen)}`}>{pct(data.totales.pct_margen)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         )}
-      </div>
+      </EstadoQuery>
 
       <TarifasCard />
 
